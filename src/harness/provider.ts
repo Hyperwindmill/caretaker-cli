@@ -1,6 +1,8 @@
 // Ported from caretaker server's src/runner/openai_style.ts.
 // Only the OpenAI-compatible streaming primitives — no DB, no MCP, no plugins.
 
+import { ThinkTagSplitter } from "./think_tag_splitter.js";
+
 export type AssistantUsage = {
   input: number;
   output: number;
@@ -148,6 +150,16 @@ export async function readStream(
   const reader = response.body.getReader();
   const dec = new TextDecoder();
   let buf = "";
+  // Intercept `content` events to split inline `<think>...</think>` tags into thinking events.
+  const splitter = new ThinkTagSplitter();
+  const dispatch = (evt: SseEvent) => {
+    if (evt.kind === "content") {
+      for (const s of splitter.push(evt.text)) onEvent(s);
+    } else {
+      onEvent(evt);
+    }
+  };
+  let streamErrored = false;
   try {
     while (true) {
       const { value, done } = await reader.read();
@@ -157,13 +169,19 @@ export async function readStream(
       while ((nl = buf.indexOf("\n")) >= 0) {
         const line = buf.slice(0, nl);
         buf = buf.slice(nl + 1);
-        for (const evt of parseSseChunk(line)) onEvent(evt);
+        for (const evt of parseSseChunk(line)) dispatch(evt);
       }
     }
     if (buf.length > 0) {
-      for (const evt of parseSseChunk(buf)) onEvent(evt);
+      for (const evt of parseSseChunk(buf)) dispatch(evt);
     }
+  } catch (err) {
+    streamErrored = true;
+    throw err;
   } finally {
+    if (!streamErrored) {
+      for (const s of splitter.flush()) onEvent(s);
+    }
     try {
       reader.releaseLock();
     } catch {
