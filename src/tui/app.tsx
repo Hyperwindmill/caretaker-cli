@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Box, Text, useApp } from "ink";
+import { Box, useApp } from "ink";
 import SelectInput from "ink-select-input";
 import Providers from "./providers.js";
 import Agents from "./agents.js";
 import Plugins from "./plugins.js";
+import Logo from "./logo.js";
 
 type View = "menu" | "providers" | "agents" | "plugins";
 
@@ -14,9 +15,7 @@ export default function App() {
   return (
     <Box flexDirection="column" padding={1}>
       <Box marginBottom={1}>
-        <Text bold color="cyan">
-          caretaker
-        </Text>
+        <Logo />
       </Box>
       {view === "menu" && (
         <SelectInput
