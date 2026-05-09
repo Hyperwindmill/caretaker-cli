@@ -1,9 +1,9 @@
 {
-  "name": "caretaker-app",
+  "name": "caretaker-cli",
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Caretaker — in-process agent harness, TUI + API, file-based state.",
+  "description": "Caretaker — in-process agent harness, TUI, file-based state.",
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc",
@@ -25,6 +25,7 @@
     "ink-text-input": "^6.0.0",
     "isomorphic-git": "^1.37.6",
     "react": "^19.2.6",
-    "turndown": "^7.2.4"
+    "turndown": "^7.2.4",
+    "yaml": "^2.8.4"
   }
 }
