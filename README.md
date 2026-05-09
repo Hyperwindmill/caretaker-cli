@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/caretaker.png" alt="caretaker" width="220" />
+</p>
+
 # caretaker-cli
 
 Yet another agent CLI. Yes — but built the way I want one to be.
