@@ -9,7 +9,8 @@ import { fetchOpenAiStyleModels } from "../harness/models.js";
 import { tools as toolRegistry } from "../harness/tools/instance.js";
 import type { Tool } from "../harness/tools/index.js";
 import { listPlugins as listDiscoveredPlugins } from "../plugins/source_manager.js";
-import type { PluginRecord } from "../types.js";
+import { listMcpServers } from "../mcp/server_manager.js";
+import type { McpServerConfig, PluginRecord } from "../types.js";
 import { deleteSession, listForAgent, type SessionListEntry } from "../session/store.js";
 import type { SessionMetaRecord } from "../session/types.js";
 import ChatScreen from "./chat.js";
@@ -258,6 +259,7 @@ export default function Agents({ onBack }: { onBack: () => void }) {
         <Text>maxTurns: {selected.maxTurns === 0 ? "unlimited" : selected.maxTurns}</Text>
         <Text>tools:    {selected.allowedTools.length === 0 ? "(none)" : formatToolsForDetail(selected.allowedTools, selected.confirmTools ?? [])}</Text>
         <Text>plugins:  {(selected.plugins ?? []).length === 0 ? "(none)" : selected.plugins!.join(", ")}</Text>
+        <Text>mcp:      {(selected.mcpServers ?? []).length === 0 ? "(none)" : selected.mcpServers!.length} server(s)</Text>
         <Text>workDir:  {selected.workingDir || "(cwd)"}</Text>
         <Box marginTop={1} flexDirection="column">
           <Text dimColor>system prompt:</Text>
@@ -318,7 +320,7 @@ export default function Agents({ onBack }: { onBack: () => void }) {
   );
 }
 
-type FormStep = "name" | "provider" | "model" | "systemPrompt" | "tools" | "plugins" | "workingDir" | "maxTurns";
+type FormStep = "name" | "provider" | "model" | "systemPrompt" | "tools" | "plugins" | "mcpServers" | "workingDir" | "maxTurns";
 
 function AgentForm({
   providers,
@@ -343,12 +345,15 @@ function AgentForm({
   const [confirmTools, setConfirmTools] = useState<string[]>(initial?.confirmTools ?? []);
   const [activePlugins, setActivePlugins] = useState<string[]>(initial?.plugins ?? []);
   const [discoveredPlugins, setDiscoveredPlugins] = useState<PluginRecord[]>([]);
+  const [activeMcp, setActiveMcp] = useState<string[]>(initial?.mcpServers ?? []);
+  const [mcpServers, setMcpServers] = useState<McpServerConfig[]>([]);
   const [workingDir, setWorkingDir] = useState(initial?.workingDir ?? "");
   const [maxTurns, setMaxTurns] = useState(String(initial?.maxTurns ?? 30));
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     void listDiscoveredPlugins().then(setDiscoveredPlugins);
+    void listMcpServers().then(setMcpServers);
   }, []);
 
   useInput((_input, key) => {
@@ -370,6 +375,9 @@ function AgentForm({
       setStep("plugins");
     } else if (step === "plugins") {
       setError(null);
+      setStep("mcpServers");
+    } else if (step === "mcpServers") {
+      setError(null);
       setStep("workingDir");
     } else if (step === "workingDir") {
       const v = workingDir.trim();
@@ -389,6 +397,7 @@ function AgentForm({
         maxTurns: n,
         ...(confirmTools.length > 0 ? { confirmTools } : {}),
         ...(activePlugins.length > 0 ? { plugins: activePlugins } : {}),
+        ...(activeMcp.length > 0 ? { mcpServers: activeMcp } : {}),
         ...(workingDir.trim() ? { workingDir: workingDir.trim() } : {}),
       };
       void onSave(a);
@@ -504,6 +513,30 @@ function AgentForm({
         )}
       </Box>
 
+      <Box flexDirection="column">
+        <Text>mcp:</Text>
+        {step === "mcpServers" ? (
+          <McpPicker
+            servers={mcpServers}
+            value={activeMcp}
+            onChange={setActiveMcp}
+            onSubmit={advance}
+          />
+        ) : ["name", "provider", "model", "systemPrompt", "tools", "plugins"].includes(step) ? (
+          <Text dimColor>  (pending)</Text>
+        ) : (
+          <Text>
+            {`  ${
+              activeMcp.length === 0
+                ? "(none)"
+                : activeMcp
+                    .map((id) => mcpServers.find((s) => s.id === id)?.name ?? id)
+                    .join(", ")
+            }`}
+          </Text>
+        )}
+      </Box>
+
       <Box>
         <Text>workDir:  </Text>
         {step === "workingDir" ? (
@@ -513,7 +546,7 @@ function AgentForm({
             onSubmit={advance}
             placeholder="(empty = process.cwd() — absolute path otherwise)"
           />
-        ) : ["name", "provider", "model", "systemPrompt", "tools", "plugins"].includes(step) ? (
+        ) : ["name", "provider", "model", "systemPrompt", "tools", "plugins", "mcpServers"].includes(step) ? (
           <Text dimColor>(pending)</Text>
         ) : (
           <Text>{workingDir.trim() || "(cwd)"}</Text>
@@ -749,6 +782,69 @@ function PluginPicker({
             {`  ${cursor} ${checkbox} `}
             <Text bold={i === hl}>{p.name}</Text>
             <Text dimColor>{` [${p.manifestKind}]${desc ? ` — ${desc}` : ""}`}</Text>
+          </Text>
+        );
+      })}
+      <Text dimColor>  (↑/↓ navigate · space toggle · enter confirm)</Text>
+    </Box>
+  );
+}
+
+function McpPicker({
+  servers,
+  value,
+  onChange,
+  onSubmit,
+}: {
+  servers: McpServerConfig[];
+  value: string[];
+  onChange: (v: string[]) => void;
+  onSubmit: () => void;
+}) {
+  const [hl, setHl] = useState(0);
+
+  useInput((_input, key) => {
+    if (servers.length === 0) {
+      if (key.return) onSubmit();
+      return;
+    }
+    if (key.upArrow) {
+      setHl((h) => Math.max(0, h - 1));
+    } else if (key.downArrow) {
+      setHl((h) => Math.min(servers.length - 1, h + 1));
+    } else if (_input === " ") {
+      const s = servers[hl];
+      if (!s) return;
+      const set = new Set(value);
+      if (set.has(s.id)) set.delete(s.id);
+      else set.add(s.id);
+      onChange([...set]);
+    } else if (key.return) {
+      onSubmit();
+    }
+  });
+
+  if (servers.length === 0) {
+    return (
+      <Box flexDirection="column">
+        <Text dimColor>  (no MCP servers configured — add one from the MCP Servers menu)</Text>
+        <Text dimColor>  (enter to continue)</Text>
+      </Box>
+    );
+  }
+
+  return (
+    <Box flexDirection="column">
+      {servers.map((s, i) => {
+        const checked = value.includes(s.id);
+        const cursor = i === hl ? "›" : " ";
+        const checkbox = checked ? "[x]" : "[ ]";
+        const tail = `${s.transport} · ${s.enabled ? "enabled" : "disabled"}`;
+        return (
+          <Text key={s.id}>
+            {`  ${cursor} ${checkbox} `}
+            <Text bold>{s.name}</Text>
+            <Text dimColor>{`  (${tail})`}</Text>
           </Text>
         );
       })}

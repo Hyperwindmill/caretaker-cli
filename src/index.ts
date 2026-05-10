@@ -6,6 +6,7 @@ import { run } from "./harness/loop.js";
 import { tools as toolRegistry } from "./harness/tools/instance.js";
 import { resolveAgentTools } from "./harness/tools/index.js";
 import { refreshSourcesOnStart } from "./plugins/refresh_on_start.js";
+import { closeAll as closeAllMcp } from "./mcp/client.js";
 
 const promptArg = process.argv.slice(2).join(" ").trim();
 
@@ -15,6 +16,27 @@ const promptArg = process.argv.slice(2).join(" ").trim();
 void refreshSourcesOnStart().catch((err) => {
   console.error("[boot] refresh-on-start failed:", err);
 });
+
+// Tear pooled MCP connections down on shutdown so child stdio processes are
+// not orphaned and HTTP sessions get a chance to send DELETE. Best-effort:
+// SIGINT/SIGTERM may not yield enough time for the close handshake.
+const shutdownMcp = async (): Promise<void> => {
+  try {
+    await closeAllMcp();
+  } catch {
+    /* swallow — we are exiting regardless */
+  }
+};
+process.on("exit", () => {
+  // exit is sync — fire-and-forget; close handlers may not complete.
+  void shutdownMcp();
+});
+for (const sig of ["SIGINT", "SIGTERM"] as const) {
+  process.on(sig, async () => {
+    await shutdownMcp();
+    process.exit(0);
+  });
+}
 
 if (!promptArg) {
   render(createElement(App));
@@ -35,7 +57,7 @@ if (!promptArg) {
   console.log(`→ running "${agent.name}" (${agent.model} via ${provider.name})\n`);
 
   const result = await run(
-    { agent, provider, tools: resolveAgentTools(agent, toolRegistry), prompt: promptArg, workingDir: agent.workingDir },
+    { agent, provider, tools: await resolveAgentTools(agent, toolRegistry), prompt: promptArg, workingDir: agent.workingDir },
     {
       onChunk: (s) => process.stdout.write(s),
       onToolCall: (_id, name, args) => process.stdout.write(`\n  → tool ${name}(${JSON.stringify(args)})`),

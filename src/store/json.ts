@@ -2,7 +2,12 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { mkdir, readFile, writeFile, chmod } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import type { AgentConfig, CaretakerConfig, PluginsFile } from "../types.js";
+import type {
+  AgentConfig,
+  CaretakerConfig,
+  McpServersFile,
+  PluginsFile,
+} from "../types.js";
 
 // Path accessors are resolved at call time, not import time, so test runs
 // that share a process can switch CARETAKER_HOME between suites.
@@ -12,6 +17,7 @@ export function dataDir(): string {
 export function configPath(): string { return join(dataDir(), "caretaker.json"); }
 export function agentsPath(): string { return join(dataDir(), "agents.json"); }
 export function pluginsPath(): string { return join(dataDir(), "plugins.json"); }
+export function mcpServersPath(): string { return join(dataDir(), "mcp.json"); }
 
 export const defaultConfig: CaretakerConfig = {
   port: 17777,
@@ -71,4 +77,21 @@ export async function loadPlugins(): Promise<PluginsFile> {
 
 export async function savePlugins(file: PluginsFile): Promise<void> {
   await writeJson(pluginsPath(), file);
+}
+
+function emptyMcpServersFile(): McpServersFile {
+  return { servers: [] };
+}
+
+export async function loadMcpServers(): Promise<McpServersFile> {
+  const file = await readJsonOrDefault<McpServersFile>(mcpServersPath(), emptyMcpServersFile());
+  // Same defensive copy as loadPlugins — auth headers are sensitive, and
+  // handing back a shared reference invites mutation bugs.
+  return {
+    servers: Array.isArray(file.servers) ? [...file.servers] : [],
+  };
+}
+
+export async function saveMcpServers(file: McpServersFile): Promise<void> {
+  await writeJson(mcpServersPath(), file);
 }

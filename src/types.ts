@@ -56,6 +56,43 @@ export type PluginsFile = {
   plugins: PluginRecord[];
 };
 
+/** Wire transport for an MCP server. */
+export type McpTransport = "stdio" | "http";
+
+/** A configured MCP server the agent can connect to. Tools discovered from
+ *  the server are exposed in the registry as `mcp__<id>__<toolName>`. */
+export type McpServerConfig = {
+  id: string;
+  /** Human-friendly label shown in the TUI. */
+  name: string;
+  transport: McpTransport;
+  /** Disabled servers are kept on disk but skipped at connect time. */
+  enabled: boolean;
+  // ─── stdio transport ────────────────────────────────────────────────
+  /** Executable to spawn (stdio transport). */
+  command?: string;
+  /** Args passed to the spawned executable. */
+  args?: string[];
+  /** Extra env vars merged on top of getDefaultEnvironment(). */
+  env?: Record<string, string>;
+  // ─── http transport ─────────────────────────────────────────────────
+  /** Streamable HTTP endpoint URL. */
+  url?: string;
+  /** HTTP request headers. Values that look like encrypt() blobs are
+   *  decrypted at connect time; freshly-set values are encrypted on save.
+   *  Auth tokens belong here (e.g. `Authorization: Bearer …`). */
+  headers?: Record<string, string>;
+  /** ISO timestamp of the last successful or failed connect. */
+  lastConnectedAt?: string | null;
+  /** Last connect error message; null when the last connect succeeded. */
+  lastConnectError?: string | null;
+};
+
+/** On-disk shape of mcp.json. */
+export type McpServersFile = {
+  servers: McpServerConfig[];
+};
+
 export type AgentConfig = {
   id: string;
   name: string;
@@ -68,8 +105,12 @@ export type AgentConfig = {
    *  `allowedTools` semantics stay intact for older agents on disk. */
   confirmTools?: string[];
   /** Names of plugins (referencing PluginConfig.name in plugins.json) whose
-   *  SKILL.md files are injected into the system prompt as passive context. */
+   *  SKILL.md files are exposed as on-demand list_skills/read_skill tools. */
   plugins?: string[];
+  /** IDs of MCP servers (referencing McpServerConfig.id in mcp.json) whose
+   *  tools/list output is registered as `mcp__<id>__<toolName>` callable
+   *  tools for this agent. Disabled servers are silently skipped. */
+  mcpServers?: string[];
   maxTurns: number;
   /** Absolute directory passed to the harness as ToolContext.workingDir.
    *  Empty/undefined → process.cwd() (legacy behavior). Validated as

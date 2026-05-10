@@ -139,7 +139,7 @@ export default function ChatScreen({
         {
           agent,
           provider,
-          tools: resolveAgentTools(agent, toolRegistry),
+          tools: await resolveAgentTools(agent, toolRegistry),
           prompt: text,
           history: priorMessages,
           signal: ac.signal,

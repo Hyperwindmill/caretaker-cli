@@ -29,23 +29,23 @@ function agent(over: Partial<AgentConfig>): AgentConfig {
   };
 }
 
-test("resolveAgentTools: filters by allowedTools when no plugins", () => {
+test("resolveAgentTools: filters by allowedTools when no plugins", async () => {
   const r = new ToolRegistry();
   r.register(fakeTool("read_file"));
   r.register(fakeTool("list_skills"));
   r.register(fakeTool("read_skill"));
 
-  const tools = resolveAgentTools(agent({ allowedTools: ["read_file"] }), r);
+  const tools = await resolveAgentTools(agent({ allowedTools: ["read_file"] }), r);
   assert.deepEqual(tools.map((t) => t.name), ["read_file"]);
 });
 
-test("resolveAgentTools: auto-includes skill tools when plugins are active", () => {
+test("resolveAgentTools: auto-includes skill tools when plugins are active", async () => {
   const r = new ToolRegistry();
   r.register(fakeTool("read_file"));
   r.register(fakeTool("list_skills"));
   r.register(fakeTool("read_skill"));
 
-  const tools = resolveAgentTools(
+  const tools = await resolveAgentTools(
     agent({ allowedTools: ["read_file"], plugins: ["my-skill"] }),
     r,
   );
@@ -55,12 +55,12 @@ test("resolveAgentTools: auto-includes skill tools when plugins are active", () 
   );
 });
 
-test("resolveAgentTools: does not duplicate when allowedTools already lists skill tools", () => {
+test("resolveAgentTools: does not duplicate when allowedTools already lists skill tools", async () => {
   const r = new ToolRegistry();
   r.register(fakeTool("list_skills"));
   r.register(fakeTool("read_skill"));
 
-  const tools = resolveAgentTools(
+  const tools = await resolveAgentTools(
     agent({ allowedTools: ["list_skills", "read_skill"], plugins: ["x"] }),
     r,
   );
@@ -70,11 +70,11 @@ test("resolveAgentTools: does not duplicate when allowedTools already lists skil
   );
 });
 
-test("resolveAgentTools: no skill tools when registry lacks them", () => {
+test("resolveAgentTools: no skill tools when registry lacks them", async () => {
   const r = new ToolRegistry();
   r.register(fakeTool("read_file"));
 
-  const tools = resolveAgentTools(
+  const tools = await resolveAgentTools(
     agent({ allowedTools: ["read_file"], plugins: ["x"] }),
     r,
   );
