@@ -164,11 +164,60 @@ extension protocol; reuses tooling and conventions.
 
 The sister repo (`caretaker-agents-platform`) is the Hono+Drizzle web
 server this CLI was forked from. Once the IDE-extension contract is
-clear, agents-platform should adopt caretaker-cli as its runner instead
-of carrying its own harness — and shed most of the DB along the way.
-Net effect: agents-platform becomes a thin server around the agentic
-parts that the single-user CLI can't host (scheduling, long-running
-services, multi-user auth), with all chat/config delegated to the CLI.
+clear, the agentic surface should adopt caretaker-cli as its runner
+instead of carrying its own harness — and shed most of the DB along
+the way. Net effect: a thin server around the parts the single-user
+CLI can't host (scheduling, long-running services, multi-user auth),
+with all chat/config delegated to the CLI.
+
+### Big-picture undecided: revamp vs greenfield monorepo
+
+Two plausible shapes, decision pending:
+
+- [ ] **Revamp in place** — keep agents-platform as the home, swap its
+  internal harness for caretaker-cli, drop the dropped tables. Right
+  call if the scheduler / services / auth code is substantial and
+  works; pays the cost of an in-place migration with live users.
+- [ ] **Greenfield monorepo here** — stop touching the old repo,
+  rebuild as a monorepo rooted at caretaker-cli (or a new root) with
+  packages for runner (this CLI), scheduler/services, auth, and
+  whichever UI(s). Port only what we explicitly want, archive the
+  rest. Right call if we'd be rewriting most of the platform anyway,
+  and we want clean layout from day one. No live-DB migration; users
+  re-onboard.
+
+Either way the chat-persistence question (next subsection) and the
+bundling/cleanup outline below still apply. The DB-cleanup list
+becomes "what to *port*" rather than "what to *drop*" under the
+greenfield reading.
+
+### Chat persistence and the "no-history" runner pattern
+
+The old caretaker has a useful pattern when it delegates to a
+third-party harness: it does **not** forward the chat history — the
+external harness is expected to resume its own session by id. We can
+adopt the same pattern with caretaker-cli as the runner: the consumer
+says "resume session X" or "start new session", and the CLI loads the
+JSONL itself. The consumer never ferries chat history over the wire.
+
+If we commit to that pattern:
+
+- [ ] Chat state lives in CLI JSONL, full stop. `chat_messages` /
+  `chat_sessions` tables go away (or are never created in greenfield).
+- [ ] The wire protocol carries `sessionId` references, not message
+  arrays. Lighter payloads, single source of truth.
+- [ ] Server-side full-text search / analytics over chats becomes an
+  *indexer* job that reads CLI JSONLs, not a parallel store. Defer
+  until actually needed.
+
+Open at this layer:
+
+- [ ] **Multi-user JSONL layout on a server host** — needs to fit the
+  multi-tenancy decision (per-user `CARETAKER_HOME` vs threaded
+  `home` param).
+- [ ] **Concurrent reads while the CLI appends** — JSONL is
+  append-only so safe enough, but a "subscribe to session" notification
+  needs file-watching or in-process eventing.
 
 ### Bundling: how does agents-platform load the CLI?
 
