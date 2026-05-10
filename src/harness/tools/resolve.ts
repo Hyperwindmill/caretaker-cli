@@ -15,19 +15,39 @@ import type { AgentConfig } from "../../types.js";
 import type { ToolRegistry } from "./registry.js";
 import type { Tool } from "./types.js";
 import { mcpToolsForServers } from "../../mcp/adapter.js";
+import { loadAgents } from "../../store/json.js";
 
 const SKILL_TOOL_NAMES = ["list_skills", "read_skill"] as const;
+const DISPATCH_TOOL_NAMES = ["list_agents", "invoke_agent"] as const;
+
+function autoInclude(tools: Tool[], registry: ToolRegistry, names: readonly string[]): void {
+  const have = new Set(tools.map((t) => t.name));
+  for (const name of names) {
+    if (have.has(name)) continue;
+    const t = registry.get(name);
+    if (t) tools.push(t);
+  }
+}
 
 export async function resolveAgentTools(agent: AgentConfig, registry: ToolRegistry): Promise<Tool[]> {
   const tools = registry.filtered(agent.allowedTools);
 
   if ((agent.plugins ?? []).length > 0) {
-    const have = new Set(tools.map((t) => t.name));
-    for (const name of SKILL_TOOL_NAMES) {
-      if (have.has(name)) continue;
-      const t = registry.get(name);
-      if (t) tools.push(t);
+    autoInclude(tools, registry, SKILL_TOOL_NAMES);
+  }
+
+  // Sub-agent dispatch tools: auto-included when there is at least one
+  // OTHER agent configured (besides the caller). Listing yourself isn't
+  // useful, and dispatching only-you is blocked anyway by the
+  // self-invocation guard. The lookup is best-effort — a load failure
+  // simply leaves the dispatch tools out, the agent still runs.
+  try {
+    const allAgents = await loadAgents();
+    if (allAgents.some((a) => a.id !== agent.id)) {
+      autoInclude(tools, registry, DISPATCH_TOOL_NAMES);
     }
+  } catch {
+    /* leave dispatch tools out on read error */
   }
 
   const mcpIds = agent.mcpServers ?? [];
