@@ -5,11 +5,11 @@ each pezzo is a single commit (or a small string of related commits) and
 must be **prod-ready in its scope** before moving on. `[ ]` = todo,
 `[x]` = shipped, with the closing commit hash next to it.
 
-Last updated: 2026-05-10 (post `f1b482c`).
+Last updated: 2026-05-11 (post `543e539`).
 
 ---
 
-## ~~In flight~~ Done: subagent dispatch (commit `next`)
+## ~~In flight~~ Done: subagent dispatch (commit `377b3bf`)
 
 All checklist items below shipped. Plugin-managed agents are now usable as
 sub-agents straight after a plugin refresh — empty runtime fields inherit
@@ -33,7 +33,7 @@ runs with the parent's surface.
 
 ---
 
-## ~~Next~~ Done: commands (commit `next`)
+## ~~Next~~ Done: commands (commit `42f8d46`)
 
 Decisions taken:
 
@@ -92,10 +92,9 @@ need is hot.
 
 ## Manifest enrichment (lower priority, eventually)
 
-- [x] ~~Per-skill granularity~~ — shipped (commit `next`). cc-plugin packs now expose each `skills/<name>/SKILL.md` individually; `list_skills` returns one entry per skill, `read_skill` reads exactly one file.
+- [x] ~~Per-skill granularity~~ — shipped (commit `b5f1485`). cc-plugin packs now expose each `skills/<name>/SKILL.md` individually; `list_skills` returns one entry per skill, `read_skill` reads exactly one file.
 - [ ] Marketplace `source` as object (`git-subdir` with `path`/`ref`/`sha` for pinning). Today we accept only the string form.
 - [ ] Metadata extra: `category`, `tags`, `homepage`, `author` propagated to `PluginRecord` and shown in the TUI detail.
-- [ ] **`get_agent_context` context-window resolution** — sister repo had a `model_limits.ts` that fetched from models.dev (24h cache) and resolved `model_id → context_tokens`. Today the tool returns `contextWindow: null` and `percent: null`. Port the fetcher + cache when a user asks for usage % display.
 
 ---
 
@@ -113,4 +112,7 @@ need is hot.
 - [x] `42f8d46` — slash commands: chat-input parser + `list_commands`/`invoke_command` builtins, `$N` + `$ARGUMENTS` expansion, per-agent gating via `agent.plugins`
 - [x] `2cd14b9` — `<runtime-info>` block in system prompt + `get_agent_context` builtin (live token usage; context-window % deferred to a models.dev fetcher)
 - [x] `b5f1485` — per-skill granularity for `list_skills` / `read_skill`: cc-plugin packs (e.g. superpowers) now expose each `skills/<name>/SKILL.md` as its own entry
-- [x] `next` — anonymous sub-agent dispatch: `invoke_agent({task})` without a name spins up an ephemeral child that inherits provider/model/tools/plugins/mcpServers/workingDir from the caller and runs with no systemPrompt of its own. Use case: speculative subtasks isolated from caller's history without dragging caller's identity along. Self-invocation by name remains rejected (an agent's identity/goal in its systemPrompt would just spin on itself).
+- [x] `7f8634c` — anonymous sub-agent dispatch: `invoke_agent({task})` without a name spins up an ephemeral child that inherits provider/model/tools/plugins/mcpServers/workingDir from the caller and runs with no systemPrompt of its own. Use case: speculative subtasks isolated from caller's history without dragging caller's identity along. Self-invocation by name remains rejected (an agent's identity/goal in its systemPrompt would just spin on itself).
+- [x] `aa46b1e` — `resolveAgentTools` always exposes dispatch builtins (`list_agents` / `invoke_agent`); the previous `loadAgents()` gate was redundant and caused dispatch to disappear when the registry was momentarily empty.
+- [x] `a243593` — universal ESC=back in the TUI: every list/detail/delete view in Agents/Providers/Plugins/MCP responds to Esc with the right back-target; root menu Esc quits. Form/chat handlers untouched.
+- [x] `39b18a7` / `b8f29bf` / `76ab68e` / `543e539` — context-window meter end-to-end: ported `model_limits.ts` (models.dev fetcher with 24h cache, `:cloud`/`-cloud` suffix fallback) and `computeContextUsage` from the sister repo, wired `initModelLimits()` at boot, unblocked `get_agent_context` (now returns real `contextWindow` + `percent`), and added a sticky ctx bar at the bottom of the chat (`ctx ▓▓▓░░ NN%  ·  Xk / Yk`, dim/yellow/red thresholds). When the model is unknown to models.dev, the bar falls back to the absolute token count.
