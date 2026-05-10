@@ -1,9 +1,7 @@
-// Enumerate every configured agent — including the caller itself, so the
-// model can see the full roster (e.g. to introspect its own peers).
-// Self-invocation is still rejected at dispatch time by the guard inside
-// `invoke_agent`, so listing self does NOT enable a recursion vulnerability.
-// Managed-by-plugin rows are flagged so the model can decide whether to
-// dispatch a vendor-supplied specialist.
+// Enumerate other agents the caller can invoke. Returns one entry per
+// configured AgentConfig except the caller itself (no self-recursion at
+// the surface). Managed-by-plugin rows are flagged so the model can
+// decide whether to dispatch a vendor-supplied specialist.
 
 import type { Tool } from '../types.js';
 import { loadAgents } from '../../../store/json.js';
@@ -18,25 +16,27 @@ interface AgentSummary {
 export const listAgentsTool: Tool = {
   name: 'list_agents',
   description:
-    'List every configured agent (including yourself). Each entry has ' +
-    '`name`, `model`, `provider`, and `managed` (true when the agent comes ' +
-    'from a plugin). Use the `name` field with `invoke_agent` to delegate ' +
-    'a one-shot task to another agent — note that invoking yourself is ' +
-    'rejected at dispatch time.',
+    'List the other agents available for sub-agent dispatch. Returns one ' +
+    'entry per agent (excluding yourself) with `name`, `model`, `provider`, ' +
+    'and `managed` (true when the agent comes from a plugin). Use the ' +
+    '`name` field with `invoke_agent` to delegate a one-shot task.',
   parameters: {
     type: 'object',
     properties: {},
     additionalProperties: false,
   },
-  async execute(_args) {
+  async execute(_args, ctx) {
     const all = await loadAgents();
-    const summaries: AgentSummary[] = all.map((a) => ({
-      name: a.name,
-      model: a.model,
-      provider: a.provider,
-      managed: !!a.pluginId,
-    }));
-    if (summaries.length === 0) return { content: 'No agents configured.' };
+    const callerId = ctx.callerAgent?.id;
+    const summaries: AgentSummary[] = all
+      .filter((a) => a.id !== callerId)
+      .map((a) => ({
+        name: a.name,
+        model: a.model,
+        provider: a.provider,
+        managed: !!a.pluginId,
+      }));
+    if (summaries.length === 0) return { content: 'No other agents available.' };
     return { content: JSON.stringify(summaries, null, 2) };
   },
 };
