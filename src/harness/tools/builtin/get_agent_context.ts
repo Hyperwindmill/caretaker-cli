@@ -3,14 +3,12 @@
 // here) plus the current run's token usage. The numbers come from
 // ctx.liveUsage, which the loop mutates in place each turn — so the value
 // the model sees here is always the latest, not a snapshot from when the
-// run started.
-//
-// Context-window resolution is a separate piece (would fetch from
-// models.dev with a 24h cache, mirror sister repo's model_limits.ts);
-// left as a follow-up so this tool ships fast. `contextWindow` and
-// `percent` are returned as null until that lands.
+// run started. `contextWindow` is resolved from the models.dev registry
+// (populated lazily at boot); `percent` is computed from the cumulative
+// total. Both stay null when the model is unknown to the registry.
 
 import type { Tool } from '../types.js';
+import { resolveContextWindow } from '../../model_limits.js';
 
 function totalOf(
   u:
@@ -54,6 +52,12 @@ export const getAgentContextTool: Tool = {
       reasoning: 0,
     };
     const lastTurn = usage?.lastTurn ?? null;
+    const cumulativeTotal = totalOf(cumulative);
+    const contextWindow = agent?.model ? resolveContextWindow(agent.model) : null;
+    const percent =
+      contextWindow && cumulativeTotal > 0
+        ? Math.round((cumulativeTotal / contextWindow) * 100)
+        : null;
 
     const payload = {
       agent: {
@@ -79,10 +83,10 @@ export const getAgentContextTool: Tool = {
           cacheRead: cumulative.cacheRead ?? 0,
           cacheWrite: cumulative.cacheWrite ?? 0,
           reasoning: cumulative.reasoning ?? 0,
-          total: totalOf(cumulative),
+          total: cumulativeTotal,
         },
-        contextWindow: null,
-        percent: null,
+        contextWindow,
+        percent,
       },
     };
     return { content: JSON.stringify(payload, null, 2) };
