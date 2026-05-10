@@ -170,6 +170,52 @@ the way. Net effect: a thin server around the parts the single-user
 CLI can't host (scheduling, long-running services, multi-user auth),
 with all chat/config delegated to the CLI.
 
+### Replacement scope: what the new stack must do
+
+The old caretaker is in production today. Before deciding revamp vs
+greenfield, pin what minimum surface the replacement must cover:
+
+1. **Autonomous tasks system** — recurring agent runs, with run history.
+2. **Email / Telegram integration** — outbound notifications, inbound
+   triggers.
+
+Both naturally suggest a web UI for management, which raises the
+architectural prior:
+
+**Is the new caretaker web/desktop a frontend of the core, or a sibling?**
+
+- [ ] **Frontend of core** (leaning here) — tasks + integrations live in
+  caretaker-cli. TUI gets parity automatically. Same forcing-function as
+  the "user affordance = also a model tool" principle: if the TUI can't
+  reach the feature, it's in the wrong place. Implies a background
+  process — tasks need a long-running scheduler that runs as a per-user
+  daemon (CLI gets a `daemon` mode + systemd user unit / autostart).
+  Web becomes a render layer over the same primitives.
+- [ ] **Sibling that uses core as runner only** — tasks + integrations
+  live in the web/server package; TUI stays foreground-only and ignores
+  them. Cleaner separation but the TUI is permanently smaller, and the
+  forcing-function on the core API disappears.
+
+Implications either way:
+
+- [ ] **Daemon model** — if tasks are in core, the CLI needs a background
+  mode. One process per user. Scheduler + integration pollers live there.
+  TUI/web/IDE-extension all talk to it via the same wire protocol
+  (sectioned in "IDE extensions").
+- [ ] **Persistence** — task definitions, run history, retry state.
+  This is where SQLite earns its keep; JSON files model "run history
+  with filtering / pagination" badly.
+- [ ] **Email / Telegram asymmetry** — outbound (notify on
+  success/failure) fits cleanly in core, no extra surface needed.
+  Inbound splits: polling (IMAP, telegram `getUpdates`) can live in the
+  daemon; webhooks need a public HTTP endpoint which is server-only.
+  Default to polling for core-side parity; webhooks become a web
+  frontend add-on for users who want lower latency.
+
+Lean: frontend-of-core. The TUI being able to schedule a task and wire
+a Telegram bot is a strong design forcing-function; the sibling shape
+ends up making the TUI a toy.
+
 ### Big-picture undecided: revamp vs greenfield monorepo
 
 Two plausible shapes, decision pending:
