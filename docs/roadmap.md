@@ -187,9 +187,8 @@ architectural prior:
 - [ ] **Frontend of core** (leaning here) — tasks + integrations live in
   caretaker-cli. TUI gets parity automatically. Same forcing-function as
   the "user affordance = also a model tool" principle: if the TUI can't
-  reach the feature, it's in the wrong place. Implies a background
-  process — tasks need a long-running scheduler that runs as a per-user
-  daemon (CLI gets a `daemon` mode + systemd user unit / autostart).
+  reach the feature, it's in the wrong place. Implies *something* hosts
+  the scheduler when it needs to run (see "Always-on hosting" below).
   Web becomes a render layer over the same primitives.
 - [ ] **Sibling that uses core as runner only** — tasks + integrations
   live in the web/server package; TUI stays foreground-only and ignores
@@ -198,10 +197,27 @@ architectural prior:
 
 Implications either way:
 
-- [ ] **Daemon model** — if tasks are in core, the CLI needs a background
-  mode. One process per user. Scheduler + integration pollers live there.
-  TUI/web/IDE-extension all talk to it via the same wire protocol
-  (sectioned in "IDE extensions").
+- [ ] **Always-on hosting** — the scheduler needs *something* running.
+  Three concrete shapes, not the abstract "daemon mode":
+  - **Server mode = Docker only.** A well-made Dockerfile bundles web
+    UI + scheduler. The container's main process *is* the daemon. No
+    systemd unit, no per-OS launcher, no autostart trickery — standard
+    container ops. This is the production-grade answer for autonomous
+    tasks.
+  - **Tray-icon wrapper** (optional bridge) — a small native shell
+    (Tauri tray, or a tiny Go/Rust/Node wrapper) holding the server in
+    a foreground process with a system-tray icon. For users who want
+    "always running on my laptop" without Docker. Niche, not the
+    primary mode.
+  - **Manual local mode** — `caretaker web` starts the server with
+    scheduler attached; user keeps the terminal open. Same shape as
+    `opencode web`. Scheduler dies when the terminal closes —
+    acceptable for exploration and dev, *not* the production answer
+    for tasks that must fire while you sleep.
+  - Picking docker-as-server as the production mode is the major
+    simplification: we drop the "per-OS daemon launcher" problem
+    entirely. Local interactive is `caretaker web` (or the TUI for
+    pure-chat use); tray-icon is optional sugar.
 - [ ] **Persistence** — task definitions, run history, retry state.
   This is where SQLite earns its keep; JSON files model "run history
   with filtering / pagination" badly.
