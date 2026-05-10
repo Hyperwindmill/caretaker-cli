@@ -198,26 +198,28 @@ architectural prior:
 Implications either way:
 
 - [ ] **Always-on hosting** — the scheduler needs *something* running.
-  Three concrete shapes, not the abstract "daemon mode":
-  - **Server mode = Docker only.** A well-made Dockerfile bundles web
-    UI + scheduler. The container's main process *is* the daemon. No
-    systemd unit, no per-OS launcher, no autostart trickery — standard
-    container ops. This is the production-grade answer for autonomous
-    tasks.
-  - **Tray-icon wrapper** (optional bridge) — a small native shell
-    (Tauri tray, or a tiny Go/Rust/Node wrapper) holding the server in
-    a foreground process with a system-tray icon. For users who want
-    "always running on my laptop" without Docker. Niche, not the
-    primary mode.
-  - **Manual local mode** — `caretaker web` starts the server with
-    scheduler attached; user keeps the terminal open. Same shape as
-    `opencode web`. Scheduler dies when the terminal closes —
-    acceptable for exploration and dev, *not* the production answer
-    for tasks that must fire while you sleep.
-  - Picking docker-as-server as the production mode is the major
-    simplification: we drop the "per-OS daemon launcher" problem
-    entirely. Local interactive is `caretaker web` (or the TUI for
-    pure-chat use); tray-icon is optional sugar.
+  The whole framing is: ship one well-behaved long-running process
+  (`caretaker web`), and let each use case wrap it appropriately.
+  Three concrete shapes, in order of how much we ship:
+  - **`caretaker web` as the single primitive.** Starts the server
+    with scheduler attached; user keeps the terminal open. Same shape
+    as `opencode web`. This is what we *build*. Dies with the
+    terminal — fine for exploration / dev.
+  - **Docker as the production wrapper we ship.** A well-made
+    Dockerfile that runs `caretaker web` as the container's main
+    process. No systemd, no launchd, no per-OS launcher in our
+    codebase. This is the recommended always-on for autonomous tasks.
+  - **System-service wrap as the user's job.** Any advanced user can
+    systemd-unit / launchd / nssm wrap `caretaker web` themselves to
+    get always-on without Docker. We don't ship the units; we just
+    make sure the process is service-wrappable — clean SIGTERM,
+    stdout/stderr logging, no TTY requirement.
+  - **Tray-icon wrapper** stays an optional, ship-later niche: only
+    useful for non-technical users who want always-on on a laptop and
+    won't learn either Docker or systemd. Decide when (if) we see
+    that user.
+  - Net effect: zero "per-OS daemon launcher" code in caretaker. One
+    foreground process, one Docker image, advanced users self-serve.
 - [ ] **Persistence** — task definitions, run history, retry state.
   This is where SQLite earns its keep; JSON files model "run history
   with filtering / pagination" badly.
