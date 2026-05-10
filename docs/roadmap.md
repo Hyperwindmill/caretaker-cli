@@ -25,8 +25,16 @@ tools** (no MCP wrap — same architectural choice we made for skills).
 
 - [ ] **Builtin tool `list_agents`** — returns `[{name, description?, model, provider, managed}]` for every row in `agents.json` except the *current* caller (no self-recursion at the surface). No params. Auto-included in the registry like `list_skills` / `read_skill`.
 - [ ] **Builtin tool `invoke_agent({name, task})`** — looks up the named agent, runs it one-shot, returns the final assistant text as the tool result. `name` is the AgentConfig.name (managed rows show as `<plugin>/<scoped>`).
-- [ ] **Provider/model inheritance** — if the invoked agent has empty `provider` and/or `model`, inherit from the caller (recursively, so A→B→C with B blank uses A's resolution at C). The runtime fields don't get persisted back into `agents.json` — inheritance is per-invocation.
-- [ ] **Tool surface for the invocation** — call `resolveAgentTools(invoked, registry)` so the invoked agent gets its own builtins/skills/MCP. Do NOT auto-grant the caller's tools — the whole point of dispatching is sandboxing.
+- [ ] **Field-level inheritance from caller** — if an invoked-agent runtime field is empty/undefined, inherit from the caller (recursively along A→B→C). Per-invocation, never persisted back. Inheritable fields:
+   - `provider`, `model` — if empty
+   - `allowedTools` — if `[]` (the common case for managed-from-plugin agents whose `tools:` frontmatter we deliberately don't map)
+   - `confirmTools` — if undefined / `[]`
+   - `plugins` — if undefined / `[]` (skill catalog)
+   - `mcpServers` — if undefined / `[]`
+   - `workingDir` — if undefined / `""`
+   - `maxTurns` — **not** inherited; default 30 is fine.
+   The systemPrompt is always the invoked agent's own (that's the whole point of dispatching to a different one).
+- [ ] **Tool surface resolution** — call `resolveAgentTools(effectiveAgent, registry)` where `effectiveAgent` is the invoked agent with empty fields filled in from the caller per the inheritance rule above. The invoked agent that DID specify its own `allowedTools` gets the sandboxed surface it asked for; one that left it empty inherits the caller's. No accidental privilege escalation: the inherited surface is bounded by what the caller already had.
 - [ ] **No history** — the invoked agent starts with empty history; the only user message is the `task` string. (Matches the sister repo's one-shot semantics.) Persistence: optionally a sub-session under the parent — defer to a follow-up; for now no persistence at all.
 - [ ] **Confirm gate inheritance** — the chat's `confirmTool` callback applies to the invoked agent's tool calls too (the user is still in the loop).
 - [ ] **Signal propagation** — Esc on the parent run aborts the child run via the same `AbortSignal`.
