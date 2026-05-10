@@ -26,6 +26,16 @@ interface PoolEntry {
 const pool = new Map<string, PoolEntry>();
 const inflight = new Map<string, Promise<Client>>();
 
+// Test seam: when set, the pool delegates to this function instead of
+// calling openClient(). Tests pass in pre-built Client + close pairs (often
+// driven by InMemoryTransport from the SDK) so the caching/error logic can
+// be exercised without spawning real subprocesses or HTTP servers.
+type ConnectOverride = (server: McpServerConfig) => Promise<PoolEntry>;
+let connectOverride: ConnectOverride | undefined;
+export function __setConnectOverride(fn: ConnectOverride | undefined): void {
+  connectOverride = fn;
+}
+
 function decryptHeaders(headers: Record<string, string> | undefined): Record<string, string> {
   if (!headers) return {};
   const out: Record<string, string> = {};
@@ -119,7 +129,7 @@ export async function getClient(id: string): Promise<Client> {
     if (!server.enabled) throw new Error(`MCP server "${server.name}" is disabled`);
 
     try {
-      const entry = await openClient(server);
+      const entry = await (connectOverride ?? openClient)(server);
       pool.set(id, entry);
       await recordConnectResult(id, null);
       return entry.client;
