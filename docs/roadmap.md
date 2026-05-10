@@ -160,6 +160,101 @@ extension protocol; reuses tooling and conventions.
   separate `cwd` field? Probably the latter, with the agent's stored
   `workingDir` as fallback.
 
+## caretaker-agents-platform revamp (exploration)
+
+The sister repo (`caretaker-agents-platform`) is the Hono+Drizzle web
+server this CLI was forked from. Once the IDE-extension contract is
+clear, agents-platform should adopt caretaker-cli as its runner instead
+of carrying its own harness — and shed most of the DB along the way.
+Net effect: agents-platform becomes a thin server around the agentic
+parts that the single-user CLI can't host (scheduling, long-running
+services, multi-user auth), with all chat/config delegated to the CLI.
+
+### Bundling: how does agents-platform load the CLI?
+
+- [ ] **npm dependency, library import** (`import { run } from
+  "caretaker-cli/harness"`). Both are Node; no IPC, direct callbacks,
+  the platform server stays in-process. Trade-off: the platform adopts
+  caretaker's MCP child processes and plugin-cache writes, but unlike a
+  VS Code extension host this is what the platform is *for*. Most
+  natural option here.
+- [ ] **Spawn the built binary via child_process** — same model as the
+  IDE extension (JSON-RPC over stdio). Stricter isolation, easier
+  independent upgrade, but Node-in-Node overhead and a double event
+  loop just to ferry JSON. Hard to justify when both sides are TS.
+- [ ] **Monorepo workspace** (npm/pnpm workspaces or git submodule) —
+  share the package without publishing. Useful while the API is
+  unstable; bad story for external consumers later. Tactical, not
+  strategic.
+
+Inclination: option 1. We get to ship a real `caretaker-cli/harness`
+entrypoint (currently the package is TUI-oriented), which is also a
+prerequisite for the IDE extension's library-import path if we ever
+revisit it.
+
+### DB cleanup: what stays, what goes
+
+The CLI is authoritative for everything that's "config the user owns
+on this machine". The DB shrinks to what's intrinsically server-side.
+
+Drops from the Drizzle schema:
+
+- [ ] **providers / agents / mcp_servers / plugin_sources / plugins**
+  — already file-backed in the CLI (`providers.json`, `agents.json`,
+  `mcp.json`, `plugins.json`). Platform reads them via the CLI's
+  loaders, doesn't shadow them.
+- [ ] **chat_messages / chat_sessions** — already JSONL in the CLI
+  under `<CARETAKER_HOME>/sessions/<agentId>/<sessionId>.jsonl`.
+  Migration: one-shot export of existing rows into JSONL files.
+- [ ] **skills** — superseded by plugin-discovered skills (on-demand
+  via `list_skills` / `read_skill`).
+
+Stays in the DB:
+
+- [ ] **Scheduled tasks / cron jobs** — the recurring agentic surface
+  is inherently a server concern; single-user CLI has no daemon.
+- [ ] **Long-running services** — anything that holds open connections
+  on behalf of users beyond a single chat turn.
+- [ ] **Users / auth / tenancy metadata** — multi-user is the platform's
+  job; the CLI is per-`$HOME`.
+
+Migration plan, rough:
+
+- [ ] **Step 1** — publish `caretaker-cli` as `@caretaker/cli` (or
+  similar) on npm, with a stable `harness` entrypoint exporting `run`,
+  `resolveAgentTools`, the loaders, and the type surface.
+- [ ] **Step 2** — in agents-platform, add CLI as a dependency and
+  shadow-read config (DB still authoritative). One-shot scripts to
+  sync DB → JSON/JSONL files under a per-user `CARETAKER_HOME`.
+- [ ] **Step 3** — flip authority: platform reads from CLI files,
+  writes go through CLI loaders. DB tables for the dropped surfaces
+  become read-only.
+- [ ] **Step 4** — drop the tables, drop the runner code, the platform
+  becomes a thin server around scheduler/services/auth.
+
+### Open questions
+
+- [ ] **Multi-tenancy on a server** — the CLI uses one `CARETAKER_HOME`
+  per process. Platform serves many users. Two paths: spawn per-user
+  CLI subprocesses (heavy but clean isolation) or thread a `home`
+  parameter through the harness API so one Node process can serve many
+  homes (lighter but pollutes every loader signature). Lean toward
+  per-user `CARETAKER_HOME` injected via `AsyncLocalStorage` if the
+  loaders cooperate.
+- [ ] **Stable harness API** — today the CLI exports are organic
+  (mostly meant for its own TUI). Need an explicit `harness` /
+  `loaders` surface with semver discipline before the platform can
+  depend on it without churn.
+- [ ] **Streaming to the web frontend** — platform forwards CLI events
+  to the browser over SSE/WebSocket. The JSON-RPC notification shape
+  defined for the IDE extension should fit verbatim — same vocabulary
+  on both sides keeps clients interchangeable.
+- [ ] **Plugin / MCP cache locality** — `~/.caretaker/plugin-cache/...`
+  is per-user. On a multi-tenant server, do we share clones across
+  users (git URLs are public, why re-clone) or strictly isolate? Share
+  by URL hash, isolate auth-bearing sources. Decide together with the
+  multi-tenancy story.
+
 ## Manifest enrichment (lower priority, eventually)
 
 - [x] ~~Per-skill granularity~~ — shipped (commit `b5f1485`). cc-plugin packs now expose each `skills/<name>/SKILL.md` individually; `list_skills` returns one entry per skill, `read_skill` reads exactly one file.
