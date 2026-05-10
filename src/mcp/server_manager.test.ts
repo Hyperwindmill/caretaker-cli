@@ -240,4 +240,88 @@ describe('syncManagedMcpServers', () => {
     assert.equal(patched!.name, row.name);
     assert.equal(patched!.command, row.command);
   });
+
+  describe('agent-ref pruning', () => {
+    function agentRecord(name: string, mcpServers: string[]) {
+      return {
+        id: randomUUID(),
+        name,
+        systemPrompt: '',
+        provider: 'p',
+        model: 'm',
+        allowedTools: [],
+        maxTurns: 5,
+        mcpServers,
+      };
+    }
+
+    it('pruneAgentMcpRefs strips removed ids from every agent that references them', async () => {
+      const goneA = randomUUID();
+      const goneB = randomUUID();
+      const kept = randomUUID();
+      await store.saveAgents([
+        agentRecord('a', [goneA, kept]),
+        agentRecord('b', [goneB]),
+        agentRecord('c', [kept]),
+      ]);
+
+      const touched = await server_manager.pruneAgentMcpRefs([goneA, goneB]);
+      assert.equal(touched, 2);
+
+      const after = await store.loadAgents();
+      assert.deepEqual(after.find((a) => a.name === 'a')!.mcpServers, [kept]);
+      assert.deepEqual(after.find((a) => a.name === 'b')!.mcpServers, []);
+      assert.deepEqual(after.find((a) => a.name === 'c')!.mcpServers, [kept]);
+    });
+
+    it('pruneAgentMcpRefs is a no-op when nothing matches', async () => {
+      await store.saveAgents([agentRecord('a', ['x'])]);
+      const touched = await server_manager.pruneAgentMcpRefs(['y', 'z']);
+      assert.equal(touched, 0);
+      const after = await store.loadAgents();
+      assert.deepEqual(after[0].mcpServers, ['x']);
+    });
+
+    it('deleteMcpServer also prunes referencing agents', async () => {
+      const created = await server_manager.createMcpServer({
+        name: 's',
+        transport: 'stdio',
+        command: 'echo',
+      });
+      await store.saveAgents([
+        agentRecord('a', [created.id, 'other']),
+        agentRecord('b', ['other']),
+      ]);
+
+      const ok = await server_manager.deleteMcpServer(created.id);
+      assert.equal(ok, true);
+
+      const after = await store.loadAgents();
+      assert.deepEqual(after.find((a) => a.name === 'a')!.mcpServers, ['other']);
+      assert.deepEqual(after.find((a) => a.name === 'b')!.mcpServers, ['other']);
+    });
+
+    it('syncManagedMcpServers prunes agent refs to removed managed rows', async () => {
+      // Seed a plugin with one managed server.
+      const p1 = pluginRecord({
+        name: 'p1',
+        mcpServers: { srv: { command: 'echo' } },
+      });
+      await seedPlugins([p1]);
+      await server_manager.syncManagedMcpServers();
+      const managedId = (await store.loadMcpServers()).servers[0].id;
+
+      // Wire an agent to it.
+      await store.saveAgents([agentRecord('a', [managedId, 'other'])]);
+
+      // Plugin's manifest entry disappears → sync drops the managed row.
+      const p1Stripped = { ...p1, mcpServers: {} };
+      await seedPlugins([p1Stripped]);
+      await server_manager.syncManagedMcpServers();
+
+      assert.equal((await store.loadMcpServers()).servers.length, 0);
+      const after = await store.loadAgents();
+      assert.deepEqual(after[0].mcpServers, ['other']);
+    });
+  });
 });
