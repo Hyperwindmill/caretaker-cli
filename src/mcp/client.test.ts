@@ -325,6 +325,35 @@ describe("mcp adapter", () => {
     await pool.closeAll();
   });
 
+  it("placeholder expansion: ${CLAUDE_PLUGIN_ROOT} resolves to plugin path; env vars from process.env; unknowns left literal", async () => {
+    const orig = process.env.MY_TEST_VAR;
+    process.env.MY_TEST_VAR = "from-env";
+    try {
+      assert.equal(
+        pool.__expandForTests("${CLAUDE_PLUGIN_ROOT}/scripts/x.cjs", "/abs/plug"),
+        "/abs/plug/scripts/x.cjs",
+      );
+      assert.equal(
+        pool.__expandForTests("Bearer ${MY_TEST_VAR}", null),
+        "Bearer from-env",
+      );
+      // Unknown placeholder stays literal so the spawned MCP server can
+      // surface a meaningful error.
+      assert.equal(
+        pool.__expandForTests("${UNDEFINED_VAR_XYZ}", null),
+        "${UNDEFINED_VAR_XYZ}",
+      );
+      // CLAUDE_PLUGIN_ROOT without a known root stays literal.
+      assert.equal(
+        pool.__expandForTests("${CLAUDE_PLUGIN_ROOT}/x", null),
+        "${CLAUDE_PLUGIN_ROOT}/x",
+      );
+    } finally {
+      if (orig === undefined) delete process.env.MY_TEST_VAR;
+      else process.env.MY_TEST_VAR = orig;
+    }
+  });
+
   it("skips servers that fail to connect (warn + empty contribution)", async () => {
     const ok: McpServerConfig = {
       id: "ok",

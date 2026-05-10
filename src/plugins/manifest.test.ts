@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
-import { discoverPlugins } from "./manifest.js";
+import { discoverPlugins, discoverPluginMcpServers } from "./manifest.js";
 import { NoPluginsFoundError } from "./types.js";
 
 function mk(root: string, rel: string, content: string) {
@@ -55,59 +55,76 @@ test("discoverPlugins reads .claude-plugin/plugin.json as a marketplace of one",
   }
 });
 
-test("discoverPlugins extracts mcpServers from plugin.json (stdio + http shapes)", async () => {
-  const dir = mkdtempSync(path.join(tmpdir(), "plug-"));
+test("discoverPluginMcpServers reads .mcp.json with the official wrappered shape", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "plug-mcp-"));
   try {
     mk(
       dir,
-      ".claude-plugin/plugin.json",
+      ".mcp.json",
       JSON.stringify({
-        name: "pack",
         mcpServers: {
-          local: { command: "node", args: ["server.js"], env: { DEBUG: "1" } },
-          remote: { url: "https://mcp.example.com", headers: { Authorization: "Bearer x" } },
+          youtrack: {
+            type: "stdio",
+            command: "node",
+            args: ["${CLAUDE_PLUGIN_ROOT}/scripts/proxy.cjs"],
+          },
+          linear: { type: "http", url: "https://mcp.linear.app/mcp" },
+          greptile: {
+            type: "http",
+            url: "https://api.greptile.com/mcp",
+            headers: { Authorization: "Bearer ${GREPTILE_API_KEY}" },
+          },
           missing: { foo: "bar" }, // dropped — neither command nor url
         },
       }),
     );
-    const [found] = await discoverPlugins(dir);
-    assert.ok(found.mcpServers);
-    assert.deepEqual(Object.keys(found.mcpServers!).sort(), ["local", "remote"]);
-    const local = found.mcpServers!.local as { command: string; args?: string[]; env?: Record<string, string> };
-    assert.equal(local.command, "node");
-    assert.deepEqual(local.args, ["server.js"]);
-    assert.deepEqual(local.env, { DEBUG: "1" });
-    const remote = found.mcpServers!.remote as { url: string; headers?: Record<string, string> };
-    assert.equal(remote.url, "https://mcp.example.com");
-    assert.deepEqual(remote.headers, { Authorization: "Bearer x" });
+    const out = await discoverPluginMcpServers(dir);
+    assert.ok(out);
+    assert.deepEqual(Object.keys(out!).sort(), ["greptile", "linear", "youtrack"]);
+    const yt = out!.youtrack as { command: string; args: string[] };
+    assert.equal(yt.command, "node");
+    assert.deepEqual(yt.args, ["${CLAUDE_PLUGIN_ROOT}/scripts/proxy.cjs"]);
+    const greptile = out!.greptile as { url: string; headers: Record<string, string> };
+    assert.equal(greptile.headers.Authorization, "Bearer ${GREPTILE_API_KEY}");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("discoverPlugins propagates mcpServers from marketplace entries", async () => {
-  const dir = mkdtempSync(path.join(tmpdir(), "plug-"));
+test("discoverPluginMcpServers reads .mcp.json with the bare-map shape", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "plug-mcp-"));
   try {
     mk(
       dir,
-      ".claude-plugin/marketplace.json",
+      ".mcp.json",
       JSON.stringify({
-        plugins: [
-          {
-            name: "alpha",
-            source: "./alpha",
-            mcpServers: { gh: { command: "npx", args: ["-y", "@x/gh"] } },
-          },
-          { name: "beta", source: "./beta" },
-        ],
+        playwright: { command: "npx", args: ["@playwright/mcp@latest"] },
       }),
     );
-    const found = await discoverPlugins(dir);
-    const alpha = found.find((p) => p.name === "alpha")!;
-    const beta = found.find((p) => p.name === "beta")!;
-    assert.ok(alpha.mcpServers);
-    assert.equal(Object.keys(alpha.mcpServers!).length, 1);
-    assert.equal(beta.mcpServers, undefined);
+    const out = await discoverPluginMcpServers(dir);
+    assert.ok(out);
+    const pw = out!.playwright as { command: string; args: string[] };
+    assert.equal(pw.command, "npx");
+    assert.deepEqual(pw.args, ["@playwright/mcp@latest"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("discoverPluginMcpServers returns undefined when .mcp.json is absent", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "plug-mcp-"));
+  try {
+    assert.equal(await discoverPluginMcpServers(dir), undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("discoverPluginMcpServers tolerates malformed JSON without throwing", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "plug-mcp-"));
+  try {
+    mk(dir, ".mcp.json", "{ this is not json }");
+    assert.equal(await discoverPluginMcpServers(dir), undefined);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
