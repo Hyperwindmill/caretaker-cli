@@ -5,9 +5,34 @@
 
 import { randomUUID } from 'node:crypto';
 import { encrypt, isEncrypted } from '../lib/encryption.js';
-import { loadMcpServers, loadPlugins, saveMcpServers } from '../store/json.js';
+import { loadAgents, loadMcpServers, loadPlugins, saveAgents, saveMcpServers } from '../store/json.js';
 import { closeClient } from './client.js';
 import type { McpServerConfig, McpServerSpec, McpTransport, PluginRecord } from '../types.js';
+
+/**
+ * Prune the given MCP server ids from every agent's `mcpServers` array.
+ * Returns the number of agents that were actually modified. Idempotent —
+ * calling with ids that aren't referenced anywhere is a cheap no-op load
+ * (no save). Used both by single-server delete and by cascade-delete on
+ * plugin source removal, so agents never carry dangling MCP references.
+ */
+export async function pruneAgentMcpRefs(removedIds: readonly string[]): Promise<number> {
+  if (removedIds.length === 0) return 0;
+  const removed = new Set(removedIds);
+  const agents = await loadAgents();
+  let touched = 0;
+  for (const agent of agents) {
+    const refs = agent.mcpServers;
+    if (!refs || refs.length === 0) continue;
+    const next = refs.filter((id) => !removed.has(id));
+    if (next.length !== refs.length) {
+      agent.mcpServers = next;
+      touched++;
+    }
+  }
+  if (touched > 0) await saveAgents(agents);
+  return touched;
+}
 
 export interface CreateMcpServerInput {
   name: string;
@@ -99,6 +124,9 @@ export async function deleteMcpServer(id: string): Promise<boolean> {
   // Drop any pooled connection for this server so subsequent runs don't keep
   // talking to a config that no longer exists.
   await closeClient(id);
+  // Strip the id from any agent that referenced it — otherwise the mcp
+  // adapter keeps logging "skipping server <id>: not found" forever.
+  await pruneAgentMcpRefs([id]);
   return true;
 }
 
@@ -273,4 +301,6 @@ export async function syncManagedMcpServers(): Promise<void> {
   for (const id of droppedIds) {
     await closeClient(id);
   }
+  // Same agent-ref cleanup as a direct deleteMcpServer call.
+  await pruneAgentMcpRefs(droppedIds);
 }
