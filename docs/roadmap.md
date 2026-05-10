@@ -61,6 +61,35 @@ Open design questions:
 
 ---
 
+## Sandbox / plugin-cache access
+
+The fs tools (`read_file`, `glob`, `grep`, `bash`) reject paths outside
+`ctx.workingDir`. Legitimate use case that hits this wall: an agent wants
+to inspect plugin assets it knows about — the body of a skill it's about
+to follow, a script referenced by an MCP server's `args`, the template
+of a command it's about to expand — but those files live under
+`~/.caretaker/plugin-cache/<source-uuid>/<plugin-relPath>/...` (or under
+the user's `path` source dir), outside the working directory.
+
+Three candidate solutions, to weigh when we tackle this:
+
+- [ ] **Extra sandbox roots** — `ToolContext.extraReadRoots: string[]`
+  populated by the loop with the absolute paths of every plugin root
+  active for this agent. `assertWithinRoot` accepts a path that's inside
+  any of the configured roots, not just `workingDir`. Read-only by
+  default; writes still gated to `workingDir`.
+- [ ] **Dedicated `read_plugin_file({plugin, relPath})` builtin** — same
+  kind of resolver as the MCP / skills loaders, scopes by `agent.plugins`,
+  bypasses the path sandbox via an explicit absolute-root resolution.
+  More restrictive surface but redundant with `read_file` for the user.
+- [ ] **Auto-expand `read_skill` to also expose dir-level reads** — fits
+  the "follow what list_skills tells you" pattern but doesn't help with
+  MCP scripts or command templates.
+
+Inclination is option 1 — generalizes naturally, keeps the existing tool
+surface, requires only a small change in `sandbox.ts`. Decide when the
+need is hot.
+
 ## Manifest enrichment (lower priority, eventually)
 
 - [x] ~~Per-skill granularity~~ — shipped (commit `next`). cc-plugin packs now expose each `skills/<name>/SKILL.md` individually; `list_skills` returns one entry per skill, `read_skill` reads exactly one file.
