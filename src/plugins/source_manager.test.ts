@@ -81,6 +81,41 @@ describe('source_manager', () => {
     }
   });
 
+it('refreshSource preserves managed AgentConfig.id (downstream of stable PluginRecord.id)', async () => {
+    const dir = makePathSource('with-agents', 'has a sub-agent');
+    mkdirSync(path.join(dir, 'agents'), { recursive: true });
+    writeFileSync(
+      path.join(dir, 'agents/helper.md'),
+      `---\nname: helper\ndescription: a helper\nmodel: m\n---\nyou are a helper.\n`,
+    );
+    try {
+      const created = await mgr.createSource({ kind: 'path', url: dir });
+      await mgr.refreshSource(created.id);
+      const managedFirst = (await store.loadAgents()).find(
+        (a) => a.pluginScopedName === 'helper',
+      );
+      assert.ok(managedFirst, 'first refresh should materialize a managed agent');
+
+      // Tweak the plugin.json so the refresh has something to rewrite.
+      writeFileSync(
+        path.join(dir, '.claude-plugin/plugin.json'),
+        JSON.stringify({ name: 'with-agents', description: 'tweaked' }),
+      );
+      await mgr.refreshSource(created.id);
+      const managedSecond = (await store.loadAgents()).find(
+        (a) => a.pluginScopedName === 'helper',
+      );
+      assert.ok(managedSecond);
+      assert.equal(
+        managedSecond!.id,
+        managedFirst!.id,
+        'managed agent id must survive refresh',
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('refreshSource against a path source populates plugins and metadata', async () => {
     const dir = makePathSource('alpha', 'Alpha plugin');
     try {
