@@ -22,7 +22,7 @@ export async function runCli(argv: string[]): Promise<void> {
 
   const program = new Command();
   program
-    .name('caretaker')
+    .name('caretaker-cli')
     .description('Caretaker — TUI agent harness with subcommands for scripting.');
 
   program

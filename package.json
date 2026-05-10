@@ -4,10 +4,14 @@
   "private": true,
   "type": "module",
   "description": "Caretaker — in-process agent harness, TUI, file-based state.",
+  "bin": {
+    "caretaker-cli": "dist/index.js"
+  },
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
+    "link:global": "npm run build && npm link",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test \"src/**/*.test.ts\"",
     "lint": "eslint .",

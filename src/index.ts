@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // Process entrypoint: boot side-effects (plugin refresh, model-limits
 // fetch, MCP shutdown hooks) + dispatch to the CLI layer in src/cli/.
 // Subcommand routing lives in src/cli/index.ts; this file stays thin.
