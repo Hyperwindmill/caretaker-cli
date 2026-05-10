@@ -90,6 +90,76 @@ Inclination is option 1 — generalizes naturally, keeps the existing tool
 surface, requires only a small change in `sandbox.ts`. Decide when the
 need is hot.
 
+## IDE extensions (exploration)
+
+Caretaker-cli is in-process by design (no DB, sessions/plugins/MCP under
+`~/.caretaker/`). The TUI is one consumer of the harness; an IDE
+extension (VS Code, JetBrains) is just another consumer. Worth pinning
+the contract before we have two of them disagreeing.
+
+### How does the extension run the CLI?
+
+- [ ] **Child process + stdio** — extension spawns `caretaker` with a
+  flag (e.g. `--rpc`) that swaps the Ink render for a JSON-RPC server
+  on stdin/stdout. Clean isolation, language-agnostic, mirrors how the
+  standalone TUI runs. Streams chunks as notifications. Each extension
+  window gets its own process; sessions interleave only if two windows
+  open the same chat.
+- [ ] **In-process library import** — extension `require()`s the
+  package and calls `run()` directly. Zero IPC, direct callbacks, but
+  the extension host adopts every MCP child process and plugin-cache
+  write. Couples the extension's lifecycle to caretaker's. Hard to
+  recommend unless we accept it as the explicit model.
+- [ ] **Long-lived per-user daemon** — caretaker as a background
+  process; extensions talk over a Unix socket / named pipe. State is
+  shared across consumers (vscode + desktop pointing at the same session
+  store / MCP pool). Costs lifecycle management (start/stop/upgrade,
+  PID/lock file, version mismatch handling). Defer until ≥2 consumers
+  actually want shared state.
+
+Inclination: option 1 first; daemon (3) once a second consumer materializes.
+
+### Wire format
+
+- [ ] **JSON-RPC 2.0 over stdio with Content-Length headers** (LSP-style).
+  Methods for commands (`chat.start`, `chat.abort`, `chat.confirm`,
+  `session.load`, `agents.list`, `providers.list`); notifications for
+  streaming (`chunk`, `thinking`, `toolUse`, `toolResult`, `usage`,
+  `done`). The confirm-gate fits naturally as a *server→client* request
+  the client must answer — same shape LSP uses for `window/showMessageRequest`.
+- [ ] **Raw NDJSON event stream** — every line a discrete JSON event.
+  Simpler to eyeball, no header parsing, but no request/response
+  correlation built in; we'd reinvent ids and tracking ourselves.
+- [ ] **MCP protocol, reversed** (extension as MCP client of caretaker).
+  Reject. MCP is tool-call oriented, not chat-session oriented; chats,
+  sessions, agent CRUD don't fit the model.
+
+Inclination: JSON-RPC 2.0. Same shape as LSP / MCP itself / Claude Code's
+extension protocol; reuses tooling and conventions.
+
+### Open questions
+
+- [ ] **Session-store contention** — JSONL is append-only, but two writers
+  on the same `<agentId>/<sessionId>.jsonl` will interleave records. With
+  child-process per window we need a per-session lockfile (or "second
+  open wins, first goes read-only"). The daemon model sidesteps this.
+- [ ] **Plugin / MCP / agent CRUD surface** — does the extension UI mirror
+  the TUI's create/edit/delete flows, or is everything read-only and the
+  user keeps managing config via the TUI? Easiest start: read-only
+  listing methods, mutations deferred.
+- [ ] **Tool calls as first-class events** — the extension will want to
+  render tool calls in its own panel (collapsed, with timing, with the
+  result inline). Wire format must keep `toolUse` / `toolResult` as
+  separate notifications, never folded into the chunk stream.
+- [ ] **Wire-protocol versioning** — handshake with a `protocol`
+  capability so the extension can detect a CLI it doesn't understand.
+  Bump independently from the CLI version; don't break installed
+  extensions on every patch.
+- [ ] **Working directory** — extension knows the open workspace; should
+  it override `agent.workingDir` on each `chat.start`, or expose it as a
+  separate `cwd` field? Probably the latter, with the agent's stored
+  `workingDir` as fallback.
+
 ## Manifest enrichment (lower priority, eventually)
 
 - [x] ~~Per-skill granularity~~ — shipped (commit `b5f1485`). cc-plugin packs now expose each `skills/<name>/SKILL.md` individually; `list_skills` returns one entry per skill, `read_skill` reads exactly one file.
