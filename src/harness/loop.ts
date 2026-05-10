@@ -29,6 +29,7 @@ import {
   toOpenAiTool,
 } from "./tools/index.js";
 import { withHarnessPrelude } from "./prelude.js";
+import { formatRuntimeInfoBlock } from "./runtime_info.js";
 import { loadContextFiles, formatContextBlock, resolveFileReferences } from "./context_files.js";
 
 type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
@@ -136,6 +137,17 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
     : effectiveSystemPrompt;
   effectiveSystemPrompt = withHarnessPrelude(withCtx);
 
+  // Per-run identity block — static facts (name, model, provider,
+  // working_dir) the agent should know without spending a tool call.
+  // Live token usage / context-window % stays in `get_agent_context`.
+  const runtimeBlock = formatRuntimeInfoBlock({
+    agentName: agent.name,
+    model: agent.model,
+    provider: agent.provider,
+    workingDir: toolCtx.workingDir,
+  });
+  effectiveSystemPrompt = `${effectiveSystemPrompt}\n\n${runtimeBlock}`.trim();
+
   // Plugin skills are no longer injected here. Agents with active plugins
   // get the `list_skills` / `read_skill` tools (added by resolveAgentTools
   // at the call site) and pull the SKILL.md content on demand.
@@ -150,6 +162,14 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
   let fullText = "";
   let totalToolCalls = 0;
   const cumulative: AssistantUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
+  // Shared object — the loop mutates `lastTurn` and `cumulative` in place
+  // each turn, and `get_agent_context` reads from this same reference at
+  // tool execution time so it always sees the latest values.
+  const liveUsage: { lastTurn?: AssistantUsage; cumulative: AssistantUsage } = {
+    lastTurn: undefined,
+    cumulative,
+  };
+  toolCtx.liveUsage = liveUsage;
 
   const safeEmit = async (msg: MessageRecord): Promise<void> => {
     try {
@@ -224,6 +244,7 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
         }
         case "usage":
           turnUsage = evt.usage;
+          liveUsage.lastTurn = evt.usage;
           cb.onUsage?.(evt.usage);
           cumulative.input += evt.usage.input;
           cumulative.output += evt.usage.output;

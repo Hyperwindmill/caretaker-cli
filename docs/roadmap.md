@@ -65,6 +65,7 @@ Open design questions:
 - [ ] Per-skill granularity (today: 1 plugin = 1 entry in `list_skills`/`read_skill`). For cc-plugin packs (e.g. superpowers) this matters — each `skills/<name>/SKILL.md` should expose individually.
 - [ ] Marketplace `source` as object (`git-subdir` with `path`/`ref`/`sha` for pinning). Today we accept only the string form.
 - [ ] Metadata extra: `category`, `tags`, `homepage`, `author` propagated to `PluginRecord` and shown in the TUI detail.
+- [ ] **`get_agent_context` context-window resolution** — sister repo had a `model_limits.ts` that fetched from models.dev (24h cache) and resolved `model_id → context_tokens`. Today the tool returns `contextWindow: null` and `percent: null`. Port the fetcher + cache when a user asks for usage % display.
 
 ---
 
@@ -79,4 +80,5 @@ Open design questions:
 - [x] `f1b482c` — managed agents from plugin manifests, mirroring the MCP pattern
 - [x] `2c47a72` / `43d9c2f` — roadmap doc + subagent inheritance broadened to all runtime fields
 - [x] `377b3bf` — subagent dispatch (`list_agents`, `invoke_agent`) with recursion + self-invoke guards, confirm-gate + abort passthrough
-- [x] `next` — slash commands: chat-input parser + `list_commands`/`invoke_command` builtins, `$N` + `$ARGUMENTS` expansion, per-agent gating via `agent.plugins`
+- [x] `42f8d46` — slash commands: chat-input parser + `list_commands`/`invoke_command` builtins, `$N` + `$ARGUMENTS` expansion, per-agent gating via `agent.plugins`
+- [x] `next` — `<runtime-info>` block in system prompt + `get_agent_context` builtin (live token usage; context-window % deferred to a models.dev fetcher)

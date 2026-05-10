@@ -20,6 +20,7 @@ import { loadAgents } from "../../store/json.js";
 const SKILL_TOOL_NAMES = ["list_skills", "read_skill"] as const;
 const COMMAND_TOOL_NAMES = ["list_commands", "invoke_command"] as const;
 const DISPATCH_TOOL_NAMES = ["list_agents", "invoke_agent"] as const;
+const ALWAYS_ON_TOOL_NAMES = ["get_agent_context"] as const;
 
 function autoInclude(tools: Tool[], registry: ToolRegistry, names: readonly string[]): void {
   const have = new Set(tools.map((t) => t.name));
@@ -32,6 +33,11 @@ function autoInclude(tools: Tool[], registry: ToolRegistry, names: readonly stri
 
 export async function resolveAgentTools(agent: AgentConfig, registry: ToolRegistry): Promise<Tool[]> {
   const tools = registry.filtered(agent.allowedTools);
+
+  // Self-introspection is always available — every agent can ask "how
+  // much context am I using" without the user having to remember to add
+  // get_agent_context to allowedTools.
+  autoInclude(tools, registry, ALWAYS_ON_TOOL_NAMES);
 
   if ((agent.plugins ?? []).length > 0) {
     autoInclude(tools, registry, SKILL_TOOL_NAMES);
