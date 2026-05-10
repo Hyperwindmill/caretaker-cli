@@ -1,29 +1,104 @@
 // AES-256-GCM symmetric encryption for sensitive values stored on disk
-// (today: git auth tokens in plugins.json). Mirrors the server implementation
-// at src/lib/encryption.ts so blobs are wire-compatible if you ever copy
-// state between the two.
+// (today: git auth tokens in plugins.json; soon: MCP HTTP auth headers).
+// Mirrors the server implementation at src/lib/encryption.ts so blobs are
+// wire-compatible if you ever copy state between the two.
 //
-// Key source: process.env.ENCRYPTION_KEY (64-char hex = 32 bytes). When the
-// env var is missing the implementation falls back to an all-zero key so
-// the rest of the system still works in plaintext-equivalent mode — useful
-// for local dev. A future commit will add auto-generation + on-disk storage
-// of the key under the user's data dir; until then plaintext fallback is
-// the contract.
+// Key resolution (first match wins):
+//   1. process.env.ENCRYPTION_KEY  — 64-char hex string (32 bytes).
+//      Useful in CI and for forcing a known key across hosts.
+//   2. <dataDir>/encryption.key    — 32 raw bytes, chmod 0600. Auto-generated
+//      atomically the first time a key is needed.
+//
+// dataDir() honors CARETAKER_HOME so tests can isolate the keystore.
 
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  randomBytes,
+} from "node:crypto";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  chmodSync,
+  renameSync,
+  unlinkSync,
+} from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
 const TAG_LENGTH = 16;
+const KEY_BYTES = 32;
+
+function dataDir(): string {
+  return process.env.CARETAKER_HOME ?? join(homedir(), ".caretaker");
+}
+
+/** Resolve the on-disk path of the encryption key. Exported for diagnostics
+ *  and tests; runtime code should not need it. */
+export function encryptionKeyPath(): string {
+  return join(dataDir(), "encryption.key");
+}
+
+function loadOrCreateOnDiskKey(): Buffer {
+  const dir = dataDir();
+  const path = encryptionKeyPath();
+
+  if (existsSync(path)) {
+    const buf = readFileSync(path);
+    if (buf.length !== KEY_BYTES) {
+      throw new Error(
+        `encryption.key at ${path} must be exactly ${KEY_BYTES} bytes (found ${buf.length})`,
+      );
+    }
+    return buf;
+  }
+
+  // First-boot generation: produce a fresh 32-byte key and persist it
+  // atomically under restrictive permissions. The data dir is created with
+  // 0700 (mirrors store/json.ts ensureDataDir) and the key file with 0600.
+  // Tmp + rename keeps a partial write from leaving an empty file in place.
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  try {
+    chmodSync(dir, 0o700);
+  } catch {
+    /* best-effort — directory already exists with looser perms on some setups */
+  }
+
+  const key = randomBytes(KEY_BYTES);
+  const tmp = `${path}.tmp.${process.pid}.${randomBytes(4).toString("hex")}`;
+  try {
+    writeFileSync(tmp, key, { mode: 0o600 });
+    try {
+      chmodSync(tmp, 0o600);
+    } catch {
+      /* same caveat as the dir chmod */
+    }
+    renameSync(tmp, path);
+  } catch (err) {
+    try {
+      unlinkSync(tmp);
+    } catch {
+      /* nothing to clean up */
+    }
+    throw err;
+  }
+  return key;
+}
 
 function getKey(): Buffer {
   const raw = process.env.ENCRYPTION_KEY;
-  if (!raw) return Buffer.alloc(32, 0);
-  const buf = Buffer.from(raw, "hex");
-  if (buf.length !== 32) {
-    throw new Error("ENCRYPTION_KEY must be a 64-char hex string (32 bytes)");
+  if (raw) {
+    const buf = Buffer.from(raw, "hex");
+    if (buf.length !== KEY_BYTES) {
+      throw new Error("ENCRYPTION_KEY must be a 64-char hex string (32 bytes)");
+    }
+    return buf;
   }
-  return buf;
+  return loadOrCreateOnDiskKey();
 }
 
 /** Encrypt plaintext, return a hex-encoded blob `iv:tag:ciphertext`. */
