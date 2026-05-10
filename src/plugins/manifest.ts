@@ -17,9 +17,10 @@ import * as path from "node:path";
 import fg from "fast-glob";
 import { parse as parseYaml } from "yaml";
 import { NoPluginsFoundError, type DiscoveredPlugin } from "./types.js";
-import type { McpServerSpec } from "../types.js";
+import type { AgentSpec, McpServerSpec } from "../types.js";
 
 const MCP_FILE_REL = ".mcp.json";
+const AGENTS_DIR_REL = "agents";
 
 const MARKETPLACE_REL = ".claude-plugin/marketplace.json";
 const PLUGIN_REL = ".claude-plugin/plugin.json";
@@ -195,4 +196,80 @@ export async function discoverPlugins(root: string): Promise<DiscoveredPlugin[]>
   const fromGlob = await readSkillGlob(root);
   if (fromGlob) return fromGlob;
   throw new NoPluginsFoundError();
+}
+
+/**
+ * Read every `<pluginRoot>/agents/*.md` and parse it as a sub-agent spec:
+ * YAML frontmatter contributes `name`, `description`, `model`; the body
+ * (everything after the closing `---`) becomes the system prompt.
+ *
+ * The frontmatter `tools:` field is intentionally ignored — its vocabulary
+ * is Anthropic's tool surface (Read, Bash, Glob, …) which doesn't map 1:1
+ * to ours, and a wrong mapping would silently grant or deny tools. The
+ * user wires allowedTools via the agent form after the row is materialized.
+ *
+ * The map is keyed by the filename basename (without `.md`), which becomes
+ * the plugin-scoped name during sync. Files without parseable frontmatter
+ * are skipped silently. Returns undefined when the directory is missing or
+ * empty so the discovered plugin row stays clean.
+ */
+export async function discoverPluginAgents(
+  pluginRoot: string,
+): Promise<Record<string, AgentSpec> | undefined> {
+  const agentsDir = path.join(pluginRoot, AGENTS_DIR_REL);
+  if (!(await fileExists(agentsDir))) return undefined;
+
+  let matches: string[];
+  try {
+    matches = await fg("*.md", {
+      cwd: agentsDir,
+      onlyFiles: true,
+      dot: false,
+    });
+  } catch {
+    return undefined;
+  }
+
+  const out: Record<string, AgentSpec> = {};
+  for (const rel of matches) {
+    const abs = path.join(agentsDir, rel);
+    let text: string;
+    try {
+      text = await readFile(abs, "utf-8");
+    } catch {
+      continue;
+    }
+
+    const fmMatch = /^---\n([\s\S]*?)\n---\s*\n?/m.exec(text);
+    let frontmatter: Record<string, unknown> = {};
+    let body = text;
+    if (fmMatch) {
+      try {
+        frontmatter = (parseYaml(fmMatch[1]) ?? {}) as Record<string, unknown>;
+      } catch {
+        // Malformed YAML — drop the frontmatter, keep the body so the
+        // user at least gets a usable system prompt.
+        frontmatter = {};
+      }
+      body = text.slice(fmMatch[0].length);
+    }
+
+    const scopedName = path.basename(rel, ".md");
+    const fmName =
+      typeof frontmatter.name === "string" && frontmatter.name.trim() !== ""
+        ? frontmatter.name.trim()
+        : scopedName;
+    const fmDescription =
+      typeof frontmatter.description === "string" ? frontmatter.description : undefined;
+    const fmModel = typeof frontmatter.model === "string" ? frontmatter.model : undefined;
+
+    out[scopedName] = {
+      name: fmName,
+      description: fmDescription,
+      model: fmModel,
+      systemPrompt: body.trim(),
+    };
+  }
+
+  return Object.keys(out).length > 0 ? out : undefined;
 }

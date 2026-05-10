@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
-import { discoverPlugins, discoverPluginMcpServers } from "./manifest.js";
+import { discoverPlugins, discoverPluginMcpServers, discoverPluginAgents } from "./manifest.js";
 import { NoPluginsFoundError } from "./types.js";
 
 function mk(root: string, rel: string, content: string) {
@@ -115,6 +115,61 @@ test("discoverPluginMcpServers returns undefined when .mcp.json is absent", asyn
   const dir = mkdtempSync(path.join(tmpdir(), "plug-mcp-"));
   try {
     assert.equal(await discoverPluginMcpServers(dir), undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("discoverPluginAgents reads agents/*.md frontmatter + body", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "plug-agents-"));
+  try {
+    mk(
+      dir,
+      "agents/security-auditor.md",
+      [
+        "---",
+        "name: security-auditor",
+        "description: Adversarial security reviewer — OWASP",
+        "tools: Read, Glob, Grep, Bash",
+        "model: sonnet",
+        "color: yellow",
+        "---",
+        "",
+        "You are an application security engineer.",
+        "",
+        "Coverage checklist...",
+      ].join("\n"),
+    );
+    mk(
+      dir,
+      "agents/no-frontmatter.md",
+      "Just a body with no frontmatter — gets the filename as scopedName.",
+    );
+
+    const out = await discoverPluginAgents(dir);
+    assert.ok(out);
+    assert.deepEqual(Object.keys(out!).sort(), ["no-frontmatter", "security-auditor"]);
+
+    const a = out!["security-auditor"];
+    assert.equal(a.name, "security-auditor");
+    assert.equal(a.description, "Adversarial security reviewer — OWASP");
+    assert.equal(a.model, "sonnet");
+    assert.match(a.systemPrompt, /^You are an application security engineer\./);
+    // The frontmatter `tools:` field is intentionally NOT exposed on AgentSpec.
+    assert.equal((a as unknown as { tools?: unknown }).tools, undefined);
+
+    const b = out!["no-frontmatter"];
+    assert.equal(b.name, "no-frontmatter");
+    assert.match(b.systemPrompt, /^Just a body/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("discoverPluginAgents returns undefined when agents/ is absent", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "plug-agents-"));
+  try {
+    assert.equal(await discoverPluginAgents(dir), undefined);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -4,7 +4,7 @@
 // discovery output (without ids — those are minted on persist), and the
 // discovery error.
 
-import type { McpServerSpec, PluginManifestKind } from "../types.js";
+import type { AgentSpec, McpServerSpec, PluginManifestKind } from "../types.js";
 
 export interface FetchResult {
   /** Filesystem root containing the source contents (cache dir for git, the
@@ -29,6 +29,10 @@ export interface DiscoveredPlugin {
    *  manager mints one McpServerConfig row per entry tagged with this
    *  plugin's id, so deleting the plugin cascades to its MCP rows. */
   mcpServers?: Record<string, McpServerSpec>;
+  /** Sub-agents declared under `<plugin-root>/agents/*.md`, keyed by the
+   *  filename basename. One AgentConfig row per entry, tagged with this
+   *  plugin's id. */
+  agents?: Record<string, AgentSpec>;
 }
 
 export class NoPluginsFoundError extends Error {

@@ -16,7 +16,8 @@ import { randomUUID } from "node:crypto";
 import { loadPlugins, savePlugins } from "../store/json.js";
 import { encrypt } from "../lib/encryption.js";
 import { syncManagedMcpServers } from "../mcp/server_manager.js";
-import { discoverPlugins, discoverPluginMcpServers } from "./manifest.js";
+import { syncManagedAgents } from "../agents/sync.js";
+import { discoverPlugins, discoverPluginMcpServers, discoverPluginAgents } from "./manifest.js";
 import { fetchGit } from "./fetchers/git.js";
 import { fetchPath, validatePathInput } from "./fetchers/path.js";
 import type { DiscoveredPlugin } from "./types.js";
@@ -81,8 +82,9 @@ export async function deleteSource(id: string): Promise<boolean> {
   const [src] = file.sources.splice(idx, 1);
   file.plugins = file.plugins.filter((p) => p.sourceId !== id);
   await savePlugins(file);
-  // Cascade: managed MCP rows whose owning plugin disappeared are dropped.
+  // Cascade: managed MCP rows + agents whose owning plugin disappeared.
   await syncManagedMcpServers();
+  await syncManagedAgents();
   if (src.kind === "git") {
     await rm(cacheDirForSource(id), { recursive: true, force: true }).catch(() => {});
   }
@@ -150,6 +152,8 @@ async function runRefresh(id: string): Promise<RefreshOutcome> {
       const pluginRoot = path.join(fetched.root, d.relPath);
       const mcpServers = await discoverPluginMcpServers(pluginRoot);
       if (mcpServers) d.mcpServers = mcpServers;
+      const agents = await discoverPluginAgents(pluginRoot);
+      if (agents) d.agents = agents;
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -186,6 +190,7 @@ async function runRefresh(id: string): Promise<RefreshOutcome> {
       relPath: d.relPath,
       rawManifest: d.rawManifest,
       ...(d.mcpServers ? { mcpServers: d.mcpServers } : {}),
+      ...(d.agents ? { agents: d.agents } : {}),
     });
   }
   ourSrc.lastFetchedAt = new Date().toISOString();
@@ -200,6 +205,11 @@ async function runRefresh(id: string): Promise<RefreshOutcome> {
     await syncManagedMcpServers();
   } catch (err) {
     console.error(`[source manager] mcp sync after refresh failed:`, err);
+  }
+  try {
+    await syncManagedAgents();
+  } catch (err) {
+    console.error(`[source manager] agents sync after refresh failed:`, err);
   }
 
   return { pluginsFound: discovered.length, sha, error: null };

@@ -51,6 +51,10 @@ export type PluginRecord = {
   /** MCP server specs declared by the plugin manifest. Each entry produces
    *  one McpServerConfig row tagged with this plugin's id at sync time. */
   mcpServers?: Record<string, McpServerSpec>;
+  /** Sub-agents declared under `agents/*.md`, keyed by filename basename
+   *  (without the .md extension). Each entry produces one AgentConfig row
+   *  tagged with this plugin's id at sync time. */
+  agents?: Record<string, AgentSpec>;
 };
 
 /** On-disk shape of plugins.json. */
@@ -68,6 +72,24 @@ export type McpTransport = "stdio" | "http";
 export type McpServerSpec =
   | { command: string; args?: string[]; env?: Record<string, string> }
   | { url: string; headers?: Record<string, string> };
+
+/** Plugin-manifest declaration of a sub-agent (`<plugin-root>/agents/<name>.md`,
+ *  Markdown with YAML frontmatter). The body becomes the system prompt; the
+ *  frontmatter contributes name/description/model. We deliberately ignore
+ *  the frontmatter `tools:` field at sync time — its vocabulary is
+ *  Anthropic's (Read, Bash, …) and does not match ours. The user wires
+ *  allowedTools via the agent form after the row is materialized. */
+export type AgentSpec = {
+  /** Frontmatter `name`, falls back to the filename's basename. */
+  name: string;
+  /** Frontmatter `description`, may be undefined. */
+  description?: string;
+  /** Frontmatter `model`, used as the AgentConfig.model literal. May be
+   *  undefined — the user fills it in via the form. */
+  model?: string;
+  /** Markdown body below the frontmatter, used as the AgentConfig.systemPrompt. */
+  systemPrompt: string;
+};
 
 /** A configured MCP server the agent can connect to. Tools discovered from
  *  the server are exposed in the registry as `mcp__<id>__<toolName>`. */
@@ -130,6 +152,17 @@ export type AgentConfig = {
    *  tools/list output is registered as `mcp__<id>__<toolName>` callable
    *  tools for this agent. Disabled servers are silently skipped. */
   mcpServers?: string[];
+  // ─── plugin-managed origin ──────────────────────────────────────────
+  /** PluginRecord.id this agent was derived from. Set on rows synthesized
+   *  from a plugin manifest's `agents/*.md` files. Re-sync rewrites
+   *  `name` and `systemPrompt` (manifest-owned) but preserves every
+   *  other user-controlled field. The row is removed when the source
+   *  plugin disappears. */
+  pluginId?: string;
+  /** Filename-derived scoped name (e.g. `security-auditor` for
+   *  `agents/security-auditor.md`). The pair (pluginId, pluginScopedName)
+   *  is the dedupe key during sync. */
+  pluginScopedName?: string;
   maxTurns: number;
   /** Absolute directory passed to the harness as ToolContext.workingDir.
    *  Empty/undefined → process.cwd() (legacy behavior). Validated as
