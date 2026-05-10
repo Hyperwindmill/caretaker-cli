@@ -17,7 +17,12 @@ import { loadPlugins, savePlugins } from "../store/json.js";
 import { encrypt } from "../lib/encryption.js";
 import { syncManagedMcpServers } from "../mcp/server_manager.js";
 import { syncManagedAgents } from "../agents/sync.js";
-import { discoverPlugins, discoverPluginMcpServers, discoverPluginAgents } from "./manifest.js";
+import {
+  discoverPlugins,
+  discoverPluginMcpServers,
+  discoverPluginAgents,
+  discoverPluginCommands,
+} from "./manifest.js";
 import { fetchGit } from "./fetchers/git.js";
 import { fetchPath, validatePathInput } from "./fetchers/path.js";
 import type { DiscoveredPlugin } from "./types.js";
@@ -154,6 +159,8 @@ async function runRefresh(id: string): Promise<RefreshOutcome> {
       if (mcpServers) d.mcpServers = mcpServers;
       const agents = await discoverPluginAgents(pluginRoot);
       if (agents) d.agents = agents;
+      const commands = await discoverPluginCommands(pluginRoot);
+      if (commands) d.commands = commands;
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -191,6 +198,7 @@ async function runRefresh(id: string): Promise<RefreshOutcome> {
       rawManifest: d.rawManifest,
       ...(d.mcpServers ? { mcpServers: d.mcpServers } : {}),
       ...(d.agents ? { agents: d.agents } : {}),
+      ...(d.commands ? { commands: d.commands } : {}),
     });
   }
   ourSrc.lastFetchedAt = new Date().toISOString();

@@ -55,6 +55,11 @@ export type PluginRecord = {
    *  (without the .md extension). Each entry produces one AgentConfig row
    *  tagged with this plugin's id at sync time. */
   agents?: Record<string, AgentSpec>;
+  /** Slash commands declared under `commands/*.md`, keyed by filename
+   *  basename. Available to agents whose `plugins` list includes this
+   *  plugin's name. Resolved at chat time, never synced into a separate
+   *  store — the plugin record is the source of truth. */
+  commands?: Record<string, CommandSpec>;
 };
 
 /** On-disk shape of plugins.json. */
@@ -72,6 +77,20 @@ export type McpTransport = "stdio" | "http";
 export type McpServerSpec =
   | { command: string; args?: string[]; env?: Record<string, string> }
   | { url: string; headers?: Record<string, string> };
+
+/** Plugin-manifest declaration of a slash command (`<plugin-root>/commands/<name>.md`,
+ *  Markdown with YAML frontmatter). The body is a prompt template; `$1`,
+ *  `$2`, …, `$ARGUMENTS` are substituted from the user's invocation at chat
+ *  time. The expanded text becomes the user message sent to the model. */
+export type CommandSpec = {
+  /** Frontmatter `description`, optional. Surfaced in `/help`-style listings. */
+  description?: string;
+  /** Frontmatter `argument-hint`, optional. A free-text placeholder shown to
+   *  the user (e.g. `<system-dir> <target-vision>`). Not validated. */
+  argumentHint?: string;
+  /** Markdown body with `$N` / `$ARGUMENTS` placeholders. */
+  body: string;
+};
 
 /** Plugin-manifest declaration of a sub-agent (`<plugin-root>/agents/<name>.md`,
  *  Markdown with YAML frontmatter). The body becomes the system prompt; the

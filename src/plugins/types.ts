@@ -4,7 +4,12 @@
 // discovery output (without ids — those are minted on persist), and the
 // discovery error.
 
-import type { AgentSpec, McpServerSpec, PluginManifestKind } from "../types.js";
+import type {
+  AgentSpec,
+  CommandSpec,
+  McpServerSpec,
+  PluginManifestKind,
+} from "../types.js";
 
 export interface FetchResult {
   /** Filesystem root containing the source contents (cache dir for git, the
@@ -33,6 +38,10 @@ export interface DiscoveredPlugin {
    *  filename basename. One AgentConfig row per entry, tagged with this
    *  plugin's id. */
   agents?: Record<string, AgentSpec>;
+  /** Slash commands declared under `<plugin-root>/commands/*.md`, keyed by
+   *  the filename basename. Used at chat time to expand `/cmd args` into
+   *  the body's `$N`/`$ARGUMENTS` template. */
+  commands?: Record<string, CommandSpec>;
 }
 
 export class NoPluginsFoundError extends Error {

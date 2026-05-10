@@ -3,7 +3,12 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
-import { discoverPlugins, discoverPluginMcpServers, discoverPluginAgents } from "./manifest.js";
+import {
+  discoverPlugins,
+  discoverPluginMcpServers,
+  discoverPluginAgents,
+  discoverPluginCommands,
+} from "./manifest.js";
 import { NoPluginsFoundError } from "./types.js";
 
 function mk(root: string, rel: string, content: string) {
@@ -161,6 +166,52 @@ test("discoverPluginAgents reads agents/*.md frontmatter + body", async () => {
     const b = out!["no-frontmatter"];
     assert.equal(b.name, "no-frontmatter");
     assert.match(b.systemPrompt, /^Just a body/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("discoverPluginCommands reads commands/*.md frontmatter + body", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "plug-cmd-"));
+  try {
+    mk(
+      dir,
+      "commands/modernize-assess.md",
+      [
+        "---",
+        "description: Full discovery & portfolio analysis of a legacy system",
+        "argument-hint: <system-dir> | --portfolio <parent-dir>",
+        "---",
+        "",
+        "**Mode select.** If `$ARGUMENTS` starts with `--portfolio`...",
+      ].join("\n"),
+    );
+    mk(dir, "commands/empty-body.md", "---\ndescription: nothing\n---\n\n");
+    mk(dir, "commands/no-frontmatter.md", "Just the body, will become the template.");
+
+    const out = await discoverPluginCommands(dir);
+    assert.ok(out);
+    assert.deepEqual(Object.keys(out!).sort(), ["modernize-assess", "no-frontmatter"]);
+    const m = out!["modernize-assess"];
+    assert.equal(m.description, "Full discovery & portfolio analysis of a legacy system");
+    assert.equal(m.argumentHint, "<system-dir> | --portfolio <parent-dir>");
+    assert.match(m.body, /^\*\*Mode select\.\*\*/);
+    // Empty-body file is dropped silently.
+    assert.equal((out as Record<string, unknown>)["empty-body"], undefined);
+    // No-frontmatter file gets undefined description but a body.
+    const n = out!["no-frontmatter"];
+    assert.equal(n.description, undefined);
+    assert.equal(n.argumentHint, undefined);
+    assert.match(n.body, /^Just the body/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("discoverPluginCommands returns undefined when commands/ is absent", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "plug-cmd-"));
+  try {
+    assert.equal(await discoverPluginCommands(dir), undefined);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

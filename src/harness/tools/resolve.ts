@@ -18,6 +18,7 @@ import { mcpToolsForServers } from "../../mcp/adapter.js";
 import { loadAgents } from "../../store/json.js";
 
 const SKILL_TOOL_NAMES = ["list_skills", "read_skill"] as const;
+const COMMAND_TOOL_NAMES = ["list_commands", "invoke_command"] as const;
 const DISPATCH_TOOL_NAMES = ["list_agents", "invoke_agent"] as const;
 
 function autoInclude(tools: Tool[], registry: ToolRegistry, names: readonly string[]): void {
@@ -34,6 +35,7 @@ export async function resolveAgentTools(agent: AgentConfig, registry: ToolRegist
 
   if ((agent.plugins ?? []).length > 0) {
     autoInclude(tools, registry, SKILL_TOOL_NAMES);
+    autoInclude(tools, registry, COMMAND_TOOL_NAMES);
   }
 
   // Sub-agent dispatch tools: auto-included when there is at least one
