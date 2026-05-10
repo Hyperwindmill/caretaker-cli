@@ -7,6 +7,7 @@ import { tools as toolRegistry } from './harness/tools/instance.js';
 import { resolveAgentTools } from './harness/tools/index.js';
 import { refreshSourcesOnStart } from './plugins/refresh_on_start.js';
 import { closeAll as closeAllMcp } from './mcp/client.js';
+import { initModelLimits } from './harness/model_limits.js';
 
 const promptArg = process.argv.slice(2).join(' ').trim();
 
@@ -16,6 +17,10 @@ const promptArg = process.argv.slice(2).join(' ').trim();
 void refreshSourcesOnStart().catch((err) => {
   console.error('[boot] refresh-on-start failed:', err);
 });
+
+// Populate the model-context registry from models.dev in the background.
+// Degrades gracefully (percent stays null) until the first fetch lands.
+initModelLimits();
 
 // Tear pooled MCP connections down on shutdown so child stdio processes are
 // not orphaned and HTTP sessions get a chance to send DELETE. Best-effort:
