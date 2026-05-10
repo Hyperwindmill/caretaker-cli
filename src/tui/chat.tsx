@@ -14,6 +14,7 @@ import {
   userMessage,
 } from '../session/store.js';
 import { generateTitle } from '../harness/title.js';
+import { computeContextUsage } from '../session/context_usage.js';
 import type { AssistantPart, MessageRecord, SessionMetaRecord } from '../session/types.js';
 import type { AgentConfig, ProviderConfig } from '../types.js';
 
@@ -321,6 +322,39 @@ export default function ChatScreen({
           <Text dimColor>(running… esc to abort)</Text>
         </Box>
       )}
+
+      <ContextBar messages={messages} model={agent.model} />
+    </Box>
+  );
+}
+
+function formatTokens(n: number): string {
+  if (n < 1000) return String(n);
+  const k = n / 1000;
+  return k < 10 ? `${k.toFixed(1)}k` : `${Math.round(k)}k`;
+}
+
+function ContextBar({ messages, model }: { messages: MessageRecord[]; model: string }) {
+  const usage = computeContextUsage(messages, model);
+  if (!usage) return null;
+  const { lastTokens, contextWindow, percent } = usage;
+  if (contextWindow === null || percent === null) {
+    return (
+      <Box marginTop={1}>
+        <Text dimColor>{`ctx ${formatTokens(lastTokens)}`}</Text>
+      </Box>
+    );
+  }
+  const width = 12;
+  const filled = Math.min(width, Math.max(0, Math.round((percent / 100) * width)));
+  const bar = `${'▓'.repeat(filled)}${'░'.repeat(width - filled)}`;
+  const color = percent >= 85 ? 'red' : percent >= 60 ? 'yellow' : undefined;
+  const dim = color === undefined;
+  return (
+    <Box marginTop={1}>
+      <Text color={color} dimColor={dim}>
+        {`ctx ${bar} ${percent}%  ·  ${formatTokens(lastTokens)} / ${formatTokens(contextWindow)}`}
+      </Text>
     </Box>
   );
 }
