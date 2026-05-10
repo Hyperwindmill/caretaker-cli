@@ -13,6 +13,22 @@ import type { McpServerConfig } from '../types.js';
 
 let testHome: string;
 
+// File-level isolation: both describe blocks (pool + adapter) share the same
+// throwaway CARETAKER_HOME. Without this, the env unset between blocks would
+// make store.mcpServersPath() resolve to the developer's real ~/.caretaker
+// and the adapter tests would clobber the live mcp.json on every `npm test`.
+before(() => {
+  testHome = mkdtempSync(path.join(tmpdir(), 'caretaker-mcp-test-'));
+  process.env.CARETAKER_HOME = testHome;
+  process.env.ENCRYPTION_KEY = randomBytes(32).toString('hex');
+});
+
+after(async () => {
+  await rm(testHome, { recursive: true, force: true });
+  delete process.env.CARETAKER_HOME;
+  delete process.env.ENCRYPTION_KEY;
+});
+
 async function makeLinkedClientPair(register: (s: McpServer) => void): Promise<{
   client: Client;
   close: () => Promise<void>;
@@ -42,17 +58,8 @@ describe('mcp client pool', () => {
   let store: typeof import('../store/json.js');
 
   before(async () => {
-    testHome = mkdtempSync(path.join(tmpdir(), 'caretaker-pool-'));
-    process.env.CARETAKER_HOME = testHome;
-    process.env.ENCRYPTION_KEY = randomBytes(32).toString('hex');
     pool = await import('./client.js');
     store = await import('../store/json.js');
-  });
-
-  after(async () => {
-    await rm(testHome, { recursive: true, force: true });
-    delete process.env.CARETAKER_HOME;
-    delete process.env.ENCRYPTION_KEY;
   });
 
   beforeEach(async () => {
