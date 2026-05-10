@@ -17,10 +17,11 @@ import * as path from "node:path";
 import fg from "fast-glob";
 import { parse as parseYaml } from "yaml";
 import { NoPluginsFoundError, type DiscoveredPlugin } from "./types.js";
-import type { AgentSpec, McpServerSpec } from "../types.js";
+import type { AgentSpec, CommandSpec, McpServerSpec } from "../types.js";
 
 const MCP_FILE_REL = ".mcp.json";
 const AGENTS_DIR_REL = "agents";
+const COMMANDS_DIR_REL = "commands";
 
 const MARKETPLACE_REL = ".claude-plugin/marketplace.json";
 const PLUGIN_REL = ".claude-plugin/plugin.json";
@@ -268,6 +269,71 @@ export async function discoverPluginAgents(
       description: fmDescription,
       model: fmModel,
       systemPrompt: body.trim(),
+    };
+  }
+
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * Read every `<pluginRoot>/commands/*.md` and return slash-command specs.
+ * Frontmatter contributes `description` and `argument-hint` (kebab-case
+ * matches the official Claude Code convention); the body below the
+ * frontmatter is the prompt template with `$1`/`$2`/`$ARGUMENTS`
+ * placeholders. Files without a body are skipped.
+ *
+ * Map keys are filename basenames so `commands/foo.md` becomes `/foo` at
+ * chat time.
+ */
+export async function discoverPluginCommands(
+  pluginRoot: string,
+): Promise<Record<string, CommandSpec> | undefined> {
+  const dir = path.join(pluginRoot, COMMANDS_DIR_REL);
+  if (!(await fileExists(dir))) return undefined;
+
+  let matches: string[];
+  try {
+    matches = await fg("*.md", { cwd: dir, onlyFiles: true, dot: false });
+  } catch {
+    return undefined;
+  }
+
+  const out: Record<string, CommandSpec> = {};
+  for (const rel of matches) {
+    const abs = path.join(dir, rel);
+    let text: string;
+    try {
+      text = await readFile(abs, "utf-8");
+    } catch {
+      continue;
+    }
+
+    const fmMatch = /^---\n([\s\S]*?)\n---\s*\n?/m.exec(text);
+    let frontmatter: Record<string, unknown> = {};
+    let body = text;
+    if (fmMatch) {
+      try {
+        frontmatter = (parseYaml(fmMatch[1]) ?? {}) as Record<string, unknown>;
+      } catch {
+        frontmatter = {};
+      }
+      body = text.slice(fmMatch[0].length);
+    }
+
+    const trimmedBody = body.trim();
+    if (!trimmedBody) continue;
+
+    const description =
+      typeof frontmatter.description === "string" ? frontmatter.description : undefined;
+    // Claude Code uses kebab-case `argument-hint`; YAML parses it as a
+    // dashed key string, NOT a JS property. Read it via bracket access.
+    const argRaw = (frontmatter as { "argument-hint"?: unknown })["argument-hint"];
+    const argumentHint = typeof argRaw === "string" ? argRaw : undefined;
+
+    out[path.basename(rel, ".md")] = {
+      description,
+      argumentHint,
+      body: trimmedBody,
     };
   }
 

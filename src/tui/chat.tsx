@@ -6,6 +6,11 @@ import { run, type ConfirmDecision } from "../harness/loop.js";
 import { tools as toolRegistry } from "../harness/tools/instance.js";
 import { resolveAgentTools } from "../harness/tools/index.js";
 import {
+  expandTemplate,
+  parseSlashInvocation,
+  resolveCommand,
+} from "../commands/loader.js";
+import {
   appendMessage,
   createSession,
   readSession,
@@ -98,7 +103,25 @@ export default function ChatScreen({
     setMessages((prev) => [...prev, msg]);
   };
 
-  const startTurn = async (text: string) => {
+  const startTurn = async (input: string) => {
+    // Slash-command resolution runs before any persistence so a typo
+    // doesn't spawn an empty session or pollute history. The user types
+    // `/foo args`; we look it up in the agent's active plugins, expand
+    // `$N`/`$ARGUMENTS`, and use the result as the user message. Unknown
+    // commands surface as an inline error and the chat stays in input
+    // mode.
+    let text = input;
+    const slash = parseSlashInvocation(input);
+    if (slash) {
+      const cmd = await resolveCommand(slash.name, agent.plugins ?? []);
+      if (!cmd) {
+        const active = (agent.plugins ?? []).join(", ") || "(none)";
+        setError(`Unknown command: /${slash.name}  ·  active plugins: ${active}`);
+        return;
+      }
+      text = expandTemplate(cmd.spec.body, slash.args, slash.raw);
+    }
+
     setMode("running");
     setError(null);
     setLiveText("");

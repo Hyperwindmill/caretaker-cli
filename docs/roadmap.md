@@ -33,19 +33,17 @@ runs with the parent's surface.
 
 ---
 
-## Next: commands
+## ~~Next~~ Done: commands (commit `next`)
 
-Slash commands as defined by Claude Code: `<plugin-root>/commands/*.md` with
-frontmatter `description` + `argument-hint`, body with `$1`/`$2`/`$ARGUMENTS`
-interpolation. Discovery + persistence mirrors agents/MCP.
-
-Open design questions to resolve in brainstorm:
-
-- [ ] **Trigger surface in our TUI** — slash-command parser in chat input (`/foo bar`) vs top-level "Commands" menu vs both. The first is more Claude-Code-ish; the second is more TUI-ish.
-- [ ] **Argument prompting** — when `argument-hint` is set, do we collect args via a small form before sending the expanded prompt, or do we require the user to pass everything inline?
-- [ ] **Per-agent vs global commands** — should a command be available for every agent, or only when the originating plugin is active for the current agent?
-
-Implementation: discovery in `manifest.ts`, persisted on `PluginRecord.commands`, sync into a new `commands.json`? Or just scoped to plugin (no separate store) and resolved on the fly when the user types `/`. Decide in brainstorm.
+Decisions taken:
+- [x] Trigger surface = slash parser in chat input (`/foo args`). No top-level menu.
+- [x] Arguments = inline. `argument-hint` is just a free-text placeholder, no form prompting.
+- [x] Per-agent gating = via `agent.plugins`. Same model as skills — the plugin must be active for the agent for `/foo` to resolve.
+- [x] Persistence = no separate store; `PluginRecord.commands` is the source of truth. Resolved at chat time.
+- [x] Naming = scopedName (filename basename). On collision (two active plugins both define `/foo`), first plugin in `agent.plugins` wins.
+- [x] Expansion = `$1`..`$9` and `$ARGUMENTS` only. Missing positionals collapse to empty. Quoted spans (double quotes) preserved as one positional.
+- [x] Unknown command = inline error banner, chat stays in input mode (no session pollution).
+- [x] **Agent-side invocation** — `list_commands` + `invoke_command` builtins so the LLM can enumerate and expand commands itself (mirrors `list_skills` / `read_skill`). Same gating: auto-included when `agent.plugins` is non-empty.
 
 ---
 
@@ -80,4 +78,5 @@ Open design questions:
 - [x] `a5830b4` — fix: read `.mcp.json` from plugin root (not `plugin.json`); `${CLAUDE_PLUGIN_ROOT}` + `${ENV}` expansion at connect
 - [x] `f1b482c` — managed agents from plugin manifests, mirroring the MCP pattern
 - [x] `2c47a72` / `43d9c2f` — roadmap doc + subagent inheritance broadened to all runtime fields
-- [x] `next` — subagent dispatch (`list_agents`, `invoke_agent`) with recursion + self-invoke guards, confirm-gate + abort passthrough
+- [x] `377b3bf` — subagent dispatch (`list_agents`, `invoke_agent`) with recursion + self-invoke guards, confirm-gate + abort passthrough
+- [x] `next` — slash commands: chat-input parser + `list_commands`/`invoke_command` builtins, `$N` + `$ARGUMENTS` expansion, per-agent gating via `agent.plugins`

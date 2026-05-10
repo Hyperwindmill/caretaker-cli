@@ -15,6 +15,8 @@ import { listSkillsTool } from "./list_skills.js";
 import { readSkillTool } from "./read_skill.js";
 import { listAgentsTool } from "./list_agents.js";
 import { invokeAgentTool } from "./invoke_agent.js";
+import { listCommandsTool } from "./list_commands.js";
+import { invokeCommandTool } from "./invoke_command.js";
 
 export function registerBuiltins(registry: ToolRegistry): void {
   // Filesystem (sandboxed to ctx.workingDir).
@@ -36,6 +38,10 @@ export function registerBuiltins(registry: ToolRegistry): void {
   // more than one agent configured — they're useless otherwise).
   registry.register(listAgentsTool);
   registry.register(invokeAgentTool);
+  // Slash commands as tools — same gating as skills (auto-included when
+  // the agent has at least one plugin active).
+  registry.register(listCommandsTool);
+  registry.register(invokeCommandTool);
 }
 
 export {
@@ -51,4 +57,6 @@ export {
   readSkillTool,
   listAgentsTool,
   invokeAgentTool,
+  listCommandsTool,
+  invokeCommandTool,
 };
