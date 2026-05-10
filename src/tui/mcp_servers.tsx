@@ -30,6 +30,15 @@ export default function McpServers({ onBack }: { onBack: () => void }) {
     void reload().then(() => setLoaded(true));
   }, []);
 
+  useInput((_input, key) => {
+    if (!key.escape) return;
+    if (mode === 'list') onBack();
+    else if (mode === 'detail') setMode('list');
+    else if (mode === 'delete') setMode('detail');
+    else if (mode === 'edit' && selected?.pluginId) setMode('detail');
+    // create/non-managed edit: handled by ServerForm.
+  });
+
   if (!loaded) return <Text dimColor>loading…</Text>;
 
   if (mode === 'create') {
@@ -166,6 +175,9 @@ export default function McpServers({ onBack }: { onBack: () => void }) {
             }}
           />
         </Box>
+        <Box marginTop={1}>
+          <Text dimColor>(esc to go back)</Text>
+        </Box>
       </Box>
     );
   }
@@ -197,6 +209,9 @@ export default function McpServers({ onBack }: { onBack: () => void }) {
             }
           }}
         />
+      </Box>
+      <Box marginTop={1}>
+        <Text dimColor>(esc to go back)</Text>
       </Box>
     </Box>
   );

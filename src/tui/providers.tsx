@@ -21,6 +21,14 @@ export default function Providers({ onBack }: { onBack: () => void }) {
     });
   }, []);
 
+  useInput((_input, key) => {
+    if (!key.escape) return;
+    if (mode === 'list') onBack();
+    else if (mode === 'detail') setMode('list');
+    else if (mode === 'delete') setMode('detail');
+    // create/edit: handled by ProviderForm
+  });
+
   if (!loaded) return <Text dimColor>loading…</Text>;
 
   if (mode === 'create') {
@@ -122,6 +130,9 @@ export default function Providers({ onBack }: { onBack: () => void }) {
             }}
           />
         </Box>
+        <Box marginTop={1}>
+          <Text dimColor>(esc to go back)</Text>
+        </Box>
       </Box>
     );
   }
@@ -152,6 +163,9 @@ export default function Providers({ onBack }: { onBack: () => void }) {
             }
           }}
         />
+      </Box>
+      <Box marginTop={1}>
+        <Text dimColor>(esc to go back)</Text>
       </Box>
     </Box>
   );

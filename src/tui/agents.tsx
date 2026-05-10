@@ -58,6 +58,19 @@ export default function Agents({ onBack }: { onBack: () => void }) {
     }
   }, [mode, selectedId]);
 
+  useInput((_input, key) => {
+    if (!key.escape) return;
+    if (mode === 'list') onBack();
+    else if (mode === 'detail') setMode('list');
+    else if (mode === 'delete') setMode('detail');
+    else if (mode === 'past-chats') setMode('detail');
+    else if (mode === 'session-detail') {
+      setSelectedSession(null);
+      setMode('past-chats');
+    } else if (mode === 'session-delete') setMode('session-detail');
+    // create/edit: AgentForm; chat: ChatScreen — both have their own ESC.
+  });
+
   if (!loaded) return <Text dimColor>loading…</Text>;
 
   if (mode === 'create' || mode === 'edit') {
@@ -225,6 +238,9 @@ export default function Agents({ onBack }: { onBack: () => void }) {
             }}
           />
         </Box>
+        <Box marginTop={1}>
+          <Text dimColor>(esc to go back)</Text>
+        </Box>
       </Box>
     );
   }
@@ -307,6 +323,9 @@ export default function Agents({ onBack }: { onBack: () => void }) {
             }}
           />
         </Box>
+        <Box marginTop={1}>
+          <Text dimColor>(esc to go back)</Text>
+        </Box>
       </Box>
     );
   }
@@ -340,6 +359,9 @@ export default function Agents({ onBack }: { onBack: () => void }) {
             }
           }}
         />
+      </Box>
+      <Box marginTop={1}>
+        <Text dimColor>(esc to go back)</Text>
       </Box>
     </Box>
   );
