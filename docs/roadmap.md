@@ -83,4 +83,5 @@ Open design questions:
 - [x] `377b3bf` — subagent dispatch (`list_agents`, `invoke_agent`) with recursion + self-invoke guards, confirm-gate + abort passthrough
 - [x] `42f8d46` — slash commands: chat-input parser + `list_commands`/`invoke_command` builtins, `$N` + `$ARGUMENTS` expansion, per-agent gating via `agent.plugins`
 - [x] `2cd14b9` — `<runtime-info>` block in system prompt + `get_agent_context` builtin (live token usage; context-window % deferred to a models.dev fetcher)
-- [x] `next` — per-skill granularity for `list_skills` / `read_skill`: cc-plugin packs (e.g. superpowers) now expose each `skills/<name>/SKILL.md` as its own entry; `list_agents` no longer hides the caller (self-invocation guard still in dispatch)
+- [x] `b5f1485` — per-skill granularity for `list_skills` / `read_skill`: cc-plugin packs (e.g. superpowers) now expose each `skills/<name>/SKILL.md` as its own entry
+- [x] `next` — anonymous sub-agent dispatch: `invoke_agent({task})` without a name spins up an ephemeral child that inherits provider/model/tools/plugins/mcpServers/workingDir from the caller and runs with no systemPrompt of its own. Use case: speculative subtasks isolated from caller's history without dragging caller's identity along. Self-invocation by name remains rejected (an agent's identity/goal in its systemPrompt would just spin on itself).
