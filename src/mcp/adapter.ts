@@ -8,10 +8,10 @@
 // abort the whole agent run. The error is already persisted on the server
 // row by getClient().
 
-import type { Tool } from "../harness/tools/types.js";
-import { getClient } from "./client.js";
+import type { Tool } from '../harness/tools/types.js';
+import { getClient } from './client.js';
 
-const NAME_PREFIX = "mcp__";
+const NAME_PREFIX = 'mcp__';
 
 function joinedToolName(serverId: string, toolName: string): string {
   return `${NAME_PREFIX}${serverId}__${toolName}`;
@@ -27,9 +27,11 @@ function buildTool(serverId: string, remote: RemoteTool): Tool {
   return {
     name: joinedToolName(serverId, remote.name),
     description: remote.description ?? `MCP tool ${remote.name}`,
-    parameters:
-      (remote.inputSchema as Record<string, unknown> | undefined) ??
-      { type: "object", properties: {}, additionalProperties: true },
+    parameters: (remote.inputSchema as Record<string, unknown> | undefined) ?? {
+      type: 'object',
+      properties: {},
+      additionalProperties: true,
+    },
     async execute(args, ctx) {
       const client = await getClient(serverId);
       const res = await client.callTool(
@@ -40,14 +42,14 @@ function buildTool(serverId: string, remote: RemoteTool): Tool {
       const parts: string[] = [];
       const content = (res.content ?? []) as Array<{ type: string; text?: string }>;
       for (const c of content) {
-        if (c.type === "text" && typeof c.text === "string") parts.push(c.text);
+        if (c.type === 'text' && typeof c.text === 'string') parts.push(c.text);
         // Non-text content (image/audio/resource) is dropped for now — the
         // loop's ToolResult contract is text-only. A future iteration can
         // surface attachments through ToolResult.attachments.
       }
-      const text = parts.join("\n");
+      const text = parts.join('\n');
       if (res.isError === true) {
-        return { content: text || "Error: MCP tool reported a failure" };
+        return { content: text || 'Error: MCP tool reported a failure' };
       }
       return { content: text };
     },

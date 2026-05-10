@@ -36,6 +36,7 @@ runs with the parent's surface.
 ## ~~Next~~ Done: commands (commit `next`)
 
 Decisions taken:
+
 - [x] Trigger surface = slash parser in chat input (`/foo args`). No top-level menu.
 - [x] Arguments = inline. `argument-hint` is just a free-text placeholder, no form prompting.
 - [x] Per-agent gating = via `agent.plugins`. Same model as skills — the plugin must be active for the agent for `/foo` to resolve.
@@ -62,7 +63,7 @@ Open design questions:
 
 ## Manifest enrichment (lower priority, eventually)
 
-- [ ] Per-skill granularity (today: 1 plugin = 1 entry in `list_skills`/`read_skill`). For cc-plugin packs (e.g. superpowers) this matters — each `skills/<name>/SKILL.md` should expose individually.
+- [x] ~~Per-skill granularity~~ — shipped (commit `next`). cc-plugin packs now expose each `skills/<name>/SKILL.md` individually; `list_skills` returns one entry per skill, `read_skill` reads exactly one file.
 - [ ] Marketplace `source` as object (`git-subdir` with `path`/`ref`/`sha` for pinning). Today we accept only the string form.
 - [ ] Metadata extra: `category`, `tags`, `homepage`, `author` propagated to `PluginRecord` and shown in the TUI detail.
 - [ ] **`get_agent_context` context-window resolution** — sister repo had a `model_limits.ts` that fetched from models.dev (24h cache) and resolved `model_id → context_tokens`. Today the tool returns `contextWindow: null` and `percent: null`. Port the fetcher + cache when a user asks for usage % display.
@@ -81,4 +82,5 @@ Open design questions:
 - [x] `2c47a72` / `43d9c2f` — roadmap doc + subagent inheritance broadened to all runtime fields
 - [x] `377b3bf` — subagent dispatch (`list_agents`, `invoke_agent`) with recursion + self-invoke guards, confirm-gate + abort passthrough
 - [x] `42f8d46` — slash commands: chat-input parser + `list_commands`/`invoke_command` builtins, `$N` + `$ARGUMENTS` expansion, per-agent gating via `agent.plugins`
-- [x] `next` — `<runtime-info>` block in system prompt + `get_agent_context` builtin (live token usage; context-window % deferred to a models.dev fetcher)
+- [x] `2cd14b9` — `<runtime-info>` block in system prompt + `get_agent_context` builtin (live token usage; context-window % deferred to a models.dev fetcher)
+- [x] `next` — per-skill granularity for `list_skills` / `read_skill`: cc-plugin packs (e.g. superpowers) now expose each `skills/<name>/SKILL.md` as its own entry; `list_agents` no longer hides the caller (self-invocation guard still in dispatch)

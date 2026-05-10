@@ -23,12 +23,12 @@ const CLOSE_RE = /<\s*\/\s*think\s*>/i;
 const MAX_PARTIAL = 16;
 
 export type ThinkSplitEvent =
-  | { kind: "content"; text: string }
-  | { kind: "thinking"; text: string };
+  | { kind: 'content'; text: string }
+  | { kind: 'thinking'; text: string };
 
 export class ThinkTagSplitter {
   private inThink = false;
-  private buffer = "";
+  private buffer = '';
 
   /** Push a raw content chunk and pull all events that can be emitted now. */
   push(chunk: string): ThinkSplitEvent[] {
@@ -48,12 +48,12 @@ export class ThinkTagSplitter {
         if (this.buffer.length > MAX_PARTIAL) {
           const head = this.buffer.slice(0, this.buffer.length - MAX_PARTIAL);
           this.buffer = this.buffer.slice(this.buffer.length - MAX_PARTIAL);
-          if (head) out.push({ kind: this.inThink ? "thinking" : "content", text: head });
+          if (head) out.push({ kind: this.inThink ? 'thinking' : 'content', text: head });
         }
         break;
       }
       const before = this.buffer.slice(0, match.index);
-      if (before) out.push({ kind: this.inThink ? "thinking" : "content", text: before });
+      if (before) out.push({ kind: this.inThink ? 'thinking' : 'content', text: before });
       this.buffer = this.buffer.slice(match.index + match[0].length);
       this.inThink = !this.inThink;
     }
@@ -63,11 +63,15 @@ export class ThinkTagSplitter {
   /** Flush remaining buffered text. Call when the stream ends. */
   flush(): ThinkSplitEvent[] {
     if (!this.buffer) return [];
-    const out: ThinkSplitEvent[] = [{ kind: this.inThink ? "thinking" : "content", text: this.buffer }];
-    this.buffer = "";
+    const out: ThinkSplitEvent[] = [
+      { kind: this.inThink ? 'thinking' : 'content', text: this.buffer },
+    ];
+    this.buffer = '';
     return out;
   }
 
   /** True when the splitter is currently inside an open <think> tag. */
-  get isInsideThink(): boolean { return this.inThink; }
+  get isInsideThink(): boolean {
+    return this.inThink;
+  }
 }

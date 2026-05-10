@@ -8,9 +8,9 @@
 // matches caretaker server's behavior; only `write` enforces the explicit
 // read-before-write guard.
 
-import { readFile, writeFile } from "node:fs/promises";
-import type { Tool } from "../types.js";
-import { assertWithinRoot, OutsideRootError } from "../sandbox.js";
+import { readFile, writeFile } from 'node:fs/promises';
+import type { Tool } from '../types.js';
+import { assertWithinRoot, OutsideRootError } from '../sandbox.js';
 
 /** Pure: apply one replacement and return the new content. Throws on
  *  missing/non-unique. Exported for testing and reuse by multiedit. */
@@ -40,19 +40,19 @@ export function applyEdit(
 }
 
 export const editTool: Tool = {
-  name: "edit",
+  name: 'edit',
   description:
-    "Replace exactly one occurrence of oldString with newString in a file. " +
-    "Set replaceAll=true to replace every occurrence.",
+    'Replace exactly one occurrence of oldString with newString in a file. ' +
+    'Set replaceAll=true to replace every occurrence.',
   parameters: {
-    type: "object",
+    type: 'object',
     properties: {
-      path: { type: "string", description: "Path within the working directory." },
-      oldString: { type: "string" },
-      newString: { type: "string" },
-      replaceAll: { type: "boolean", description: "Replace every occurrence (default false)." },
+      path: { type: 'string', description: 'Path within the working directory.' },
+      oldString: { type: 'string' },
+      newString: { type: 'string' },
+      replaceAll: { type: 'boolean', description: 'Replace every occurrence (default false).' },
     },
-    required: ["path", "oldString", "newString"],
+    required: ['path', 'oldString', 'newString'],
     additionalProperties: false,
   },
   dangerous: true,
@@ -63,11 +63,11 @@ export const editTool: Tool = {
       newString?: unknown;
       replaceAll?: unknown;
     };
-    if (typeof a.path !== "string" || !a.path.trim()) {
-      return { content: "Error: path must be a non-empty string" };
+    if (typeof a.path !== 'string' || !a.path.trim()) {
+      return { content: 'Error: path must be a non-empty string' };
     }
-    if (typeof a.oldString !== "string" || typeof a.newString !== "string") {
-      return { content: "Error: oldString and newString must be strings" };
+    if (typeof a.oldString !== 'string' || typeof a.newString !== 'string') {
+      return { content: 'Error: oldString and newString must be strings' };
     }
 
     let abs: string;
@@ -80,10 +80,10 @@ export const editTool: Tool = {
 
     let content: string;
     try {
-      content = await readFile(abs, "utf-8");
+      content = await readFile(abs, 'utf-8');
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
-      if (code === "ENOENT") return { content: `Error: file not found: ${a.path}` };
+      if (code === 'ENOENT') return { content: `Error: file not found: ${a.path}` };
       return { content: `Error: ${err instanceof Error ? err.message : String(err)}` };
     }
 
@@ -93,7 +93,7 @@ export const editTool: Tool = {
     } catch (err) {
       return { content: `Error: ${err instanceof Error ? err.message : String(err)}` };
     }
-    await writeFile(abs, next, "utf-8");
+    await writeFile(abs, next, 'utf-8');
     ctx.readPaths.add(abs);
     return { content: `Applied edit to ${a.path}` };
   },

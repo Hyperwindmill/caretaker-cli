@@ -1,6 +1,6 @@
-import { spawn } from "node:child_process";
-import { StringDecoder } from "node:string_decoder";
-import type { Tool } from "../types.js";
+import { spawn } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
+import type { Tool } from '../types.js';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 /** Cap on stdout+stderr we echo back to the model. The harness applies a
@@ -23,31 +23,31 @@ function scrubbedEnv(): NodeJS.ProcessEnv {
 }
 
 export const bashTool: Tool = {
-  name: "bash",
+  name: 'bash',
   description:
-    "Execute a shell command in the working directory. Returns the exit code, " +
-    "stdout and stderr concatenated. Output is capped at ~50 KB; the command " +
-    "is killed after the timeout.",
+    'Execute a shell command in the working directory. Returns the exit code, ' +
+    'stdout and stderr concatenated. Output is capped at ~50 KB; the command ' +
+    'is killed after the timeout.',
   parameters: {
-    type: "object",
+    type: 'object',
     properties: {
-      command: { type: "string", description: "Shell command to execute." },
+      command: { type: 'string', description: 'Shell command to execute.' },
       timeoutMs: {
-        type: "number",
+        type: 'number',
         description: `Timeout in milliseconds. Default ${DEFAULT_TIMEOUT_MS}.`,
       },
     },
-    required: ["command"],
+    required: ['command'],
     additionalProperties: false,
   },
   dangerous: true,
   async execute(args, ctx) {
     const a = args as { command?: unknown; timeoutMs?: unknown };
-    if (typeof a.command !== "string" || !a.command.trim()) {
-      return { content: "Error: command must be a non-empty string" };
+    if (typeof a.command !== 'string' || !a.command.trim()) {
+      return { content: 'Error: command must be a non-empty string' };
     }
     const timeout =
-      typeof a.timeoutMs === "number" && Number.isFinite(a.timeoutMs) && a.timeoutMs > 0
+      typeof a.timeoutMs === 'number' && Number.isFinite(a.timeoutMs) && a.timeoutMs > 0
         ? a.timeoutMs
         : DEFAULT_TIMEOUT_MS;
 
@@ -57,12 +57,12 @@ export const bashTool: Tool = {
       const child = spawn(a.command as string, [], {
         cwd: ctx.workingDir,
         shell: true,
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: ['ignore', 'pipe', 'pipe'],
         env: scrubbedEnv(),
       });
 
-      const decoder = new StringDecoder("utf8");
-      let out = "";
+      const decoder = new StringDecoder('utf8');
+      let out = '';
       let truncated = false;
       const append = (chunk: Buffer) => {
         if (truncated) return;
@@ -79,46 +79,44 @@ export const bashTool: Tool = {
           out += s;
         }
       };
-      child.stdout?.on("data", append);
-      child.stderr?.on("data", append);
+      child.stdout?.on('data', append);
+      child.stderr?.on('data', append);
 
-      let killReason: "timeout" | "abort" | null = null;
+      let killReason: 'timeout' | 'abort' | null = null;
       const timer = setTimeout(() => {
-        killReason = "timeout";
-        child.kill("SIGTERM");
+        killReason = 'timeout';
+        child.kill('SIGTERM');
       }, timeout);
 
       const onAbort = () => {
-        killReason = "abort";
-        child.kill("SIGTERM");
+        killReason = 'abort';
+        child.kill('SIGTERM');
       };
-      ctx.signal.addEventListener("abort", onAbort, { once: true });
+      ctx.signal.addEventListener('abort', onAbort, { once: true });
 
-      child.on("error", (err) => {
+      child.on('error', (err) => {
         clearTimeout(timer);
-        ctx.signal.removeEventListener("abort", onAbort);
+        ctx.signal.removeEventListener('abort', onAbort);
         resolve({ content: `Error: failed to spawn shell: ${err.message}` });
       });
 
-      child.on("close", (code, signal) => {
+      child.on('close', (code, signal) => {
         clearTimeout(timer);
-        ctx.signal.removeEventListener("abort", onAbort);
+        ctx.signal.removeEventListener('abort', onAbort);
         const flushed = decoder.end();
         if (flushed && !truncated) {
           const room = MAX_OUTPUT_BYTES - out.length;
           if (room > 0) out += flushed.slice(0, room);
         }
         const status =
-          killReason === "timeout"
+          killReason === 'timeout'
             ? `[killed after ${timeout}ms timeout]`
-            : killReason === "abort"
+            : killReason === 'abort'
               ? `[aborted]`
               : signal
                 ? `[exit signal: ${signal}]`
                 : `[exit ${code}]`;
-        const tail = truncated
-          ? `\n[...output truncated at ${MAX_OUTPUT_BYTES} bytes]`
-          : "";
+        const tail = truncated ? `\n[...output truncated at ${MAX_OUTPUT_BYTES} bytes]` : '';
         resolve({ content: `${status}\n${out}${tail}` });
       });
     });

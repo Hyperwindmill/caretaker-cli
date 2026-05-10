@@ -1,6 +1,6 @@
-import { readFile, stat } from "node:fs/promises";
-import * as path from "node:path";
-import * as os from "node:os";
+import { readFile, stat } from 'node:fs/promises';
+import * as path from 'node:path';
+import * as os from 'node:os';
 
 /**
  * Inject standard AI-agent context files into the system prompt.
@@ -17,7 +17,7 @@ import * as os from "node:os";
  *  - total max 250 KB (further files dropped once budget hit)
  */
 
-const CONTEXT_FILES = ["AGENTS.md", "CLAUDE.md", "GEMINI.md"] as const;
+const CONTEXT_FILES = ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md'] as const;
 
 const PER_FILE_MAX = 100 * 1024;
 const TOTAL_MAX = 250 * 1024;
@@ -32,7 +32,7 @@ async function readIfExistsAndSmall(p: string): Promise<string | null> {
     const st = await stat(p);
     if (!st.isFile()) return null;
     if (st.size > PER_FILE_MAX) return null;
-    return await readFile(p, "utf-8");
+    return await readFile(p, 'utf-8');
   } catch {
     return null;
   }
@@ -55,9 +55,9 @@ async function walkUpFor(name: string, startDir: string): Promise<string | null>
 function globalCandidates(): string[] {
   const home = os.homedir();
   return [
-    path.join(home, ".config", "opencode", "AGENTS.md"),
-    path.join(home, ".claude", "CLAUDE.md"),
-    path.join(home, ".caretaker", "AGENTS.md"),
+    path.join(home, '.config', 'opencode', 'AGENTS.md'),
+    path.join(home, '.claude', 'CLAUDE.md'),
+    path.join(home, '.caretaker', 'AGENTS.md'),
   ];
 }
 
@@ -91,10 +91,10 @@ export async function loadContextFiles(workingDir: string): Promise<ContextEntry
 
 /** Format the loaded context entries as a single string block for the system prompt. */
 export function formatContextBlock(entries: ContextEntry[]): string {
-  if (entries.length === 0) return "";
+  if (entries.length === 0) return '';
   return entries
     .map((e) => `<context-file path="${e.path}">\n${e.content}\n</context-file>`)
-    .join("\n\n");
+    .join('\n\n');
 }
 
 // ─── @<file> reference resolution ──────────────────────────────────────
@@ -112,10 +112,7 @@ export function formatContextBlock(entries: ContextEntry[]): string {
  *
  * Nested @-references inside resolved files are NOT expanded (single pass).
  */
-export async function resolveFileReferences(
-  text: string,
-  workingDir: string,
-): Promise<string> {
+export async function resolveFileReferences(text: string, workingDir: string): Promise<string> {
   // Match @path — must start with /, ./, or ~ for an absolute/relative path.
   // This avoids false positives on email addresses, mentions, etc.
   const re = /@((?:\.\/|\/|~)[^\s@]+)/g;
@@ -128,9 +125,7 @@ export async function resolveFileReferences(
   const resolved = new Map<string, string>();
 
   for (const rawPath of uniquePaths) {
-    const expanded = rawPath.startsWith("~")
-      ? path.join(os.homedir(), rawPath.slice(1))
-      : rawPath;
+    const expanded = rawPath.startsWith('~') ? path.join(os.homedir(), rawPath.slice(1)) : rawPath;
     const absPath = path.resolve(workingDir, expanded);
 
     const content = await readIfExistsAndSmall(absPath);
@@ -142,5 +137,5 @@ export async function resolveFileReferences(
   }
 
   // Replace all occurrences (including duplicates) in a single pass.
-  return text.replace(re, (_, p: string) => resolved.get(p) ?? "");
+  return text.replace(re, (_, p: string) => resolved.get(p) ?? '');
 }

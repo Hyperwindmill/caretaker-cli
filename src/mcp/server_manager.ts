@@ -3,16 +3,11 @@
 // at create/patch time (encrypted blobs are passed through unchanged), so a
 // hand-edited mcp.json with a raw token gets cleaned up on the next save.
 
-import { randomUUID } from "node:crypto";
-import { encrypt, isEncrypted } from "../lib/encryption.js";
-import { loadMcpServers, loadPlugins, saveMcpServers } from "../store/json.js";
-import { closeClient } from "./client.js";
-import type {
-  McpServerConfig,
-  McpServerSpec,
-  McpTransport,
-  PluginRecord,
-} from "../types.js";
+import { randomUUID } from 'node:crypto';
+import { encrypt, isEncrypted } from '../lib/encryption.js';
+import { loadMcpServers, loadPlugins, saveMcpServers } from '../store/json.js';
+import { closeClient } from './client.js';
+import type { McpServerConfig, McpServerSpec, McpTransport, PluginRecord } from '../types.js';
 
 export interface CreateMcpServerInput {
   name: string;
@@ -37,7 +32,9 @@ export interface PatchMcpServerInput {
   headers?: Record<string, string> | null;
 }
 
-function encryptHeaderValues(headers: Record<string, string> | undefined): Record<string, string> | undefined {
+function encryptHeaderValues(
+  headers: Record<string, string> | undefined,
+): Record<string, string> | undefined {
   if (!headers) return undefined;
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(headers)) {
@@ -46,14 +43,16 @@ function encryptHeaderValues(headers: Record<string, string> | undefined): Recor
   return out;
 }
 
-function validateInput(input: CreateMcpServerInput | (PatchMcpServerInput & { transport: McpTransport })): void {
-  if (input.transport === "stdio") {
-    if ("command" in input && input.command !== undefined && input.command.trim() === "") {
-      throw new Error("stdio MCP server requires a non-empty command");
+function validateInput(
+  input: CreateMcpServerInput | (PatchMcpServerInput & { transport: McpTransport }),
+): void {
+  if (input.transport === 'stdio') {
+    if ('command' in input && input.command !== undefined && input.command.trim() === '') {
+      throw new Error('stdio MCP server requires a non-empty command');
     }
   }
-  if (input.transport === "http") {
-    if ("url" in input && input.url !== undefined && input.url.trim() !== "") {
+  if (input.transport === 'http') {
+    if ('url' in input && input.url !== undefined && input.url.trim() !== '') {
       try {
         new URL(input.url);
       } catch {
@@ -65,11 +64,11 @@ function validateInput(input: CreateMcpServerInput | (PatchMcpServerInput & { tr
 
 export async function createMcpServer(input: CreateMcpServerInput): Promise<McpServerConfig> {
   validateInput(input);
-  if (input.transport === "stdio" && !input.command?.trim()) {
-    throw new Error("stdio MCP server requires a command");
+  if (input.transport === 'stdio' && !input.command?.trim()) {
+    throw new Error('stdio MCP server requires a command');
   }
-  if (input.transport === "http" && !input.url?.trim()) {
-    throw new Error("http MCP server requires a url");
+  if (input.transport === 'http' && !input.url?.trim()) {
+    throw new Error('http MCP server requires a url');
   }
 
   const file = await loadMcpServers();
@@ -78,11 +77,11 @@ export async function createMcpServer(input: CreateMcpServerInput): Promise<McpS
     name: input.name.trim(),
     transport: input.transport,
     enabled: input.enabled ?? true,
-    command: input.transport === "stdio" ? input.command : undefined,
-    args: input.transport === "stdio" ? input.args ?? [] : undefined,
-    env: input.transport === "stdio" ? input.env : undefined,
-    url: input.transport === "http" ? input.url : undefined,
-    headers: input.transport === "http" ? encryptHeaderValues(input.headers) : undefined,
+    command: input.transport === 'stdio' ? input.command : undefined,
+    args: input.transport === 'stdio' ? (input.args ?? []) : undefined,
+    env: input.transport === 'stdio' ? input.env : undefined,
+    url: input.transport === 'http' ? input.url : undefined,
+    headers: input.transport === 'http' ? encryptHeaderValues(input.headers) : undefined,
     lastConnectedAt: null,
     lastConnectError: null,
   };
@@ -113,7 +112,10 @@ export async function getMcpServer(id: string): Promise<McpServerConfig | null> 
   return file.servers.find((s) => s.id === id) ?? null;
 }
 
-export async function patchMcpServer(id: string, input: PatchMcpServerInput): Promise<McpServerConfig | null> {
+export async function patchMcpServer(
+  id: string,
+  input: PatchMcpServerInput,
+): Promise<McpServerConfig | null> {
   const file = await loadMcpServers();
   const srv = file.servers.find((s) => s.id === id);
   if (!srv) return null;
@@ -134,7 +136,7 @@ export async function patchMcpServer(id: string, input: PatchMcpServerInput): Pr
   if (input.name !== undefined) srv.name = input.name.trim();
   if (input.enabled !== undefined) srv.enabled = input.enabled;
 
-  if (srv.transport === "stdio") {
+  if (srv.transport === 'stdio') {
     if (input.command !== undefined) srv.command = input.command;
     if (input.args !== undefined) srv.args = input.args;
     if (input.env !== undefined) srv.env = input.env;
@@ -153,14 +155,18 @@ export async function patchMcpServer(id: string, input: PatchMcpServerInput): Pr
 // ─── Plugin-managed sync ─────────────────────────────────────────────────
 
 function specTransport(spec: McpServerSpec): McpTransport {
-  return "command" in spec ? "stdio" : "http";
+  return 'command' in spec ? 'stdio' : 'http';
 }
 
 function managedRowKey(pluginId: string, scopedName: string): string {
   return `${pluginId}::${scopedName}`;
 }
 
-function buildManagedRow(plugin: PluginRecord, scopedName: string, spec: McpServerSpec): McpServerConfig {
+function buildManagedRow(
+  plugin: PluginRecord,
+  scopedName: string,
+  spec: McpServerSpec,
+): McpServerConfig {
   const transport = specTransport(spec);
   return {
     id: randomUUID(),
@@ -171,7 +177,7 @@ function buildManagedRow(plugin: PluginRecord, scopedName: string, spec: McpServ
     pluginScopedName: scopedName,
     lastConnectedAt: null,
     lastConnectError: null,
-    ...(transport === "stdio"
+    ...(transport === 'stdio'
       ? {
           command: (spec as { command: string }).command,
           args: (spec as { args?: string[] }).args ?? [],
@@ -199,12 +205,12 @@ function applySpecToManagedRow(
     transport,
     pluginId: plugin.id,
     pluginScopedName: scopedName,
-    command: transport === "stdio" ? (spec as { command: string }).command : undefined,
-    args: transport === "stdio" ? (spec as { args?: string[] }).args ?? [] : undefined,
-    env: transport === "stdio" ? (spec as { env?: Record<string, string> }).env : undefined,
-    url: transport === "http" ? (spec as { url: string }).url : undefined,
+    command: transport === 'stdio' ? (spec as { command: string }).command : undefined,
+    args: transport === 'stdio' ? ((spec as { args?: string[] }).args ?? []) : undefined,
+    env: transport === 'stdio' ? (spec as { env?: Record<string, string> }).env : undefined,
+    url: transport === 'http' ? (spec as { url: string }).url : undefined,
     headers:
-      transport === "http"
+      transport === 'http'
         ? encryptHeaderValues((spec as { headers?: Record<string, string> }).headers)
         : undefined,
   };
@@ -225,7 +231,10 @@ export async function syncManagedMcpServers(): Promise<void> {
   const mcpFile = await loadMcpServers();
 
   // Build the set of expected (pluginId, scopedName) → (plugin, spec).
-  const expected = new Map<string, { plugin: PluginRecord; scopedName: string; spec: McpServerSpec }>();
+  const expected = new Map<
+    string,
+    { plugin: PluginRecord; scopedName: string; spec: McpServerSpec }
+  >();
   for (const plugin of pluginsFile.plugins) {
     if (!plugin.mcpServers) continue;
     for (const [scopedName, spec] of Object.entries(plugin.mcpServers)) {
@@ -242,7 +251,7 @@ export async function syncManagedMcpServers(): Promise<void> {
       out.push(srv); // user-authored, leave alone
       continue;
     }
-    const key = managedRowKey(srv.pluginId, srv.pluginScopedName ?? "");
+    const key = managedRowKey(srv.pluginId, srv.pluginScopedName ?? '');
     const exp = expected.get(key);
     if (!exp) {
       droppedIds.push(srv.id);

@@ -1,4 +1,4 @@
-import type { Tool } from "./types.js";
+import type { Tool } from './types.js';
 
 /**
  * In-process tool registry. Tools are registered once at startup

@@ -31,7 +31,7 @@ When editing tools, register them in `src/harness/tools/builtin/index.ts` and th
 
 `src/harness/prelude.ts` builds the system prompt for every turn in a fixed order:
 
-1. Caretaker prelude (the "care about goal/environment/project" preamble — what makes an agent a *caretaker* agent).
+1. Caretaker prelude (the "care about goal/environment/project" preamble — what makes an agent a _caretaker_ agent).
 2. The agent's own `systemPrompt`.
 3. Active plugin/skill blocks.
 4. Project context: `AGENTS.md` and equivalents walked up from the agent's `workingDir`, plus the same files in `$HOME` for cross-project rules. `@<file>` refs resolved single-pass.

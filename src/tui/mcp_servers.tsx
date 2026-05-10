@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
-import { Box, Text, useInput } from "ink";
-import SelectInput from "ink-select-input";
-import TextInput from "ink-text-input";
+import { useEffect, useState } from 'react';
+import { Box, Text, useInput } from 'ink';
+import SelectInput from 'ink-select-input';
+import TextInput from 'ink-text-input';
 import {
   createMcpServer,
   deleteMcpServer,
@@ -9,16 +9,15 @@ import {
   patchMcpServer,
   type CreateMcpServerInput,
   type PatchMcpServerInput,
-} from "../mcp/server_manager.js";
-import { isEncrypted } from "../lib/encryption.js";
-import type { McpServerConfig, McpTransport } from "../types.js";
+} from '../mcp/server_manager.js';
+import type { McpServerConfig, McpTransport } from '../types.js';
 
-type Mode = "list" | "detail" | "create" | "edit" | "delete";
+type Mode = 'list' | 'detail' | 'create' | 'edit' | 'delete';
 
 export default function McpServers({ onBack }: { onBack: () => void }) {
   const [servers, setServers] = useState<McpServerConfig[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [mode, setMode] = useState<Mode>("list");
+  const [mode, setMode] = useState<Mode>('list');
   const [selected, setSelected] = useState<McpServerConfig | null>(null);
 
   const reload = async (): Promise<McpServerConfig[]> => {
@@ -33,47 +32,47 @@ export default function McpServers({ onBack }: { onBack: () => void }) {
 
   if (!loaded) return <Text dimColor>loading…</Text>;
 
-  if (mode === "create") {
+  if (mode === 'create') {
     return (
       <ServerForm
-        onCancel={() => setMode("list")}
+        onCancel={() => setMode('list')}
         onSave={async (input) => {
           const created = await createMcpServer(input as CreateMcpServerInput);
           await reload();
           setSelected(created);
-          setMode("detail");
+          setMode('detail');
         }}
       />
     );
   }
 
-  if (mode === "edit" && selected) {
+  if (mode === 'edit' && selected) {
     if (selected.pluginId) {
       // Managed row: only enabled is mutable from the UI.
       return (
         <Box flexDirection="column">
           <Text bold>Managed by plugin</Text>
           <Text dimColor>
-            All fields except <Text>enabled</Text> are owned by the plugin manifest and
-            refreshed from the source. Use the Plugins menu to refresh or remove the source.
+            All fields except <Text>enabled</Text> are owned by the plugin manifest and refreshed
+            from the source. Use the Plugins menu to refresh or remove the source.
           </Text>
           <Box marginTop={1}>
             <Text>enabled: </Text>
             <SelectInput
               items={[
-                { label: "yes", value: "yes" },
-                { label: "no — keep config but skip at connect time", value: "no" },
+                { label: 'yes', value: 'yes' },
+                { label: 'no — keep config but skip at connect time', value: 'no' },
               ]}
               initialIndex={selected.enabled ? 0 : 1}
               onSelect={async (item) => {
                 const patched = await patchMcpServer(selected.id, {
-                  enabled: item.value === "yes",
+                  enabled: item.value === 'yes',
                 });
                 if (patched) {
                   await reload();
                   setSelected(patched);
                 }
-                setMode("detail");
+                setMode('detail');
               }}
             />
           </Box>
@@ -83,35 +82,35 @@ export default function McpServers({ onBack }: { onBack: () => void }) {
     return (
       <ServerForm
         initial={selected}
-        onCancel={() => setMode("detail")}
+        onCancel={() => setMode('detail')}
         onSave={async (input) => {
           const patched = await patchMcpServer(selected.id, input as PatchMcpServerInput);
           if (patched) {
             await reload();
             setSelected(patched);
           }
-          setMode("detail");
+          setMode('detail');
         }}
       />
     );
   }
 
-  if (mode === "delete" && selected) {
+  if (mode === 'delete' && selected) {
     return (
       <Box flexDirection="column">
         <Text>Delete MCP server "{selected.name}"?</Text>
         <Box marginTop={1}>
           <SelectInput
             items={[
-              { label: "No, cancel", value: "no" },
-              { label: "Yes, delete", value: "yes" },
+              { label: 'No, cancel', value: 'no' },
+              { label: 'Yes, delete', value: 'yes' },
             ]}
             onSelect={async (item) => {
-              if (item.value === "no") return setMode("detail");
+              if (item.value === 'no') return setMode('detail');
               await deleteMcpServer(selected.id);
               await reload();
               setSelected(null);
-              setMode("list");
+              setMode('list');
             }}
           />
         </Box>
@@ -119,7 +118,7 @@ export default function McpServers({ onBack }: { onBack: () => void }) {
     );
   }
 
-  if (mode === "detail" && selected) {
+  if (mode === 'detail' && selected) {
     const headerCount = selected.headers ? Object.keys(selected.headers).length : 0;
     const envCount = selected.env ? Object.keys(selected.env).length : 0;
     const managed = !!selected.pluginId;
@@ -127,41 +126,43 @@ export default function McpServers({ onBack }: { onBack: () => void }) {
       <Box flexDirection="column">
         <Text bold>{selected.name}</Text>
         {managed && (
-          <Text color="cyan">
-            [managed by plugin · refresh the plugin source to update]
-          </Text>
+          <Text color="cyan">[managed by plugin · refresh the plugin source to update]</Text>
         )}
-        <Text>transport:       {selected.transport}</Text>
-        <Text>enabled:         {selected.enabled ? "yes" : "no"}</Text>
-        {selected.transport === "stdio" && (
+        <Text>transport: {selected.transport}</Text>
+        <Text>enabled: {selected.enabled ? 'yes' : 'no'}</Text>
+        {selected.transport === 'stdio' && (
           <>
-            <Text>command:         {selected.command ?? "(none)"}</Text>
-            <Text>args:            {selected.args && selected.args.length > 0 ? selected.args.join(" ") : "(none)"}</Text>
-            <Text>env:             {envCount > 0 ? `${envCount} entr${envCount === 1 ? "y" : "ies"}` : "(none)"}</Text>
+            <Text>command: {selected.command ?? '(none)'}</Text>
+            <Text>
+              args: {selected.args && selected.args.length > 0 ? selected.args.join(' ') : '(none)'}
+            </Text>
+            <Text>
+              env: {envCount > 0 ? `${envCount} entr${envCount === 1 ? 'y' : 'ies'}` : '(none)'}
+            </Text>
           </>
         )}
-        {selected.transport === "http" && (
+        {selected.transport === 'http' && (
           <>
-            <Text>url:             {selected.url ?? "(none)"}</Text>
-            <Text>headers:         {headerCount > 0 ? `${headerCount} (encrypted)` : "(none)"}</Text>
+            <Text>url: {selected.url ?? '(none)'}</Text>
+            <Text>headers: {headerCount > 0 ? `${headerCount} (encrypted)` : '(none)'}</Text>
           </>
         )}
-        <Text>lastConnected:   {selected.lastConnectedAt ?? "(never)"}</Text>
+        <Text>lastConnected: {selected.lastConnectedAt ?? '(never)'}</Text>
         {selected.lastConnectError && (
-          <Text color="red">lastError:       {selected.lastConnectError.slice(0, 200)}</Text>
+          <Text color="red">lastError: {selected.lastConnectError.slice(0, 200)}</Text>
         )}
 
         <Box marginTop={1}>
           <SelectInput
             items={[
-              { label: managed ? "Toggle enabled" : "Edit", value: "edit" },
-              ...(managed ? [] : [{ label: "Delete", value: "delete" }]),
-              { label: "← Back", value: "back" },
+              { label: managed ? 'Toggle enabled' : 'Edit', value: 'edit' },
+              ...(managed ? [] : [{ label: 'Delete', value: 'delete' }]),
+              { label: '← Back', value: 'back' },
             ]}
             onSelect={(item) => {
-              if (item.value === "edit") return setMode("edit");
-              if (item.value === "delete") return setMode("delete");
-              setMode("list");
+              if (item.value === 'edit') return setMode('edit');
+              if (item.value === 'delete') return setMode('delete');
+              setMode('list');
             }}
           />
         </Box>
@@ -171,13 +172,12 @@ export default function McpServers({ onBack }: { onBack: () => void }) {
 
   const items = [
     ...servers.map((s) => {
-      const where = s.transport === "stdio" ? s.command ?? "(no command)" : s.url ?? "(no url)";
-      const flags =
-        (s.enabled ? "" : " [disabled]") + (s.pluginId ? " [managed]" : "");
+      const where = s.transport === 'stdio' ? (s.command ?? '(no command)') : (s.url ?? '(no url)');
+      const flags = (s.enabled ? '' : ' [disabled]') + (s.pluginId ? ' [managed]' : '');
       return { label: `${s.transport.padEnd(5)} ${s.name} — ${where}${flags}`, value: `s:${s.id}` };
     }),
-    { label: "+ Create new", value: "__new__" },
-    { label: "← Back", value: "__back__" },
+    { label: '+ Create new', value: '__new__' },
+    { label: '← Back', value: '__back__' },
   ];
 
   return (
@@ -187,13 +187,13 @@ export default function McpServers({ onBack }: { onBack: () => void }) {
         <SelectInput
           items={items}
           onSelect={(item) => {
-            if (item.value === "__back__") return onBack();
-            if (item.value === "__new__") return setMode("create");
-            const id = item.value.replace(/^s:/, "");
+            if (item.value === '__back__') return onBack();
+            if (item.value === '__new__') return setMode('create');
+            const id = item.value.replace(/^s:/, '');
             const s = servers.find((x) => x.id === id);
             if (s) {
               setSelected(s);
-              setMode("detail");
+              setMode('detail');
             }
           }}
         />
@@ -204,15 +204,7 @@ export default function McpServers({ onBack }: { onBack: () => void }) {
 
 // ─── Form ───────────────────────────────────────────────────────────────
 
-type FormStep =
-  | "transport"
-  | "name"
-  | "command"
-  | "args"
-  | "env"
-  | "url"
-  | "headers"
-  | "enabled";
+type FormStep = 'transport' | 'name' | 'command' | 'args' | 'env' | 'url' | 'headers' | 'enabled';
 
 interface FormResult {
   name: string;
@@ -228,7 +220,7 @@ interface FormResult {
 
 function parseKeyValueLines(raw: string, sep: string): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const line of raw.split(",")) {
+  for (const line of raw.split(',')) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     const idx = trimmed.indexOf(sep);
@@ -241,19 +233,10 @@ function parseKeyValueLines(raw: string, sep: string): Record<string, string> {
 }
 
 function formatEnv(env: Record<string, string> | undefined): string {
-  if (!env) return "";
+  if (!env) return '';
   return Object.entries(env)
     .map(([k, v]) => `${k}=${v}`)
-    .join(", ");
-}
-
-function formatHeadersDisplay(headers: Record<string, string> | undefined): string {
-  // We never echo encrypted blobs back into the input. Show "(encrypted)"
-  // for each preserved value, plain for user-typed plaintext lines.
-  if (!headers) return "";
-  return Object.entries(headers)
-    .map(([k, v]) => `${k}: ${isEncrypted(v) ? "(encrypted)" : v}`)
-    .join(", ");
+    .join(', ');
 }
 
 function ServerForm({
@@ -266,21 +249,21 @@ function ServerForm({
   onCancel: () => void;
 }) {
   const isEdit = !!initial;
-  const [step, setStep] = useState<FormStep>(isEdit ? "name" : "transport");
-  const [transport, setTransport] = useState<McpTransport>(initial?.transport ?? "stdio");
-  const [name, setName] = useState(initial?.name ?? "");
-  const [command, setCommand] = useState(initial?.command ?? "");
-  const [args, setArgs] = useState((initial?.args ?? []).join(" "));
+  const [step, setStep] = useState<FormStep>(isEdit ? 'name' : 'transport');
+  const [transport, setTransport] = useState<McpTransport>(initial?.transport ?? 'stdio');
+  const [name, setName] = useState(initial?.name ?? '');
+  const [command, setCommand] = useState(initial?.command ?? '');
+  const [args, setArgs] = useState((initial?.args ?? []).join(' '));
   const [env, setEnv] = useState(formatEnv(initial?.env));
-  const [url, setUrl] = useState(initial?.url ?? "");
+  const [url, setUrl] = useState(initial?.url ?? '');
   // Headers: in edit mode we DON'T preload values (the on-disk values are
   // ciphertext), only the keys. The user re-types tokens to update them.
   const [headers, setHeaders] = useState(
     initial?.headers
       ? Object.keys(initial.headers)
           .map((k) => `${k}: `)
-          .join(", ")
-      : "",
+          .join(', ')
+      : '',
   );
   const [enabled, setEnabled] = useState(initial?.enabled ?? true);
   const [error, setError] = useState<string | null>(null);
@@ -295,25 +278,25 @@ function ServerForm({
       transport,
       enabled: enabledValue,
     };
-    if (transport === "stdio") {
+    if (transport === 'stdio') {
       result.command = command.trim();
       result.args = args.trim() ? args.trim().split(/\s+/) : [];
-      result.env = env.trim() ? parseKeyValueLines(env, "=") : {};
+      result.env = env.trim() ? parseKeyValueLines(env, '=') : {};
     } else {
       result.url = url.trim();
       // Merge: keep existing headers whose key is mentioned with empty value
       // (= unchanged), apply new key:value pairs that have a value.
-      const typed = parseKeyValueLines(headers, ":");
+      const typed = parseKeyValueLines(headers, ':');
       const merged: Record<string, string> = {};
       if (initial?.headers) {
         for (const [k, v] of Object.entries(initial.headers)) {
           // Preserve the (already-encrypted) value when the user did not
           // re-type a value for this key.
-          if (k in typed && typed[k] === "") merged[k] = v;
+          if (k in typed && typed[k] === '') merged[k] = v;
         }
       }
       for (const [k, v] of Object.entries(typed)) {
-        if (v !== "") merged[k] = v;
+        if (v !== '') merged[k] = v;
       }
       result.headers = merged;
     }
@@ -322,44 +305,44 @@ function ServerForm({
 
   const advance = () => {
     setError(null);
-    if (step === "transport") return setStep("name");
-    if (step === "name") {
-      if (!name.trim()) return setError("name is required");
-      return setStep(transport === "stdio" ? "command" : "url");
+    if (step === 'transport') return setStep('name');
+    if (step === 'name') {
+      if (!name.trim()) return setError('name is required');
+      return setStep(transport === 'stdio' ? 'command' : 'url');
     }
-    if (step === "command") {
-      if (!command.trim()) return setError("command is required");
-      return setStep("args");
+    if (step === 'command') {
+      if (!command.trim()) return setError('command is required');
+      return setStep('args');
     }
-    if (step === "args") return setStep("env");
-    if (step === "env") return setStep("enabled");
-    if (step === "url") {
-      if (!url.trim()) return setError("url is required");
+    if (step === 'args') return setStep('env');
+    if (step === 'env') return setStep('enabled');
+    if (step === 'url') {
+      if (!url.trim()) return setError('url is required');
       try {
         new URL(url);
       } catch {
-        return setError("url must be a valid URL");
+        return setError('url must be a valid URL');
       }
-      return setStep("headers");
+      return setStep('headers');
     }
-    if (step === "headers") return setStep("enabled");
+    if (step === 'headers') return setStep('enabled');
   };
 
   return (
     <Box flexDirection="column">
-      <Text bold>{isEdit ? `Edit MCP server "${initial!.name}"` : "New MCP server"}</Text>
+      <Text bold>{isEdit ? `Edit MCP server "${initial!.name}"` : 'New MCP server'}</Text>
 
       <Box marginTop={1}>
-        <Text>transport:  </Text>
-        {step === "transport" ? (
+        <Text>transport: </Text>
+        {step === 'transport' ? (
           <SelectInput
             items={[
-              { label: "stdio (spawn a subprocess)", value: "stdio" },
-              { label: "http (Streamable HTTP)", value: "http" },
+              { label: 'stdio (spawn a subprocess)', value: 'stdio' },
+              { label: 'http (Streamable HTTP)', value: 'http' },
             ]}
             onSelect={(item) => {
               setTransport(item.value as McpTransport);
-              setStep("name");
+              setStep('name');
             }}
           />
         ) : (
@@ -368,103 +351,108 @@ function ServerForm({
       </Box>
 
       <Box>
-        <Text>name:       </Text>
-        {step === "name" ? (
+        <Text>name: </Text>
+        {step === 'name' ? (
           <TextInput value={name} onChange={setName} onSubmit={advance} placeholder="github" />
-        ) : step === "transport" ? (
+        ) : step === 'transport' ? (
           <Text dimColor>(pending)</Text>
         ) : (
           <Text>{name}</Text>
         )}
       </Box>
 
-      {transport === "stdio" && (
+      {transport === 'stdio' && (
         <>
           <Box>
-            <Text>command:    </Text>
-            {step === "command" ? (
-              <TextInput value={command} onChange={setCommand} onSubmit={advance} placeholder="npx" />
-            ) : ["transport", "name"].includes(step) ? (
+            <Text>command: </Text>
+            {step === 'command' ? (
+              <TextInput
+                value={command}
+                onChange={setCommand}
+                onSubmit={advance}
+                placeholder="npx"
+              />
+            ) : ['transport', 'name'].includes(step) ? (
               <Text dimColor>(pending)</Text>
             ) : (
               <Text>{command}</Text>
             )}
           </Box>
           <Box>
-            <Text>args:       </Text>
-            {step === "args" ? (
+            <Text>args: </Text>
+            {step === 'args' ? (
               <TextInput
                 value={args}
                 onChange={setArgs}
                 onSubmit={advance}
                 placeholder="-y @modelcontextprotocol/server-github"
               />
-            ) : ["transport", "name", "command"].includes(step) ? (
+            ) : ['transport', 'name', 'command'].includes(step) ? (
               <Text dimColor>(pending)</Text>
             ) : (
-              <Text>{args || "(none)"}</Text>
+              <Text>{args || '(none)'}</Text>
             )}
           </Box>
           <Box>
-            <Text>env:        </Text>
-            {step === "env" ? (
+            <Text>env: </Text>
+            {step === 'env' ? (
               <TextInput
                 value={env}
                 onChange={setEnv}
                 onSubmit={advance}
                 placeholder="KEY=value, OTHER=x"
               />
-            ) : ["transport", "name", "command", "args"].includes(step) ? (
+            ) : ['transport', 'name', 'command', 'args'].includes(step) ? (
               <Text dimColor>(pending)</Text>
             ) : (
-              <Text>{env || "(none)"}</Text>
+              <Text>{env || '(none)'}</Text>
             )}
           </Box>
         </>
       )}
 
-      {transport === "http" && (
+      {transport === 'http' && (
         <>
           <Box>
-            <Text>url:        </Text>
-            {step === "url" ? (
+            <Text>url: </Text>
+            {step === 'url' ? (
               <TextInput
                 value={url}
                 onChange={setUrl}
                 onSubmit={advance}
                 placeholder="https://mcp.example.com/v1"
               />
-            ) : ["transport", "name"].includes(step) ? (
+            ) : ['transport', 'name'].includes(step) ? (
               <Text dimColor>(pending)</Text>
             ) : (
               <Text>{url}</Text>
             )}
           </Box>
           <Box>
-            <Text>headers:    </Text>
-            {step === "headers" ? (
+            <Text>headers: </Text>
+            {step === 'headers' ? (
               <TextInput
                 value={headers}
                 onChange={setHeaders}
                 onSubmit={advance}
                 placeholder="Authorization: Bearer xyz, X-Other: val"
               />
-            ) : ["transport", "name", "url"].includes(step) ? (
+            ) : ['transport', 'name', 'url'].includes(step) ? (
               <Text dimColor>(pending)</Text>
             ) : (
               <Text>
                 {initial?.headers && Object.keys(initial.headers).length > 0
                   ? `${Object.keys(initial.headers).length} (existing values masked)`
-                  : headers || "(none)"}
+                  : headers || '(none)'}
               </Text>
             )}
           </Box>
-          {step === "headers" && (
+          {step === 'headers' && (
             <Box marginTop={1}>
               <Text dimColor>
                 {isEdit
                   ? "Hint: leave a key's value empty to keep its existing (encrypted) value."
-                  : "Each value is encrypted on save with the on-disk key."}
+                  : 'Each value is encrypted on save with the on-disk key.'}
               </Text>
             </Box>
           )}
@@ -472,16 +460,16 @@ function ServerForm({
       )}
 
       <Box>
-        <Text>enabled:    </Text>
-        {step === "enabled" ? (
+        <Text>enabled: </Text>
+        {step === 'enabled' ? (
           <SelectInput
             items={[
-              { label: "yes", value: "yes" },
-              { label: "no — keep config but skip at connect time", value: "no" },
+              { label: 'yes', value: 'yes' },
+              { label: 'no — keep config but skip at connect time', value: 'no' },
             ]}
             initialIndex={enabled ? 0 : 1}
             onSelect={(item) => {
-              const v = item.value === "yes";
+              const v = item.value === 'yes';
               setEnabled(v);
               setTimeout(() => void onSave(buildResult(v)), 0);
             }}

@@ -8,9 +8,9 @@
 // is updated for free on every append, so we never have to rewrite the file
 // just to bump a timestamp.
 
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { randomUUID } from "node:crypto";
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import {
   appendFile,
   chmod,
@@ -22,20 +22,19 @@ import {
   stat,
   writeFile,
   open,
-} from "node:fs/promises";
-import { existsSync } from "node:fs";
+} from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import type {
   AssistantPart,
   AssistantUsage,
   MessageRecord,
   Session,
   SessionMetaRecord,
-} from "./types.js";
+} from './types.js';
 
-export const dataDir =
-  process.env.CARETAKER_HOME ?? join(homedir(), ".caretaker");
+export const dataDir = process.env.CARETAKER_HOME ?? join(homedir(), '.caretaker');
 
-export const sessionsRoot = join(dataDir, "sessions");
+export const sessionsRoot = join(dataDir, 'sessions');
 
 function agentDir(agentId: string): string {
   return join(sessionsRoot, agentId);
@@ -55,16 +54,16 @@ function nowIso(): string {
 }
 
 function serialize(record: unknown): string {
-  return JSON.stringify(record) + "\n";
+  return JSON.stringify(record) + '\n';
 }
 
 /** Concatenate text parts of an assistant turn into the canonical `content`
  *  string. Mirrors textConcat() in the server's chat_parts module. */
 function textConcat(parts: AssistantPart[]): string {
   return parts
-    .filter((p): p is Extract<AssistantPart, { type: "text" }> => p.type === "text")
+    .filter((p): p is Extract<AssistantPart, { type: 'text' }> => p.type === 'text')
     .map((p) => p.text)
-    .join("");
+    .join('');
 }
 
 /** Parse a single line. Returns null for blank or malformed lines (caller logs). */
@@ -81,17 +80,17 @@ function parseLine(line: string): unknown | null {
 function isMeta(rec: unknown): rec is SessionMetaRecord {
   return (
     !!rec &&
-    typeof rec === "object" &&
-    (rec as { type?: unknown }).type === "session_meta" &&
+    typeof rec === 'object' &&
+    (rec as { type?: unknown }).type === 'session_meta' &&
     (rec as { v?: unknown }).v === 1
   );
 }
 
 function isMessage(rec: unknown): rec is MessageRecord {
-  if (!rec || typeof rec !== "object") return false;
+  if (!rec || typeof rec !== 'object') return false;
   const o = rec as { v?: unknown; type?: unknown; role?: unknown };
-  if (o.v !== 1 || o.type !== "message") return false;
-  return o.role === "user" || o.role === "assistant" || o.role === "tool";
+  if (o.v !== 1 || o.type !== 'message') return false;
+  return o.role === 'user' || o.role === 'assistant' || o.role === 'tool';
 }
 
 export interface CreateSessionInput {
@@ -107,7 +106,7 @@ export interface CreateSessionInput {
 export async function createSession(input: CreateSessionInput): Promise<SessionMetaRecord> {
   const meta: SessionMetaRecord = {
     v: 1,
-    type: "session_meta",
+    type: 'session_meta',
     id: input.id ?? randomUUID(),
     agentId: input.agentId,
     title: input.title,
@@ -116,13 +115,13 @@ export async function createSession(input: CreateSessionInput): Promise<SessionM
   await ensureDir(agentDir(input.agentId));
   const path = sessionPath(input.agentId, meta.id);
   // `wx` flag: fail if file already exists. Prevents accidental id collision overwriting an existing session.
-  await writeFile(path, serialize(meta), { mode: 0o600, flag: "wx" });
+  await writeFile(path, serialize(meta), { mode: 0o600, flag: 'wx' });
   return meta;
 }
 
 /** Append a message record (user / assistant / tool) to an existing session. */
 export async function appendMessage(
-  meta: Pick<SessionMetaRecord, "agentId" | "id">,
+  meta: Pick<SessionMetaRecord, 'agentId' | 'id'>,
   record: MessageRecord,
 ): Promise<void> {
   const path = sessionPath(meta.agentId, meta.id);
@@ -143,8 +142,8 @@ export async function appendMessage(
  */
 export async function readSession(agentId: string, sessionId: string): Promise<Session> {
   const path = sessionPath(agentId, sessionId);
-  const raw = await readFile(path, "utf8");
-  const lines = raw.split("\n");
+  const raw = await readFile(path, 'utf8');
+  const lines = raw.split('\n');
 
   let meta: SessionMetaRecord | null = null;
   const messages: MessageRecord[] = [];
@@ -177,7 +176,7 @@ export async function listForAgent(agentId: string): Promise<SessionListEntry[]>
   const dir = agentDir(agentId);
   if (!existsSync(dir)) return [];
 
-  const files = (await readdir(dir)).filter((f) => f.endsWith(".jsonl"));
+  const files = (await readdir(dir)).filter((f) => f.endsWith('.jsonl'));
   const entries: SessionListEntry[] = [];
 
   for (const f of files) {
@@ -198,14 +197,14 @@ export async function listForAgent(agentId: string): Promise<SessionListEntry[]>
 
 /** Read just enough of a file to extract the first meta line. */
 async function readFirstMeta(path: string): Promise<SessionMetaRecord | null> {
-  const fh = await open(path, "r");
+  const fh = await open(path, 'r');
   try {
     // Read a single chunk; first line is typically <300 bytes for meta.
     const buf = Buffer.alloc(4096);
     const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
     if (bytesRead === 0) return null;
-    const text = buf.subarray(0, bytesRead).toString("utf8");
-    const newline = text.indexOf("\n");
+    const text = buf.subarray(0, bytesRead).toString('utf8');
+    const newline = text.indexOf('\n');
     const firstLine = newline >= 0 ? text.slice(0, newline) : text;
     const parsed = parseLine(firstLine);
     return isMeta(parsed) ? parsed : null;
@@ -221,12 +220,12 @@ async function readFirstMeta(path: string): Promise<SessionMetaRecord | null> {
  * Returns the new meta.
  */
 export async function updateTitle(
-  meta: Pick<SessionMetaRecord, "agentId" | "id">,
+  meta: Pick<SessionMetaRecord, 'agentId' | 'id'>,
   title: string,
 ): Promise<SessionMetaRecord> {
   const path = sessionPath(meta.agentId, meta.id);
-  const raw = await readFile(path, "utf8");
-  const lines = raw.split("\n");
+  const raw = await readFile(path, 'utf8');
+  const lines = raw.split('\n');
 
   // Find and update the first meta line. Trailing meta records (if any) are
   // left as-is — readSession() walks all of them and the latest wins, but
@@ -245,7 +244,7 @@ export async function updateTitle(
   if (!updated || !newMeta) throw new Error(`session ${meta.id} has no meta to update`);
 
   const tmp = `${path}.tmp.${process.pid}.${Date.now()}`;
-  await writeFile(tmp, lines.join("\n"), { mode: 0o600 });
+  await writeFile(tmp, lines.join('\n'), { mode: 0o600 });
   await rename(tmp, path);
   return newMeta;
 }
@@ -263,9 +262,9 @@ export function userMessage(
 ): MessageRecord {
   return {
     v: 1,
-    type: "message",
+    type: 'message',
     id: opts?.id ?? randomUUID(),
-    role: "user",
+    role: 'user',
     content,
     createdAt: opts?.createdAt ?? nowIso(),
   };
@@ -279,9 +278,9 @@ export function assistantMessage(
   const content = textConcat(parts);
   return {
     v: 1,
-    type: "message",
+    type: 'message',
     id: opts?.id ?? randomUUID(),
-    role: "assistant",
+    role: 'assistant',
     content,
     parts,
     ...(usage ? { usage } : {}),
@@ -296,9 +295,9 @@ export function toolMessage(
 ): MessageRecord {
   return {
     v: 1,
-    type: "message",
+    type: 'message',
     id: opts?.id ?? randomUUID(),
-    role: "tool",
+    role: 'tool',
     toolCallId,
     content,
     createdAt: opts?.createdAt ?? nowIso(),

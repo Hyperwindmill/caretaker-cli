@@ -11,16 +11,16 @@
 // them per-run because the remote tool list can change between runs and we
 // don't want stale entries cluttering autocomplete or test fixtures.
 
-import type { AgentConfig } from "../../types.js";
-import type { ToolRegistry } from "./registry.js";
-import type { Tool } from "./types.js";
-import { mcpToolsForServers } from "../../mcp/adapter.js";
-import { loadAgents } from "../../store/json.js";
+import type { AgentConfig } from '../../types.js';
+import type { ToolRegistry } from './registry.js';
+import type { Tool } from './types.js';
+import { mcpToolsForServers } from '../../mcp/adapter.js';
+import { loadAgents } from '../../store/json.js';
 
-const SKILL_TOOL_NAMES = ["list_skills", "read_skill"] as const;
-const COMMAND_TOOL_NAMES = ["list_commands", "invoke_command"] as const;
-const DISPATCH_TOOL_NAMES = ["list_agents", "invoke_agent"] as const;
-const ALWAYS_ON_TOOL_NAMES = ["get_agent_context"] as const;
+const SKILL_TOOL_NAMES = ['list_skills', 'read_skill'] as const;
+const COMMAND_TOOL_NAMES = ['list_commands', 'invoke_command'] as const;
+const DISPATCH_TOOL_NAMES = ['list_agents', 'invoke_agent'] as const;
+const ALWAYS_ON_TOOL_NAMES = ['get_agent_context'] as const;
 
 function autoInclude(tools: Tool[], registry: ToolRegistry, names: readonly string[]): void {
   const have = new Set(tools.map((t) => t.name));
@@ -31,7 +31,10 @@ function autoInclude(tools: Tool[], registry: ToolRegistry, names: readonly stri
   }
 }
 
-export async function resolveAgentTools(agent: AgentConfig, registry: ToolRegistry): Promise<Tool[]> {
+export async function resolveAgentTools(
+  agent: AgentConfig,
+  registry: ToolRegistry,
+): Promise<Tool[]> {
   const tools = registry.filtered(agent.allowedTools);
 
   // Self-introspection is always available — every agent can ask "how

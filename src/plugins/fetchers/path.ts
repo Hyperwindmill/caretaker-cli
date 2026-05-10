@@ -1,6 +1,6 @@
-import { stat } from "node:fs/promises";
-import * as path from "node:path";
-import type { FetchResult } from "../types.js";
+import { stat } from 'node:fs/promises';
+import * as path from 'node:path';
+import type { FetchResult } from '../types.js';
 
 export function validatePathInput(input: string): void {
   if (!path.isAbsolute(input)) {

@@ -10,9 +10,9 @@
 // `mapRowsToChatMessages` logic can be ported here with minimal adaptation.
 
 export type AssistantPart =
-  | { type: "text"; text: string }
-  | { type: "thinking"; text: string }
-  | { type: "tool_use"; id: string; name: string; args: unknown };
+  | { type: 'text'; text: string }
+  | { type: 'thinking'; text: string }
+  | { type: 'tool_use'; id: string; name: string; args: unknown };
 
 export type AssistantUsage = {
   input: number;
@@ -24,18 +24,18 @@ export type AssistantUsage = {
 
 export interface SessionMetaRecord {
   v: 1;
-  type: "session_meta";
+  type: 'session_meta';
   id: string;
   agentId: string;
   title: string;
   createdAt: string;
 }
 
-export type Role = "user" | "assistant" | "tool";
+export type Role = 'user' | 'assistant' | 'tool';
 
 export interface MessageRecord {
   v: 1;
-  type: "message";
+  type: 'message';
   id: string;
   role: Role;
   /** Canonical text content. For assistant rows: textConcat(parts) — the same

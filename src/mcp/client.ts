@@ -11,13 +11,13 @@
 // Cleanup: closeAll() walks the cache and closes every live client, used by
 // the boot script's exit handler.
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { decrypt, isEncrypted } from "../lib/encryption.js";
-import { loadMcpServers, saveMcpServers } from "../store/json.js";
-import { pluginAbsoluteRoot } from "../plugins/loader.js";
-import type { McpServerConfig } from "../types.js";
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { decrypt, isEncrypted } from '../lib/encryption.js';
+import { loadMcpServers, saveMcpServers } from '../store/json.js';
+import { pluginAbsoluteRoot } from '../plugins/loader.js';
+import type { McpServerConfig } from '../types.js';
 
 interface PoolEntry {
   client: Client;
@@ -54,7 +54,7 @@ function decryptHeaders(headers: Record<string, string> | undefined): Record<str
  */
 function expandPlaceholders(value: string, pluginRoot: string | null): string {
   return value.replace(/\$\{([A-Z_][A-Z0-9_]*)\}/gi, (match, name: string) => {
-    if (name === "CLAUDE_PLUGIN_ROOT") return pluginRoot ?? match;
+    if (name === 'CLAUDE_PLUGIN_ROOT') return pluginRoot ?? match;
     const envValue = process.env[name];
     return envValue !== undefined ? envValue : match;
   });
@@ -95,16 +95,13 @@ async function recordConnectResult(id: string, error: string | null): Promise<vo
 }
 
 async function openClient(server: McpServerConfig): Promise<PoolEntry> {
-  const client = new Client(
-    { name: "caretaker-cli", version: "1.0.0" },
-    { capabilities: {} },
-  );
+  const client = new Client({ name: 'caretaker-cli', version: '1.0.0' }, { capabilities: {} });
 
   // Resolve the plugin's absolute root once (only managed rows need it; user
   // rows pass null and unknown placeholders stay literal).
   const pluginRoot = server.pluginId ? await pluginAbsoluteRoot(server.pluginId) : null;
 
-  if (server.transport === "stdio") {
+  if (server.transport === 'stdio') {
     if (!server.command) {
       throw new Error(`MCP server "${server.name}" (stdio) is missing "command"`);
     }
@@ -112,7 +109,7 @@ async function openClient(server: McpServerConfig): Promise<PoolEntry> {
       command: expandPlaceholders(server.command, pluginRoot),
       args: expandArray(server.args, pluginRoot) ?? [],
       env: expandRecord(server.env, pluginRoot),
-      stderr: "pipe",
+      stderr: 'pipe',
     });
     await client.connect(transport);
     return {
@@ -123,7 +120,7 @@ async function openClient(server: McpServerConfig): Promise<PoolEntry> {
     };
   }
 
-  if (server.transport === "http") {
+  if (server.transport === 'http') {
     if (!server.url) {
       throw new Error(`MCP server "${server.name}" (http) is missing "url"`);
     }

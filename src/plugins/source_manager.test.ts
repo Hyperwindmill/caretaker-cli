@@ -1,29 +1,24 @@
-import { describe, it, before, after, beforeEach } from "node:test";
-import assert from "node:assert/strict";
-import {
-  mkdtempSync,
-  mkdirSync,
-  writeFileSync,
-  rmSync,
-} from "node:fs";
-import { rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import * as path from "node:path";
+import { describe, it, before, after, beforeEach } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import * as path from 'node:path';
 
 let testHome: string;
 let testCache: string;
 
-describe("source_manager", () => {
-  let mgr: typeof import("./source_manager.js");
-  let store: typeof import("../store/json.js");
+describe('source_manager', () => {
+  let mgr: typeof import('./source_manager.js');
+  let store: typeof import('../store/json.js');
 
   before(async () => {
-    testHome = mkdtempSync(path.join(tmpdir(), "caretaker-srcmgr-home-"));
-    testCache = mkdtempSync(path.join(tmpdir(), "caretaker-srcmgr-cache-"));
+    testHome = mkdtempSync(path.join(tmpdir(), 'caretaker-srcmgr-home-'));
+    testCache = mkdtempSync(path.join(tmpdir(), 'caretaker-srcmgr-cache-'));
     process.env.CARETAKER_HOME = testHome;
     process.env.PLUGIN_CACHE_DIR = testCache;
-    mgr = await import("./source_manager.js");
-    store = await import("../store/json.js");
+    mgr = await import('./source_manager.js');
+    store = await import('../store/json.js');
   });
 
   after(async () => {
@@ -38,20 +33,20 @@ describe("source_manager", () => {
   });
 
   function makePathSource(name: string, description?: string): string {
-    const dir = mkdtempSync(path.join(tmpdir(), "plug-src-"));
-    mkdirSync(path.join(dir, ".claude-plugin"), { recursive: true });
+    const dir = mkdtempSync(path.join(tmpdir(), 'plug-src-'));
+    mkdirSync(path.join(dir, '.claude-plugin'), { recursive: true });
     writeFileSync(
-      path.join(dir, ".claude-plugin/plugin.json"),
+      path.join(dir, '.claude-plugin/plugin.json'),
       JSON.stringify({ name, description }),
     );
     return dir;
   }
 
-  it("createSource persists a path source", async () => {
-    const dir = makePathSource("x", "desc");
+  it('createSource persists a path source', async () => {
+    const dir = makePathSource('x', 'desc');
     try {
-      const created = await mgr.createSource({ kind: "path", url: dir });
-      assert.equal(created.kind, "path");
+      const created = await mgr.createSource({ kind: 'path', url: dir });
+      assert.equal(created.kind, 'path');
       assert.equal(created.url, dir);
       assert.equal(created.lastFetchedAt, null);
       const list = await mgr.listSources();
@@ -62,10 +57,10 @@ describe("source_manager", () => {
     }
   });
 
-  it("refreshSource against a path source populates plugins and metadata", async () => {
-    const dir = makePathSource("alpha", "Alpha plugin");
+  it('refreshSource against a path source populates plugins and metadata', async () => {
+    const dir = makePathSource('alpha', 'Alpha plugin');
     try {
-      const created = await mgr.createSource({ kind: "path", url: dir });
+      const created = await mgr.createSource({ kind: 'path', url: dir });
       const result = await mgr.refreshSource(created.id);
       assert.equal(result.pluginsFound, 1);
       assert.equal(result.sha, null);
@@ -73,8 +68,8 @@ describe("source_manager", () => {
 
       const plugins = (await mgr.listPlugins()).filter((p) => p.sourceId === created.id);
       assert.equal(plugins.length, 1);
-      assert.equal(plugins[0].name, "alpha");
-      assert.equal(plugins[0].manifestKind, "cc-plugin");
+      assert.equal(plugins[0].name, 'alpha');
+      assert.equal(plugins[0].manifestKind, 'cc-plugin');
 
       const src = await mgr.getSource(created.id);
       assert.ok(src);
@@ -85,13 +80,13 @@ describe("source_manager", () => {
     }
   });
 
-  it("refreshSource: failure on a previously-OK source preserves prior plugins, writes the error", async () => {
-    const dir = makePathSource("tmp");
+  it('refreshSource: failure on a previously-OK source preserves prior plugins, writes the error', async () => {
+    const dir = makePathSource('tmp');
     try {
-      const created = await mgr.createSource({ kind: "path", url: dir });
+      const created = await mgr.createSource({ kind: 'path', url: dir });
       await mgr.refreshSource(created.id);
       // Break the source.
-      rmSync(path.join(dir, ".claude-plugin"), { recursive: true, force: true });
+      rmSync(path.join(dir, '.claude-plugin'), { recursive: true, force: true });
       const second = await mgr.refreshSource(created.id);
       assert.equal(second.pluginsFound, 0);
       assert.ok(second.error && /no manifest|no plugins/i.test(second.error));
@@ -107,10 +102,10 @@ describe("source_manager", () => {
     }
   });
 
-  it("refreshSource serialises concurrent calls for the same source id", async () => {
-    const dir = makePathSource("ser");
+  it('refreshSource serialises concurrent calls for the same source id', async () => {
+    const dir = makePathSource('ser');
     try {
-      const created = await mgr.createSource({ kind: "path", url: dir });
+      const created = await mgr.createSource({ kind: 'path', url: dir });
       const [a, b] = await Promise.all([
         mgr.refreshSource(created.id),
         mgr.refreshSource(created.id),
@@ -122,14 +117,17 @@ describe("source_manager", () => {
   });
 
   it("deleteSource cascades the source's plugins", async () => {
-    const dir = makePathSource("to-delete");
+    const dir = makePathSource('to-delete');
     try {
-      const created = await mgr.createSource({ kind: "path", url: dir });
+      const created = await mgr.createSource({ kind: 'path', url: dir });
       await mgr.refreshSource(created.id);
       const ok = await mgr.deleteSource(created.id);
       assert.equal(ok, true);
       const sources = await mgr.listSources();
-      assert.equal(sources.find((s) => s.id === created.id), undefined);
+      assert.equal(
+        sources.find((s) => s.id === created.id),
+        undefined,
+      );
       const plugins = (await mgr.listPlugins()).filter((p) => p.sourceId === created.id);
       assert.equal(plugins.length, 0);
     } finally {
@@ -137,19 +135,19 @@ describe("source_manager", () => {
     }
   });
 
-  it("deleteSource returns false on unknown id", async () => {
-    const ok = await mgr.deleteSource("does-not-exist");
+  it('deleteSource returns false on unknown id', async () => {
+    const ok = await mgr.deleteSource('does-not-exist');
     assert.equal(ok, false);
   });
 
-  it("patchSource updates ref and refreshOnStart but not the kind", async () => {
-    const dir = makePathSource("p");
+  it('patchSource updates ref and refreshOnStart but not the kind', async () => {
+    const dir = makePathSource('p');
     try {
-      const created = await mgr.createSource({ kind: "path", url: dir });
+      const created = await mgr.createSource({ kind: 'path', url: dir });
       const patched = await mgr.patchSource(created.id, { refreshOnStart: true });
       assert.ok(patched);
       assert.equal(patched.refreshOnStart, true);
-      assert.equal(patched.kind, "path");
+      assert.equal(patched.kind, 'path');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

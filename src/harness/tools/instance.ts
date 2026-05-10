@@ -14,8 +14,8 @@
 // directly or instantiate their own ToolRegistry rather than depend on
 // this singleton.
 
-import { ToolRegistry } from "./registry.js";
-import { registerBuiltins } from "./builtin/index.js";
+import { ToolRegistry } from './registry.js';
+import { registerBuiltins } from './builtin/index.js';
 
 export const tools = new ToolRegistry();
 registerBuiltins(tools);

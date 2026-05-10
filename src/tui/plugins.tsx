@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
-import { Box, Text, useInput } from "ink";
-import SelectInput from "ink-select-input";
-import TextInput from "ink-text-input";
+import { useEffect, useState } from 'react';
+import { Box, Text, useInput } from 'ink';
+import SelectInput from 'ink-select-input';
+import TextInput from 'ink-text-input';
 import {
   createSource,
   deleteSource,
@@ -10,24 +10,17 @@ import {
   patchSource,
   refreshSource,
   type RefreshOutcome,
-} from "../plugins/source_manager.js";
-import { maskToken } from "../lib/encryption.js";
-import type { PluginRecord, PluginSource } from "../types.js";
+} from '../plugins/source_manager.js';
+import { maskToken } from '../lib/encryption.js';
+import type { PluginRecord, PluginSource } from '../types.js';
 
-type Mode =
-  | "list"
-  | "detail"
-  | "create"
-  | "edit"
-  | "delete"
-  | "refreshing"
-  | "refresh-result";
+type Mode = 'list' | 'detail' | 'create' | 'edit' | 'delete' | 'refreshing' | 'refresh-result';
 
 export default function Plugins({ onBack }: { onBack: () => void }) {
   const [sources, setSources] = useState<PluginSource[]>([]);
   const [plugins, setPlugins] = useState<PluginRecord[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [mode, setMode] = useState<Mode>("list");
+  const [mode, setMode] = useState<Mode>('list');
   const [selected, setSelected] = useState<PluginSource | null>(null);
   const [lastOutcome, setLastOutcome] = useState<RefreshOutcome | null>(null);
 
@@ -43,25 +36,25 @@ export default function Plugins({ onBack }: { onBack: () => void }) {
 
   if (!loaded) return <Text dimColor>loading…</Text>;
 
-  if (mode === "create") {
+  if (mode === 'create') {
     return (
       <SourceForm
-        onCancel={() => setMode("list")}
+        onCancel={() => setMode('list')}
         onSave={async (input) => {
           const created = await createSource(input);
           await reload();
           setSelected(created);
-          setMode("detail");
+          setMode('detail');
         }}
       />
     );
   }
 
-  if (mode === "edit" && selected) {
+  if (mode === 'edit' && selected) {
     return (
       <SourceForm
         initial={selected}
-        onCancel={() => setMode("detail")}
+        onCancel={() => setMode('detail')}
         onSave={async (input) => {
           const patched = await patchSource(selected.id, {
             url: input.url,
@@ -73,34 +66,35 @@ export default function Plugins({ onBack }: { onBack: () => void }) {
             await reload();
             setSelected(patched);
           }
-          setMode("detail");
+          setMode('detail');
         }}
       />
     );
   }
 
-  if (mode === "delete" && selected) {
+  if (mode === 'delete' && selected) {
     const dependents = plugins.filter((p) => p.sourceId === selected.id).length;
     return (
       <Box flexDirection="column">
         <Text>Delete plugin source "{selected.url}"?</Text>
         {dependents > 0 && (
           <Text color="yellow">
-            This will remove {dependents} discovered plugin{dependents === 1 ? "" : "s"} from agents that reference them.
+            This will remove {dependents} discovered plugin{dependents === 1 ? '' : 's'} from agents
+            that reference them.
           </Text>
         )}
         <Box marginTop={1}>
           <SelectInput
             items={[
-              { label: "No, cancel", value: "no" },
-              { label: "Yes, delete", value: "yes" },
+              { label: 'No, cancel', value: 'no' },
+              { label: 'Yes, delete', value: 'yes' },
             ]}
             onSelect={async (item) => {
-              if (item.value === "no") return setMode("detail");
+              if (item.value === 'no') return setMode('detail');
               await deleteSource(selected.id);
               await reload();
               setSelected(null);
-              setMode("list");
+              setMode('list');
             }}
           />
         </Box>
@@ -108,7 +102,7 @@ export default function Plugins({ onBack }: { onBack: () => void }) {
     );
   }
 
-  if (mode === "refreshing" && selected) {
+  if (mode === 'refreshing' && selected) {
     return (
       <Box flexDirection="column">
         <Text dimColor>refreshing "{selected.url}"…</Text>
@@ -116,24 +110,24 @@ export default function Plugins({ onBack }: { onBack: () => void }) {
     );
   }
 
-  if (mode === "refresh-result" && selected && lastOutcome) {
+  if (mode === 'refresh-result' && selected && lastOutcome) {
     return (
       <Box flexDirection="column">
-        <Text bold>{lastOutcome.error ? "Refresh failed" : "Refresh succeeded"}</Text>
+        <Text bold>{lastOutcome.error ? 'Refresh failed' : 'Refresh succeeded'}</Text>
         {lastOutcome.error ? (
           <Text color="red">{lastOutcome.error.slice(0, 400)}</Text>
         ) : (
           <Text>
-            {lastOutcome.pluginsFound} plugin{lastOutcome.pluginsFound === 1 ? "" : "s"} found
-            {lastOutcome.sha ? ` · ${lastOutcome.sha.slice(0, 8)}` : ""}
+            {lastOutcome.pluginsFound} plugin{lastOutcome.pluginsFound === 1 ? '' : 's'} found
+            {lastOutcome.sha ? ` · ${lastOutcome.sha.slice(0, 8)}` : ''}
           </Text>
         )}
         <Box marginTop={1}>
           <SelectInput
-            items={[{ label: "← Back", value: "back" }]}
+            items={[{ label: '← Back', value: 'back' }]}
             onSelect={() => {
               setLastOutcome(null);
-              setMode("detail");
+              setMode('detail');
             }}
           />
         </Box>
@@ -141,47 +135,53 @@ export default function Plugins({ onBack }: { onBack: () => void }) {
     );
   }
 
-  if (mode === "detail" && selected) {
+  if (mode === 'detail' && selected) {
     const mine = plugins.filter((p) => p.sourceId === selected.id);
     return (
       <Box flexDirection="column">
         <Text bold>{selected.url}</Text>
-        <Text>kind:           {selected.kind}</Text>
-        {selected.kind === "git" && (
+        <Text>kind: {selected.kind}</Text>
+        {selected.kind === 'git' && (
           <>
-            <Text>ref:            {selected.ref ?? "(default branch)"}</Text>
-            <Text>auth:           {selected.authToken ? "(set)" : "(none)"}</Text>
+            <Text>ref: {selected.ref ?? '(default branch)'}</Text>
+            <Text>auth: {selected.authToken ? '(set)' : '(none)'}</Text>
           </>
         )}
-        <Text>refreshOnStart: {selected.refreshOnStart ? "yes" : "no"}</Text>
-        <Text>lastFetched:    {selected.lastFetchedAt ?? "(never)"}</Text>
-        {selected.lastFetchSha && <Text>lastSha:        {selected.lastFetchSha.slice(0, 12)}</Text>}
-        {selected.lastFetchError && <Text color="red">lastError:      {selected.lastFetchError.slice(0, 200)}</Text>}
+        <Text>refreshOnStart: {selected.refreshOnStart ? 'yes' : 'no'}</Text>
+        <Text>lastFetched: {selected.lastFetchedAt ?? '(never)'}</Text>
+        {selected.lastFetchSha && <Text>lastSha: {selected.lastFetchSha.slice(0, 12)}</Text>}
+        {selected.lastFetchError && (
+          <Text color="red">lastError: {selected.lastFetchError.slice(0, 200)}</Text>
+        )}
 
         <Box marginTop={1} flexDirection="column">
           <Text dimColor>discovered plugins ({mine.length}):</Text>
-          {mine.length === 0
-            ? <Text dimColor>  (none — refresh to discover)</Text>
-            : mine.map((p) => (
-                <Text key={p.id}>
-                  {`  · `}
-                  <Text bold>{p.name}</Text>
-                  <Text dimColor>{` [${p.manifestKind}] ${p.description ? `— ${p.description}` : ""}`}</Text>
-                </Text>
-              ))}
+          {mine.length === 0 ? (
+            <Text dimColor> (none — refresh to discover)</Text>
+          ) : (
+            mine.map((p) => (
+              <Text key={p.id}>
+                {`  · `}
+                <Text bold>{p.name}</Text>
+                <Text
+                  dimColor
+                >{` [${p.manifestKind}] ${p.description ? `— ${p.description}` : ''}`}</Text>
+              </Text>
+            ))
+          )}
         </Box>
 
         <Box marginTop={1}>
           <SelectInput
             items={[
-              { label: "Refresh now", value: "refresh" },
-              { label: "Edit", value: "edit" },
-              { label: "Delete", value: "delete" },
-              { label: "← Back", value: "back" },
+              { label: 'Refresh now', value: 'refresh' },
+              { label: 'Edit', value: 'edit' },
+              { label: 'Delete', value: 'delete' },
+              { label: '← Back', value: 'back' },
             ]}
             onSelect={async (item) => {
-              if (item.value === "refresh") {
-                setMode("refreshing");
+              if (item.value === 'refresh') {
+                setMode('refreshing');
                 const outcome = await refreshSource(selected.id);
                 await reload();
                 // Refresh `selected` from the freshly-loaded list so the
@@ -189,12 +189,12 @@ export default function Plugins({ onBack }: { onBack: () => void }) {
                 const fresh = (await listSources()).find((s) => s.id === selected.id) ?? null;
                 if (fresh) setSelected(fresh);
                 setLastOutcome(outcome);
-                setMode("refresh-result");
+                setMode('refresh-result');
                 return;
               }
-              if (item.value === "edit") return setMode("edit");
-              if (item.value === "delete") return setMode("delete");
-              setMode("list");
+              if (item.value === 'edit') return setMode('edit');
+              if (item.value === 'delete') return setMode('delete');
+              setMode('list');
             }}
           />
         </Box>
@@ -205,11 +205,11 @@ export default function Plugins({ onBack }: { onBack: () => void }) {
   const items = [
     ...sources.map((s) => {
       const count = plugins.filter((p) => p.sourceId === s.id).length;
-      const label = `${s.kind === "git" ? "git" : "path"}  ${s.url}  —  ${count} plugin${count === 1 ? "" : "s"}`;
+      const label = `${s.kind === 'git' ? 'git' : 'path'}  ${s.url}  —  ${count} plugin${count === 1 ? '' : 's'}`;
       return { label, value: `s:${s.id}` };
     }),
-    { label: "+ Create new", value: "__new__" },
-    { label: "← Back", value: "__back__" },
+    { label: '+ Create new', value: '__new__' },
+    { label: '← Back', value: '__back__' },
   ];
 
   return (
@@ -219,13 +219,13 @@ export default function Plugins({ onBack }: { onBack: () => void }) {
         <SelectInput
           items={items}
           onSelect={(item) => {
-            if (item.value === "__back__") return onBack();
-            if (item.value === "__new__") return setMode("create");
-            const id = item.value.replace(/^s:/, "");
+            if (item.value === '__back__') return onBack();
+            if (item.value === '__new__') return setMode('create');
+            const id = item.value.replace(/^s:/, '');
             const s = sources.find((x) => x.id === id);
             if (s) {
               setSelected(s);
-              setMode("detail");
+              setMode('detail');
             }
           }}
         />
@@ -234,10 +234,10 @@ export default function Plugins({ onBack }: { onBack: () => void }) {
   );
 }
 
-type FormStep = "kind" | "url" | "ref" | "authToken" | "refreshOnStart";
+type FormStep = 'kind' | 'url' | 'ref' | 'authToken' | 'refreshOnStart';
 
 interface FormResult {
-  kind: "git" | "path";
+  kind: 'git' | 'path';
   url: string;
   ref?: string | null;
   /** undefined = leave unchanged (edit mode); null = clear; string = set/replace. */
@@ -257,11 +257,11 @@ function SourceForm({
   const isEdit = !!initial;
   // In edit mode the kind is fixed (changing it would invalidate the cache);
   // we skip the kind step and start at url.
-  const [step, setStep] = useState<FormStep>(isEdit ? "url" : "kind");
-  const [kind, setKind] = useState<"git" | "path">(initial?.kind ?? "git");
-  const [url, setUrl] = useState(initial?.url ?? "");
-  const [ref, setRef] = useState(initial?.ref ?? "");
-  const [authToken, setAuthToken] = useState("");
+  const [step, setStep] = useState<FormStep>(isEdit ? 'url' : 'kind');
+  const [kind, setKind] = useState<'git' | 'path'>(initial?.kind ?? 'git');
+  const [url, setUrl] = useState(initial?.url ?? '');
+  const [ref, setRef] = useState(initial?.ref ?? '');
+  const [authToken, setAuthToken] = useState('');
   const [refreshOnStart, setRefreshOnStart] = useState(initial?.refreshOnStart ?? false);
   const [error, setError] = useState<string | null>(null);
 
@@ -275,7 +275,7 @@ function SourceForm({
       url: url.trim(),
       refreshOnStart,
     };
-    if (kind === "git") {
+    if (kind === 'git') {
       result.ref = ref.trim() || null;
       // Edit mode: empty input means "keep existing" → leave authToken
       // undefined so patchSource skips the field. In create mode an empty
@@ -290,42 +290,42 @@ function SourceForm({
   };
 
   const submit = () => {
-    if (step === "kind") {
+    if (step === 'kind') {
       setError(null);
-      setStep("url");
-    } else if (step === "url") {
+      setStep('url');
+    } else if (step === 'url') {
       const v = url.trim();
-      if (!v) return setError("url is required");
-      if (kind === "path" && !v.startsWith("/")) return setError("path must be absolute");
+      if (!v) return setError('url is required');
+      if (kind === 'path' && !v.startsWith('/')) return setError('path must be absolute');
       setError(null);
-      if (kind === "git") setStep("ref");
-      else setStep("refreshOnStart");
-    } else if (step === "ref") {
+      if (kind === 'git') setStep('ref');
+      else setStep('refreshOnStart');
+    } else if (step === 'ref') {
       setError(null);
-      setStep("authToken");
-    } else if (step === "authToken") {
+      setStep('authToken');
+    } else if (step === 'authToken') {
       setError(null);
-      setStep("refreshOnStart");
-    } else if (step === "refreshOnStart") {
+      setStep('refreshOnStart');
+    } else if (step === 'refreshOnStart') {
       finalize();
     }
   };
 
   return (
     <Box flexDirection="column">
-      <Text bold>{isEdit ? `Edit source "${initial!.url}"` : "New plugin source"}</Text>
+      <Text bold>{isEdit ? `Edit source "${initial!.url}"` : 'New plugin source'}</Text>
 
       <Box marginTop={1}>
-        <Text>kind:           </Text>
-        {step === "kind" ? (
+        <Text>kind: </Text>
+        {step === 'kind' ? (
           <SelectInput
             items={[
-              { label: "git (clone a repo)", value: "git" },
-              { label: "path (local directory)", value: "path" },
+              { label: 'git (clone a repo)', value: 'git' },
+              { label: 'path (local directory)', value: 'path' },
             ]}
             onSelect={(item) => {
-              setKind(item.value as "git" | "path");
-              setStep("url");
+              setKind(item.value as 'git' | 'path');
+              setStep('url');
             }}
           />
         ) : (
@@ -334,43 +334,45 @@ function SourceForm({
       </Box>
 
       <Box>
-        <Text>url:            </Text>
-        {step === "url" ? (
+        <Text>url: </Text>
+        {step === 'url' ? (
           <TextInput
             value={url}
             onChange={setUrl}
             onSubmit={submit}
-            placeholder={kind === "git" ? "https://github.com/owner/repo.git" : "/absolute/path/to/dir"}
+            placeholder={
+              kind === 'git' ? 'https://github.com/owner/repo.git' : '/absolute/path/to/dir'
+            }
           />
-        ) : step === "kind" ? (
+        ) : step === 'kind' ? (
           <Text dimColor>(pending)</Text>
         ) : (
           <Text>{url}</Text>
         )}
       </Box>
 
-      {kind === "git" && (
+      {kind === 'git' && (
         <Box>
-          <Text>ref:            </Text>
-          {step === "ref" ? (
+          <Text>ref: </Text>
+          {step === 'ref' ? (
             <TextInput
               value={ref}
               onChange={setRef}
               onSubmit={submit}
               placeholder="(empty = default branch)"
             />
-          ) : ["kind", "url"].includes(step) ? (
+          ) : ['kind', 'url'].includes(step) ? (
             <Text dimColor>(pending)</Text>
           ) : (
-            <Text>{ref || "(default branch)"}</Text>
+            <Text>{ref || '(default branch)'}</Text>
           )}
         </Box>
       )}
 
-      {kind === "git" && (
+      {kind === 'git' && (
         <Box>
-          <Text>authToken:      </Text>
-          {step === "authToken" ? (
+          <Text>authToken: </Text>
+          {step === 'authToken' ? (
             <TextInput
               value={authToken}
               onChange={setAuthToken}
@@ -379,38 +381,38 @@ function SourceForm({
                 isEdit
                   ? initial!.authToken
                     ? `(${maskToken(initial!.authToken.slice(-12))} — enter to keep)`
-                    : "(optional)"
-                  : "(optional)"
+                    : '(optional)'
+                  : '(optional)'
               }
               mask="*"
             />
-          ) : ["kind", "url", "ref"].includes(step) ? (
+          ) : ['kind', 'url', 'ref'].includes(step) ? (
             <Text dimColor>(pending)</Text>
           ) : (
-            <Text>{authToken ? "(set)" : initial?.authToken ? "(unchanged)" : "(none)"}</Text>
+            <Text>{authToken ? '(set)' : initial?.authToken ? '(unchanged)' : '(none)'}</Text>
           )}
         </Box>
       )}
 
       <Box>
         <Text>refreshOnStart: </Text>
-        {step === "refreshOnStart" ? (
+        {step === 'refreshOnStart' ? (
           <SelectInput
             items={[
-              { label: "no", value: "no" },
-              { label: "yes — refresh this source on every TUI launch", value: "yes" },
+              { label: 'no', value: 'no' },
+              { label: 'yes — refresh this source on every TUI launch', value: 'yes' },
             ]}
             initialIndex={refreshOnStart ? 1 : 0}
             onSelect={(item) => {
-              setRefreshOnStart(item.value === "yes");
+              setRefreshOnStart(item.value === 'yes');
               // Use a microtask so React applies the state before finalize reads it.
               setTimeout(() => {
                 const result: FormResult = {
                   kind,
                   url: url.trim(),
-                  refreshOnStart: item.value === "yes",
+                  refreshOnStart: item.value === 'yes',
                 };
-                if (kind === "git") {
+                if (kind === 'git') {
                   result.ref = ref.trim() || null;
                   if (isEdit) {
                     result.authToken = authToken.trim() ? authToken.trim() : undefined;

@@ -10,26 +10,36 @@
 // left as a follow-up so this tool ships fast. `contextWindow` and
 // `percent` are returned as null until that lands.
 
-import type { Tool } from "../types.js";
+import type { Tool } from '../types.js';
 
 function totalOf(
-  u: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; reasoning?: number } | undefined,
+  u:
+    | {
+        input?: number;
+        output?: number;
+        cacheRead?: number;
+        cacheWrite?: number;
+        reasoning?: number;
+      }
+    | undefined,
 ): number {
   if (!u) return 0;
-  return (u.input ?? 0) + (u.output ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0) + (u.reasoning ?? 0);
+  return (
+    (u.input ?? 0) + (u.output ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0) + (u.reasoning ?? 0)
+  );
 }
 
 export const getAgentContextTool: Tool = {
-  name: "get_agent_context",
+  name: 'get_agent_context',
   description:
     "Return live information about this run: the agent's identity (name, " +
-    "model, provider, working directory) and token usage so far " +
-    "(last turn breakdown + cumulative across the run). Static identity is " +
-    "also visible in the <runtime-info> block of your system prompt — " +
-    "prefer reading that for non-live questions. Call this tool only when " +
-    "you need fresh token-usage numbers.",
+    'model, provider, working directory) and token usage so far ' +
+    '(last turn breakdown + cumulative across the run). Static identity is ' +
+    'also visible in the <runtime-info> block of your system prompt — ' +
+    'prefer reading that for non-live questions. Call this tool only when ' +
+    'you need fresh token-usage numbers.',
   parameters: {
-    type: "object",
+    type: 'object',
     properties: {},
     additionalProperties: false,
   },
