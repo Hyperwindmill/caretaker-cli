@@ -1,31 +1,26 @@
-import { describe, it, before, after, beforeEach } from "node:test";
-import assert from "node:assert/strict";
-import {
-  mkdtempSync,
-  mkdirSync,
-  writeFileSync,
-  rmSync,
-} from "node:fs";
-import { rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import * as path from "node:path";
+import { describe, it, before, after, beforeEach } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import * as path from 'node:path';
 
 let testHome: string;
 let testCache: string;
 
-describe("refreshSourcesOnStart", () => {
-  let mod: typeof import("./refresh_on_start.js");
-  let mgr: typeof import("./source_manager.js");
-  let store: typeof import("../store/json.js");
+describe('refreshSourcesOnStart', () => {
+  let mod: typeof import('./refresh_on_start.js');
+  let mgr: typeof import('./source_manager.js');
+  let store: typeof import('../store/json.js');
 
   before(async () => {
-    testHome = mkdtempSync(path.join(tmpdir(), "caretaker-refresh-start-home-"));
-    testCache = mkdtempSync(path.join(tmpdir(), "caretaker-refresh-start-cache-"));
+    testHome = mkdtempSync(path.join(tmpdir(), 'caretaker-refresh-start-home-'));
+    testCache = mkdtempSync(path.join(tmpdir(), 'caretaker-refresh-start-cache-'));
     process.env.CARETAKER_HOME = testHome;
     process.env.PLUGIN_CACHE_DIR = testCache;
-    mod = await import("./refresh_on_start.js");
-    mgr = await import("./source_manager.js");
-    store = await import("../store/json.js");
+    mod = await import('./refresh_on_start.js');
+    mgr = await import('./source_manager.js');
+    store = await import('../store/json.js');
   });
 
   after(async () => {
@@ -40,19 +35,16 @@ describe("refreshSourcesOnStart", () => {
   });
 
   function makePathSource(name: string): string {
-    const dir = mkdtempSync(path.join(tmpdir(), "plug-ros-"));
-    mkdirSync(path.join(dir, ".claude-plugin"), { recursive: true });
-    writeFileSync(
-      path.join(dir, ".claude-plugin/plugin.json"),
-      JSON.stringify({ name }),
-    );
+    const dir = mkdtempSync(path.join(tmpdir(), 'plug-ros-'));
+    mkdirSync(path.join(dir, '.claude-plugin'), { recursive: true });
+    writeFileSync(path.join(dir, '.claude-plugin/plugin.json'), JSON.stringify({ name }));
     return dir;
   }
 
-  it("returns [] when no source is flagged refreshOnStart", async () => {
-    const dir = makePathSource("nope");
+  it('returns [] when no source is flagged refreshOnStart', async () => {
+    const dir = makePathSource('nope');
     try {
-      await mgr.createSource({ kind: "path", url: dir, refreshOnStart: false });
+      await mgr.createSource({ kind: 'path', url: dir, refreshOnStart: false });
       const results = await mod.refreshSourcesOnStart();
       assert.deepEqual(results, []);
     } finally {
@@ -60,12 +52,12 @@ describe("refreshSourcesOnStart", () => {
     }
   });
 
-  it("refreshes only sources with refreshOnStart=true", async () => {
-    const a = makePathSource("alpha");
-    const b = makePathSource("beta");
+  it('refreshes only sources with refreshOnStart=true', async () => {
+    const a = makePathSource('alpha');
+    const b = makePathSource('beta');
     try {
-      const sa = await mgr.createSource({ kind: "path", url: a, refreshOnStart: true });
-      const sb = await mgr.createSource({ kind: "path", url: b, refreshOnStart: false });
+      const sa = await mgr.createSource({ kind: 'path', url: a, refreshOnStart: true });
+      const sb = await mgr.createSource({ kind: 'path', url: b, refreshOnStart: false });
       const results = await mod.refreshSourcesOnStart();
       assert.equal(results.length, 1);
       assert.equal(results[0].sourceId, sa.id);
@@ -82,13 +74,13 @@ describe("refreshSourcesOnStart", () => {
     }
   });
 
-  it("captures failures per-source and keeps going", async () => {
-    const ok = makePathSource("ok");
-    const broken = mkdtempSync(path.join(tmpdir(), "plug-ros-broken-"));
+  it('captures failures per-source and keeps going', async () => {
+    const ok = makePathSource('ok');
+    const broken = mkdtempSync(path.join(tmpdir(), 'plug-ros-broken-'));
     // No manifest in `broken` → discoverPlugins throws NoPluginsFoundError.
     try {
-      const sok = await mgr.createSource({ kind: "path", url: ok, refreshOnStart: true });
-      const sbr = await mgr.createSource({ kind: "path", url: broken, refreshOnStart: true });
+      const sok = await mgr.createSource({ kind: 'path', url: ok, refreshOnStart: true });
+      const sbr = await mgr.createSource({ kind: 'path', url: broken, refreshOnStart: true });
 
       const origErr = console.error;
       console.error = () => {};

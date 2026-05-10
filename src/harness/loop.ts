@@ -11,32 +11,31 @@
 // persisting the user prompt before calling run(); the loop emits assistant
 // and tool messages via `cb.onMessage` as they are produced.
 
-import type { AgentConfig, ProviderConfig } from "../types.js";
-import type { AssistantPart, MessageRecord } from "../session/types.js";
-import { assistantMessage, toolMessage } from "../session/store.js";
-import {
-  buildRequestBody,
-  readStream,
-  type AssistantUsage,
-  type ChatMessage,
-} from "./provider.js";
-import { mapMessagesToChat } from "./history.js";
+import type { AgentConfig, ProviderConfig } from '../types.js';
+import type { AssistantPart, MessageRecord } from '../session/types.js';
+import { assistantMessage, toolMessage } from '../session/store.js';
+import { buildRequestBody, readStream, type AssistantUsage, type ChatMessage } from './provider.js';
+import { mapMessagesToChat } from './history.js';
 import {
   type ConfirmGate,
   type ConfirmDecision as ToolConfirmDecision,
   type Tool,
   type ToolContext,
   toOpenAiTool,
-} from "./tools/index.js";
-import { withHarnessPrelude } from "./prelude.js";
-import { formatRuntimeInfoBlock } from "./runtime_info.js";
-import { loadContextFiles, formatContextBlock, resolveFileReferences } from "./context_files.js";
+} from './tools/index.js';
+import { withHarnessPrelude } from './prelude.js';
+import { formatRuntimeInfoBlock } from './runtime_info.js';
+import { loadContextFiles, formatContextBlock, resolveFileReferences } from './context_files.js';
 
 type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 let fetchImpl: FetchLike = globalThis.fetch.bind(globalThis);
 /** Testing hook — override the fetch used by the runner. */
-export function __setFetch(f: FetchLike): void { fetchImpl = f; }
-export function __resetFetch(): void { fetchImpl = globalThis.fetch.bind(globalThis); }
+export function __setFetch(f: FetchLike): void {
+  fetchImpl = f;
+}
+export function __resetFetch(): void {
+  fetchImpl = globalThis.fetch.bind(globalThis);
+}
 
 export type ConfirmDecision = ToolConfirmDecision;
 
@@ -94,16 +93,15 @@ export interface RunResult {
   /** Cumulative usage across turns (sum of per-turn `usage` chunks). */
   usage: AssistantUsage;
   /** Reason the loop terminated: "done", "max_turns", or "aborted". */
-  stop: "done" | "max_turns" | "aborted";
+  stop: 'done' | 'max_turns' | 'aborted';
 }
 
 export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunResult> {
   const { agent, provider, tools, prompt } = opts;
-  const baseUrl = provider.endpoint.replace(/\/+$/, "");
+  const baseUrl = provider.endpoint.replace(/\/+$/, '');
   const endpoint = `${baseUrl}/v1/chat/completions`;
   // 0 → unlimited; >0 → that cap; anything else (negative / NaN) → 30 fallback.
-  const maxTurns =
-    agent.maxTurns === 0 ? Infinity : agent.maxTurns > 0 ? agent.maxTurns : 30;
+  const maxTurns = agent.maxTurns === 0 ? Infinity : agent.maxTurns > 0 ? agent.maxTurns : 30;
 
   const openAiTools = tools.map(toOpenAiTool);
   const toolByName = new Map(tools.map((t) => [t.name, t]));
@@ -127,7 +125,7 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
   //   2. Prepend AGENTS.md / CLAUDE.md / GEMINI.md walk-up + globals
   //   3. Prepend the harness prelude
   let effectiveSystemPrompt = await resolveFileReferences(
-    agent.systemPrompt ?? "",
+    agent.systemPrompt ?? '',
     toolCtx.workingDir,
   );
   const ctxEntries = await loadContextFiles(toolCtx.workingDir);
@@ -153,15 +151,21 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
   // at the call site) and pull the SKILL.md content on demand.
 
   const chat: ChatMessage[] = [];
-  if (effectiveSystemPrompt) chat.push({ role: "system", content: effectiveSystemPrompt });
+  if (effectiveSystemPrompt) chat.push({ role: 'system', content: effectiveSystemPrompt });
   if (opts.history && opts.history.length > 0) {
     for (const m of mapMessagesToChat(opts.history)) chat.push(m);
   }
-  chat.push({ role: "user", content: prompt });
+  chat.push({ role: 'user', content: prompt });
 
-  let fullText = "";
+  let fullText = '';
   let totalToolCalls = 0;
-  const cumulative: AssistantUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
+  const cumulative: AssistantUsage = {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    reasoning: 0,
+  };
   // Shared object — the loop mutates `lastTurn` and `cumulative` in place
   // each turn, and `get_agent_context` reads from this same reference at
   // tool execution time so it always sees the latest values.
@@ -179,29 +183,30 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
       // produced output and tools have already run; aborting now would
       // diverge model state from on-disk state worse than logging and
       // continuing.
-      console.error("[loop] onMessage handler threw:", err);
+      console.error('[loop] onMessage handler threw:', err);
     }
   };
 
   for (let turn = 0; turn < maxTurns; turn++) {
-    if (opts.signal?.aborted) return { text: fullText, toolCalls: totalToolCalls, usage: cumulative, stop: "aborted" };
+    if (opts.signal?.aborted)
+      return { text: fullText, toolCalls: totalToolCalls, usage: cumulative, stop: 'aborted' };
 
     const body = buildRequestBody({ messages: chat, tools: openAiTools, model: agent.model });
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (provider.apiKey) headers["Authorization"] = `Bearer ${provider.apiKey}`;
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (provider.apiKey) headers['Authorization'] = `Bearer ${provider.apiKey}`;
 
     const response = await fetchImpl(endpoint, {
-      method: "POST",
+      method: 'POST',
       headers,
       body: JSON.stringify(body),
       signal: opts.signal,
     });
     if (!response.ok) {
-      const errText = (await response.text().catch(() => "")).slice(0, 8192);
+      const errText = (await response.text().catch(() => '')).slice(0, 8192);
       throw new Error(`provider ${provider.name} returned ${response.status}: ${errText}`);
     }
 
-    let assistantText = "";
+    let assistantText = '';
     const assistantParts: AssistantPart[] = [];
     let turnUsage: AssistantUsage | undefined;
     const pending = new Map<number, { id: string; name: string; args: string }>();
@@ -212,37 +217,37 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
     const pushTextPart = (text: string) => {
       if (text.length === 0) return;
       const last = assistantParts[assistantParts.length - 1];
-      if (last && last.type === "text") last.text += text;
-      else assistantParts.push({ type: "text", text });
+      if (last && last.type === 'text') last.text += text;
+      else assistantParts.push({ type: 'text', text });
     };
     const pushThinkingPart = (text: string) => {
       if (text.length === 0) return;
       const last = assistantParts[assistantParts.length - 1];
-      if (last && last.type === "thinking") last.text += text;
-      else assistantParts.push({ type: "thinking", text });
+      if (last && last.type === 'thinking') last.text += text;
+      else assistantParts.push({ type: 'thinking', text });
     };
 
     await readStream(response, (evt) => {
       switch (evt.kind) {
-        case "content":
+        case 'content':
           assistantText += evt.text;
           fullText += evt.text;
           cb.onChunk?.(evt.text);
           pushTextPart(evt.text);
           break;
-        case "thinking":
+        case 'thinking':
           cb.onThinking?.(evt.text);
           pushThinkingPart(evt.text);
           break;
-        case "tool_call_delta": {
-          const rec = pending.get(evt.index) ?? { id: "", name: "", args: "" };
+        case 'tool_call_delta': {
+          const rec = pending.get(evt.index) ?? { id: '', name: '', args: '' };
           if (evt.id) rec.id = evt.id;
           if (evt.name) rec.name = evt.name;
           if (evt.argumentsDelta) rec.args += evt.argumentsDelta;
           pending.set(evt.index, rec);
           break;
         }
-        case "usage":
+        case 'usage':
           turnUsage = evt.usage;
           liveUsage.lastTurn = evt.usage;
           cb.onUsage?.(evt.usage);
@@ -252,13 +257,14 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
           cumulative.cacheWrite = (cumulative.cacheWrite ?? 0) + (evt.usage.cacheWrite ?? 0);
           cumulative.reasoning = (cumulative.reasoning ?? 0) + (evt.usage.reasoning ?? 0);
           break;
-        case "finish":
-        case "done":
+        case 'finish':
+        case 'done':
           break;
       }
     });
 
-    if (opts.signal?.aborted) return { text: fullText, toolCalls: totalToolCalls, usage: cumulative, stop: "aborted" };
+    if (opts.signal?.aborted)
+      return { text: fullText, toolCalls: totalToolCalls, usage: cumulative, stop: 'aborted' };
 
     // Build the model-facing assistant ChatMessage and the persistable
     // assistant MessageRecord in one pass: tool_use parts mirror the
@@ -269,7 +275,7 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
             .sort(([a], [b]) => a - b)
             .map(([, rec]) => ({
               id: rec.id,
-              type: "function" as const,
+              type: 'function' as const,
               function: { name: rec.name, arguments: rec.args },
             }))
         : [];
@@ -281,7 +287,12 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
       } catch {
         parsedArgs = {};
       }
-      assistantParts.push({ type: "tool_use", id: tc.id, name: tc.function.name, args: parsedArgs });
+      assistantParts.push({
+        type: 'tool_use',
+        id: tc.id,
+        name: tc.function.name,
+        args: parsedArgs,
+      });
     }
 
     // Persist the assistant turn (parts + usage). Caller serializes via the
@@ -291,13 +302,13 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
 
     // Mirror the assistant turn into the chat-completions array for the next iteration.
     chat.push({
-      role: "assistant",
+      role: 'assistant',
       content: assistantText.length > 0 ? assistantText : null,
       ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
     });
 
     if (toolCalls.length === 0) {
-      return { text: fullText, toolCalls: totalToolCalls, usage: cumulative, stop: "done" };
+      return { text: fullText, toolCalls: totalToolCalls, usage: cumulative, stop: 'done' };
     }
 
     for (const tc of toolCalls) {
@@ -310,31 +321,31 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
       cb.onToolCall?.(tc.id, tc.function.name, parsedArgs);
       totalToolCalls++;
 
-      let content = "";
+      let content = '';
       const t = toolByName.get(tc.function.name);
       if (!t) {
         content = `Error: unknown tool "${tc.function.name}"`;
       } else {
-        let gateOutcome: "proceed" | "reject" | string = "proceed";
+        let gateOutcome: 'proceed' | 'reject' | string = 'proceed';
         if (cb.confirmTool) {
           try {
             const decision = await cb.confirmTool(tc.id, tc.function.name, parsedArgs);
-            gateOutcome = decision === "reject" ? "reject" : "proceed";
+            gateOutcome = decision === 'reject' ? 'reject' : 'proceed';
           } catch (err) {
             // Treat a thrown gate as a rejection so a buggy UI can never
             // silently auto-approve. The tool message records why.
             gateOutcome = `Error: confirm gate threw: ${err instanceof Error ? err.message : String(err)}`;
           }
         }
-        if (gateOutcome === "proceed") {
+        if (gateOutcome === 'proceed') {
           try {
             const result = await t.execute(parsedArgs, toolCtx);
             content = result.content;
           } catch (err) {
             content = `Error: ${err instanceof Error ? err.message : String(err)}`;
           }
-        } else if (gateOutcome === "reject") {
-          content = "Error: rejected by user";
+        } else if (gateOutcome === 'reject') {
+          content = 'Error: rejected by user';
         } else {
           content = gateOutcome;
         }
@@ -344,10 +355,10 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
       const toolMsg = toolMessage(tc.id, content);
       await safeEmit(toolMsg);
 
-      chat.push({ role: "tool", tool_call_id: tc.id, content });
+      chat.push({ role: 'tool', tool_call_id: tc.id, content });
       cb.onToolResult?.(tc.id, content);
     }
   }
 
-  return { text: fullText, toolCalls: totalToolCalls, usage: cumulative, stop: "max_turns" };
+  return { text: fullText, toolCalls: totalToolCalls, usage: cumulative, stop: 'max_turns' };
 }

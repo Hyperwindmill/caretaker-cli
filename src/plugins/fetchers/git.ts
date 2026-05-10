@@ -5,13 +5,13 @@
 // Auth tokens stored in the source row are decrypted on demand via
 // lib/encryption.ts; for legacy / unencrypted entries the value is used as-is.
 
-import * as fs from "node:fs";
-import { mkdir, stat } from "node:fs/promises";
-import * as path from "node:path";
-import git from "isomorphic-git";
-import http from "isomorphic-git/http/node";
-import { decrypt, isEncrypted } from "../../lib/encryption.js";
-import type { FetchResult } from "../types.js";
+import * as fs from 'node:fs';
+import { mkdir, stat } from 'node:fs/promises';
+import * as path from 'node:path';
+import git from 'isomorphic-git';
+import http from 'isomorphic-git/http/node';
+import { decrypt, isEncrypted } from '../../lib/encryption.js';
+import type { FetchResult } from '../types.js';
 
 export interface GitFetchInput {
   url: string;
@@ -69,7 +69,7 @@ function plainToken(authToken: string): string {
 function buildOnAuth(authToken: string | null): OnAuth | undefined {
   if (!authToken) return undefined;
   const password = plainToken(authToken);
-  return () => ({ username: "x-access-token", password });
+  return () => ({ username: 'x-access-token', password });
 }
 
 async function dirExists(p: string): Promise<boolean> {
@@ -77,14 +77,14 @@ async function dirExists(p: string): Promise<boolean> {
     const st = await stat(p);
     return st.isDirectory();
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false;
     throw err;
   }
 }
 
 export async function fetchGit(input: GitFetchInput, cacheDir: string): Promise<FetchResult> {
   const onAuth = buildOnAuth(input.authToken);
-  const gitDir = path.join(cacheDir, ".git");
+  const gitDir = path.join(cacheDir, '.git');
   const alreadyCloned = await dirExists(gitDir);
 
   if (!alreadyCloned) {
@@ -113,10 +113,12 @@ export async function fetchGit(input: GitFetchInput, cacheDir: string): Promise<
       onAuth,
     });
     const target =
-      input.ref ?? ((await gitImpl.currentBranch({ fs, dir: cacheDir })) as string | undefined) ?? "HEAD";
+      input.ref ??
+      ((await gitImpl.currentBranch({ fs, dir: cacheDir })) as string | undefined) ??
+      'HEAD';
     await gitImpl.checkout({ fs, dir: cacheDir, ref: target, force: true });
   }
 
-  const sha = await gitImpl.resolveRef({ fs, dir: cacheDir, ref: "HEAD" });
+  const sha = await gitImpl.resolveRef({ fs, dir: cacheDir, ref: 'HEAD' });
   return { root: cacheDir, sha };
 }

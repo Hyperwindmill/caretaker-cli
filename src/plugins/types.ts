@@ -9,7 +9,8 @@ import type {
   CommandSpec,
   McpServerSpec,
   PluginManifestKind,
-} from "../types.js";
+  SkillSpec,
+} from '../types.js';
 
 export interface FetchResult {
   /** Filesystem root containing the source contents (cache dir for git, the
@@ -42,11 +43,16 @@ export interface DiscoveredPlugin {
    *  the filename basename. Used at chat time to expand `/cmd args` into
    *  the body's `$N`/`$ARGUMENTS` template. */
   commands?: Record<string, CommandSpec>;
+  /** Skills declared under `<plugin-root>/[**\/]SKILL.md`, keyed by scoped
+   *  name (frontmatter `name`, or directory basename as fallback). One
+   *  entry per file — a cc-plugin pack like superpowers contributes N
+   *  entries, one per `skills/<name>/SKILL.md`. */
+  skills?: Record<string, SkillSpec>;
 }
 
 export class NoPluginsFoundError extends Error {
-  constructor(message = "No manifest or SKILL.md found in source") {
+  constructor(message = 'No manifest or SKILL.md found in source') {
     super(message);
-    this.name = "NoPluginsFoundError";
+    this.name = 'NoPluginsFoundError';
   }
 }

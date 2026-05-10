@@ -6,7 +6,7 @@
 
 Yet another agent CLI. Yes — but built the way I want one to be.
 
-A terminal-native home for your agents: a quiet TUI where you create *named agents*, each with its own identity, its own tools, its own working directory, and its own conversations. You bring your keys. They do the work.
+A terminal-native home for your agents: a quiet TUI where you create _named agents_, each with its own identity, its own tools, its own working directory, and its own conversations. You bring your keys. They do the work.
 
 ## What makes it caretaker
 
@@ -24,21 +24,21 @@ Auth tokens for plugin sources are encrypted at rest (AES-256-GCM).
 
 ### Agent identities, not "an agent"
 
-Caretaker is built around having *several* agents that mean different things to you — a code agent rooted in one repo with a focused toolset, a writing agent in your notes folder with no shell, a research agent with read-only tools and web fetch.
+Caretaker is built around having _several_ agents that mean different things to you — a code agent rooted in one repo with a focused toolset, a writing agent in your notes folder with no shell, a research agent with read-only tools and web fetch.
 
 Each agent has its own model, system prompt, working directory, allowed tools, plugins, and persistent chat history. You switch between them; they don't bleed into each other.
 
 ### Closed by default
 
-A new agent has *zero* tools. You opt in, one by one, in a tri-state picker: `[ ]` off, `[x]` allowed, `[!]` allowed-but-confirm-each-call.
+A new agent has _zero_ tools. You opt in, one by one, in a tri-state picker: `[ ]` off, `[x]` allowed, `[!]` allowed-but-confirm-each-call.
 
-The runtime confirm gate prompts before every call to a `[!]` tool: *Run once*, *Always (this session)*, or *Reject*. "Always" is per-session — a restart restores caution. A gate that throws is treated as reject. Esc rejects the single call without aborting the run.
+The runtime confirm gate prompts before every call to a `[!]` tool: _Run once_, _Always (this session)_, or _Reject_. "Always" is per-session — a restart restores caution. A gate that throws is treated as reject. Esc rejects the single call without aborting the run.
 
 There is no implicit shell, no implicit filesystem write, no surprise capability.
 
 ### Caretaker agents have a prelude
 
-What makes an agent a *caretaker* agent and not a generic chat completion is a small, always-prepended system prompt. It tells the model it is a caretaker, and that being one means three things: **care about the goal** (the task is successful only when the user is satisfied), **care about the environment** (check that actions are never harmful), and **care about the project** (every change should leave it better — when the requested path won't, push back and propose a better one).
+What makes an agent a _caretaker_ agent and not a generic chat completion is a small, always-prepended system prompt. It tells the model it is a caretaker, and that being one means three things: **care about the goal** (the task is successful only when the user is satisfied), **care about the environment** (check that actions are never harmful), and **care about the project** (every change should leave it better — when the requested path won't, push back and propose a better one).
 
 The prelude is followed by your agent's own system prompt, then by the active plugin/skill blocks, then by project context: `AGENTS.md` and the most commonly used alternatives, walked up from the agent's working directory, plus equivalent files in your home for cross-project rules. Everything is capped at 100 KB/file and 250 KB total, with `@<file>` refs resolved single-pass. The order is stable across every turn, so the model's sense of where it is doesn't drift.
 

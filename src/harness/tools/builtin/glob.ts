@@ -3,39 +3,39 @@
 // Returns paths relative to the workingDir (or to a sub-path when supplied),
 // capped at 1000 entries.
 
-import fg from "fast-glob";
-import type { Tool } from "../types.js";
-import { assertWithinRoot, OutsideRootError } from "../sandbox.js";
+import fg from 'fast-glob';
+import type { Tool } from '../types.js';
+import { assertWithinRoot, OutsideRootError } from '../sandbox.js';
 
 const MAX_RESULTS = 1000;
 
 export const globTool: Tool = {
-  name: "glob",
+  name: 'glob',
   description:
-    "Find files matching a glob pattern (e.g. **/*.ts) within the working directory. " +
-    "Returns up to 1000 paths relative to the search root.",
+    'Find files matching a glob pattern (e.g. **/*.ts) within the working directory. ' +
+    'Returns up to 1000 paths relative to the search root.',
   parameters: {
-    type: "object",
+    type: 'object',
     properties: {
-      pattern: { type: "string", description: "Glob pattern, e.g. **/*.ts" },
+      pattern: { type: 'string', description: 'Glob pattern, e.g. **/*.ts' },
       path: {
-        type: "string",
-        description: "Optional sub-path under the working directory to scope the search.",
+        type: 'string',
+        description: 'Optional sub-path under the working directory to scope the search.',
       },
     },
-    required: ["pattern"],
+    required: ['pattern'],
     additionalProperties: false,
   },
   async execute(args, ctx) {
     const a = args as { pattern?: unknown; path?: unknown };
-    if (typeof a.pattern !== "string" || !a.pattern.trim()) {
-      return { content: "Error: pattern must be a non-empty string" };
+    if (typeof a.pattern !== 'string' || !a.pattern.trim()) {
+      return { content: 'Error: pattern must be a non-empty string' };
     }
 
     let root: string;
     try {
       root =
-        typeof a.path === "string" && a.path.trim()
+        typeof a.path === 'string' && a.path.trim()
           ? assertWithinRoot(ctx.workingDir, a.path)
           : ctx.workingDir;
     } catch (err) {
@@ -51,7 +51,8 @@ export const globTool: Tool = {
     }
 
     const capped = found.slice(0, MAX_RESULTS);
-    const tail = found.length > MAX_RESULTS ? `\n[truncated to ${MAX_RESULTS} of ${found.length}]` : "";
-    return { content: capped.join("\n") + tail };
+    const tail =
+      found.length > MAX_RESULTS ? `\n[truncated to ${MAX_RESULTS} of ${found.length}]` : '';
+    return { content: capped.join('\n') + tail };
   },
 };

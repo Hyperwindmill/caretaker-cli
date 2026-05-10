@@ -10,8 +10,8 @@
 // the user can disambiguate by removing the conflicting plugin from the
 // agent.
 
-import { loadPlugins } from "../store/json.js";
-import type { CommandSpec, PluginRecord } from "../types.js";
+import { loadPlugins } from '../store/json.js';
+import type { CommandSpec, PluginRecord } from '../types.js';
 
 export interface CommandSummary {
   name: string;
@@ -110,7 +110,7 @@ export function tokenizeArgs(s: string): string[] {
 export function expandTemplate(body: string, args: string[], rawTail: string): string {
   return body
     .replace(/\$ARGUMENTS\b/g, rawTail)
-    .replace(/\$([1-9])\b/g, (_, n: string) => args[Number(n) - 1] ?? "");
+    .replace(/\$([1-9])\b/g, (_, n: string) => args[Number(n) - 1] ?? '');
 }
 
 /** Parse `/cmd-name args…`. Returns null when the input does not start
@@ -118,9 +118,9 @@ export function expandTemplate(body: string, args: string[], rawTail: string): s
 export function parseSlashInvocation(
   input: string,
 ): { name: string; args: string[]; raw: string } | null {
-  if (!input.startsWith("/")) return null;
+  if (!input.startsWith('/')) return null;
   const m = /^\/(\S+)(?:\s+([\s\S]*))?$/.exec(input);
   if (!m) return null;
-  const [, name, tail = ""] = m;
+  const [, name, tail = ''] = m;
   return { name: name as string, args: tokenizeArgs(tail), raw: tail };
 }

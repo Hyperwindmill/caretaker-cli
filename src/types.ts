@@ -9,7 +9,7 @@ export type CaretakerConfig = {
   providers: ProviderConfig[];
 };
 
-export type PluginManifestKind = "cc-marketplace" | "cc-plugin" | "skill-glob";
+export type PluginManifestKind = 'cc-marketplace' | 'cc-plugin' | 'skill-glob';
 
 /** A plugin source — a fetchable place that contains one or more plugins
  *  (discovered via the manifest layer). `git` sources are cached under
@@ -17,7 +17,7 @@ export type PluginManifestKind = "cc-marketplace" | "cc-plugin" | "skill-glob";
  *  given absolute directory. */
 export type PluginSource = {
   id: string;
-  kind: "git" | "path";
+  kind: 'git' | 'path';
   /** Git URL or absolute filesystem path. */
   url: string;
   /** Optional git ref (branch / tag / sha). Defaults to the remote's HEAD. */
@@ -60,6 +60,11 @@ export type PluginRecord = {
    *  plugin's name. Resolved at chat time, never synced into a separate
    *  store — the plugin record is the source of truth. */
   commands?: Record<string, CommandSpec>;
+  /** Skills exposed by this plugin, keyed by scoped name. For skill-glob
+   *  the plugin itself is one skill; for cc-plugin / cc-marketplace it's
+   *  one entry per `**\/SKILL.md` file inside the plugin root.
+   *  `list_skills` enumerates these flat across all active plugins. */
+  skills?: Record<string, SkillSpec>;
 };
 
 /** On-disk shape of plugins.json. */
@@ -69,7 +74,7 @@ export type PluginsFile = {
 };
 
 /** Wire transport for an MCP server. */
-export type McpTransport = "stdio" | "http";
+export type McpTransport = 'stdio' | 'http';
 
 /** Plugin-manifest declaration of an MCP server (claude-code's `mcpServers`
  *  record shape, value side). The plugin source manager converts each entry
@@ -77,6 +82,24 @@ export type McpTransport = "stdio" | "http";
 export type McpServerSpec =
   | { command: string; args?: string[]; env?: Record<string, string> }
   | { url: string; headers?: Record<string, string> };
+
+/** Plugin-manifest declaration of a single skill (`<plugin-root>/.../SKILL.md`,
+ *  Markdown with optional YAML frontmatter). One spec per file — a cc-plugin
+ *  pack like superpowers contributes N specs (one per `skills/<name>/SKILL.md`),
+ *  not one. Resolved at refresh time and persisted on `PluginRecord.skills`;
+ *  `read_skill` reads the body lazily from `<pluginRoot>/<relPath>`. */
+export type SkillSpec = {
+  /** Frontmatter `name`, fallback to the basename of the directory that
+   *  contains SKILL.md (or the plugin's name when SKILL.md sits at the
+   *  plugin root). */
+  name: string;
+  /** Frontmatter `description`, optional. Surfaced in `list_skills`. */
+  description?: string;
+  /** Path of the SKILL.md file relative to the plugin's root, e.g.
+   *  `skills/brainstorming/SKILL.md` for a cc-plugin pack, or `SKILL.md`
+   *  for a skill-glob plugin whose own root is the skill. */
+  relPath: string;
+};
 
 /** Plugin-manifest declaration of a slash command (`<plugin-root>/commands/<name>.md`,
  *  Markdown with YAML frontmatter). The body is a prompt template; `$1`,

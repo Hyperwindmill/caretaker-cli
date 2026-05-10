@@ -5,12 +5,12 @@
 // `effectiveAgent` below for the exact rule. The final assistant text is
 // returned to the caller as a Tool result string.
 
-import { run as runLoop } from "../harness/loop.js";
-import { resolveAgentTools } from "../harness/tools/index.js";
-import { tools as registry } from "../harness/tools/instance.js";
-import { loadConfig } from "../store/json.js";
-import type { Tool, ToolContext } from "../harness/tools/types.js";
-import type { AgentConfig } from "../types.js";
+import { run as runLoop } from '../harness/loop.js';
+import { resolveAgentTools } from '../harness/tools/index.js';
+import { tools as registry } from '../harness/tools/instance.js';
+import { loadConfig } from '../store/json.js';
+import type { Tool, ToolContext } from '../harness/tools/types.js';
+import type { AgentConfig } from '../types.js';
 
 const MAX_DISPATCH_DEPTH = 5;
 
@@ -44,7 +44,7 @@ export interface DispatchResult {
    *  child finished without text (e.g. tool-loop ran out of turns). */
   text: string;
   /** "done" | "max_turns" | "aborted" — mirrors loop.RunResult.stop. */
-  stop: "done" | "max_turns" | "aborted";
+  stop: 'done' | 'max_turns' | 'aborted';
   /** True when the child halted because of the recursion / self-invoke
    *  guard. The caller renders this as `Error: ...` in the tool result. */
   guardError?: string;
@@ -66,36 +66,56 @@ export async function dispatchAgent(opts: DispatchOptions): Promise<DispatchResu
   const caller = opts.ctx.callerAgent;
 
   if (caller && caller.id === opts.invoked.id) {
-    return { text: "", stop: "done", guardError: "agent cannot invoke itself" };
+    return { text: '', stop: 'done', guardError: 'agent cannot invoke itself' };
   }
 
   const depth = (opts.ctx.dispatchDepth ?? 0) + 1;
   if (depth > MAX_DISPATCH_DEPTH) {
-    return { text: "", stop: "done", guardError: `dispatch depth exceeded (${MAX_DISPATCH_DEPTH})` };
+    return {
+      text: '',
+      stop: 'done',
+      guardError: `dispatch depth exceeded (${MAX_DISPATCH_DEPTH})`,
+    };
   }
 
   const effective = effectiveAgent(opts.invoked, caller);
 
   if (!effective.provider) {
-    return { text: "", stop: "done", guardError: "invoked agent has no provider and the caller does not either" };
+    return {
+      text: '',
+      stop: 'done',
+      guardError: 'invoked agent has no provider and the caller does not either',
+    };
   }
 
   let providers;
   try {
     providers = (await loadConfig()).providers;
   } catch (err) {
-    return { text: "", stop: "done", guardError: `failed to load providers: ${err instanceof Error ? err.message : String(err)}` };
+    return {
+      text: '',
+      stop: 'done',
+      guardError: `failed to load providers: ${err instanceof Error ? err.message : String(err)}`,
+    };
   }
   const provider = providers.find((p) => p.name === effective.provider);
   if (!provider) {
-    return { text: "", stop: "done", guardError: `provider "${effective.provider}" is not configured` };
+    return {
+      text: '',
+      stop: 'done',
+      guardError: `provider "${effective.provider}" is not configured`,
+    };
   }
 
   let tools: Tool[];
   try {
     tools = await resolveAgentTools(effective, registry);
   } catch (err) {
-    return { text: "", stop: "done", guardError: `failed to resolve tools: ${err instanceof Error ? err.message : String(err)}` };
+    return {
+      text: '',
+      stop: 'done',
+      guardError: `failed to resolve tools: ${err instanceof Error ? err.message : String(err)}`,
+    };
   }
 
   const result = await runLoop(

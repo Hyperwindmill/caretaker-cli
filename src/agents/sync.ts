@@ -13,9 +13,9 @@
 // remapping would grant or deny tools incorrectly. The user wires
 // allowedTools via the agent form after the row is materialized.
 
-import { randomUUID } from "node:crypto";
-import { loadAgents, loadConfig, loadPlugins, saveAgents } from "../store/json.js";
-import type { AgentConfig, AgentSpec, PluginRecord } from "../types.js";
+import { randomUUID } from 'node:crypto';
+import { loadAgents, loadConfig, loadPlugins, saveAgents } from '../store/json.js';
+import type { AgentConfig, AgentSpec, PluginRecord } from '../types.js';
 
 function managedRowKey(pluginId: string, scopedName: string): string {
   return `${pluginId}::${scopedName}`;
@@ -24,9 +24,9 @@ function managedRowKey(pluginId: string, scopedName: string): string {
 async function defaultProviderName(): Promise<string> {
   try {
     const cfg = await loadConfig();
-    return cfg.providers[0]?.name ?? "";
+    return cfg.providers[0]?.name ?? '';
   } catch {
-    return "";
+    return '';
   }
 }
 
@@ -41,7 +41,7 @@ function buildManagedAgent(
     name: `${plugin.name}/${scopedName}`,
     systemPrompt: spec.systemPrompt,
     provider: defaultProvider,
-    model: spec.model ?? "",
+    model: spec.model ?? '',
     allowedTools: [],
     maxTurns: 30,
     pluginId: plugin.id,
@@ -78,10 +78,7 @@ export async function syncManagedAgents(): Promise<void> {
   const pluginsFile = await loadPlugins();
   const agents = await loadAgents();
 
-  const expected = new Map<
-    string,
-    { plugin: PluginRecord; scopedName: string; spec: AgentSpec }
-  >();
+  const expected = new Map<string, { plugin: PluginRecord; scopedName: string; spec: AgentSpec }>();
   for (const plugin of pluginsFile.plugins) {
     if (!plugin.agents) continue;
     for (const [scopedName, spec] of Object.entries(plugin.agents)) {
@@ -97,7 +94,7 @@ export async function syncManagedAgents(): Promise<void> {
       out.push(a); // user-authored, leave alone
       continue;
     }
-    const key = managedRowKey(a.pluginId, a.pluginScopedName ?? "");
+    const key = managedRowKey(a.pluginId, a.pluginScopedName ?? '');
     const exp = expected.get(key);
     if (!exp) continue; // managed but no longer expected — drop
     seen.add(key);

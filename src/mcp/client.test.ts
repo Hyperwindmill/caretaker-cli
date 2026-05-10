@@ -1,15 +1,15 @@
-import { describe, it, before, after, beforeEach, afterEach } from "node:test";
-import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
-import { rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import * as path from "node:path";
-import { randomUUID, randomBytes } from "node:crypto";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { z } from "zod";
-import type { McpServerConfig } from "../types.js";
+import { describe, it, before, after, beforeEach, afterEach } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import * as path from 'node:path';
+import { randomUUID, randomBytes } from 'node:crypto';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { z } from 'zod';
+import type { McpServerConfig } from '../types.js';
 
 let testHome: string;
 
@@ -17,9 +17,9 @@ async function makeLinkedClientPair(register: (s: McpServer) => void): Promise<{
   client: Client;
   close: () => Promise<void>;
 }> {
-  const server = new McpServer({ name: "test-server", version: "1.0.0" });
+  const server = new McpServer({ name: 'test-server', version: '1.0.0' });
   register(server);
-  const client = new Client({ name: "test-client", version: "1.0.0" }, { capabilities: {} });
+  const client = new Client({ name: 'test-client', version: '1.0.0' }, { capabilities: {} });
   const [clientT, serverT] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(serverT), client.connect(clientT)]);
   return {
@@ -32,23 +32,21 @@ async function makeLinkedClientPair(register: (s: McpServer) => void): Promise<{
 }
 
 function pingTool(s: McpServer): void {
-  s.registerTool(
-    "ping",
-    { description: "Replies pong", inputSchema: {} },
-    async () => ({ content: [{ type: "text", text: "pong" }] }),
-  );
+  s.registerTool('ping', { description: 'Replies pong', inputSchema: {} }, async () => ({
+    content: [{ type: 'text', text: 'pong' }],
+  }));
 }
 
-describe("mcp client pool", () => {
-  let pool: typeof import("./client.js");
-  let store: typeof import("../store/json.js");
+describe('mcp client pool', () => {
+  let pool: typeof import('./client.js');
+  let store: typeof import('../store/json.js');
 
   before(async () => {
-    testHome = mkdtempSync(path.join(tmpdir(), "caretaker-pool-"));
+    testHome = mkdtempSync(path.join(tmpdir(), 'caretaker-pool-'));
     process.env.CARETAKER_HOME = testHome;
-    process.env.ENCRYPTION_KEY = randomBytes(32).toString("hex");
-    pool = await import("./client.js");
-    store = await import("../store/json.js");
+    process.env.ENCRYPTION_KEY = randomBytes(32).toString('hex');
+    pool = await import('./client.js');
+    store = await import('../store/json.js');
   });
 
   after(async () => {
@@ -69,10 +67,10 @@ describe("mcp client pool", () => {
   function dummyServer(over: Partial<McpServerConfig> = {}): McpServerConfig {
     return {
       id: randomUUID(),
-      name: "fake",
-      transport: "stdio",
+      name: 'fake',
+      transport: 'stdio',
       enabled: true,
-      command: "node",
+      command: 'node',
       args: [],
       lastConnectedAt: null,
       lastConnectError: null,
@@ -80,7 +78,7 @@ describe("mcp client pool", () => {
     };
   }
 
-  it("getClient: caches the connected client across calls", async () => {
+  it('getClient: caches the connected client across calls', async () => {
     const cfg = dummyServer();
     await store.saveMcpServers({ servers: [cfg] });
 
@@ -92,13 +90,13 @@ describe("mcp client pool", () => {
 
     const a = await pool.getClient(cfg.id);
     const b = await pool.getClient(cfg.id);
-    assert.equal(a, b, "second call must reuse the pooled client");
+    assert.equal(a, b, 'second call must reuse the pooled client');
     assert.equal(connectCalls, 1);
 
     await pool.closeAll();
   });
 
-  it("getClient: dedupes concurrent connects via the inflight map", async () => {
+  it('getClient: dedupes concurrent connects via the inflight map', async () => {
     const cfg = dummyServer();
     await store.saveMcpServers({ servers: [cfg] });
 
@@ -113,34 +111,34 @@ describe("mcp client pool", () => {
 
     const [a, b] = await Promise.all([pool.getClient(cfg.id), pool.getClient(cfg.id)]);
     assert.equal(a, b);
-    assert.equal(connectCalls, 1, "concurrent calls must share one connect");
+    assert.equal(connectCalls, 1, 'concurrent calls must share one connect');
 
     await pool.closeAll();
   });
 
-  it("getClient: persists the error on the server row when connect fails", async () => {
+  it('getClient: persists the error on the server row when connect fails', async () => {
     const cfg = dummyServer();
     await store.saveMcpServers({ servers: [cfg] });
 
     pool.__setConnectOverride(async () => {
-      throw new Error("boom");
+      throw new Error('boom');
     });
 
     await assert.rejects(() => pool.getClient(cfg.id), /boom/);
     const file = await store.loadMcpServers();
     const row = file.servers.find((s) => s.id === cfg.id)!;
-    assert.equal(row.lastConnectError, "boom");
-    assert.ok(row.lastConnectedAt, "lastConnectedAt should record the attempt");
+    assert.equal(row.lastConnectError, 'boom');
+    assert.ok(row.lastConnectedAt, 'lastConnectedAt should record the attempt');
   });
 
-  it("getClient: does not memoize failures (next call retries)", async () => {
+  it('getClient: does not memoize failures (next call retries)', async () => {
     const cfg = dummyServer();
     await store.saveMcpServers({ servers: [cfg] });
 
     let attempts = 0;
     pool.__setConnectOverride(async () => {
       attempts++;
-      if (attempts === 1) throw new Error("first-failure");
+      if (attempts === 1) throw new Error('first-failure');
       return makeLinkedClientPair(pingTool);
     });
 
@@ -152,16 +150,16 @@ describe("mcp client pool", () => {
     await pool.closeAll();
   });
 
-  it("getClient: rejects unknown ids and disabled servers", async () => {
+  it('getClient: rejects unknown ids and disabled servers', async () => {
     await store.saveMcpServers({ servers: [] });
-    await assert.rejects(() => pool.getClient("unknown-id"), /not found/);
+    await assert.rejects(() => pool.getClient('unknown-id'), /not found/);
 
     const disabled = dummyServer({ enabled: false });
     await store.saveMcpServers({ servers: [disabled] });
     await assert.rejects(() => pool.getClient(disabled.id), /disabled/);
   });
 
-  it("closeClient: drops one entry without affecting others", async () => {
+  it('closeClient: drops one entry without affecting others', async () => {
     const a = dummyServer();
     const b = dummyServer();
     await store.saveMcpServers({ servers: [a, b] });
@@ -196,7 +194,7 @@ describe("mcp client pool", () => {
     await pool.closeAll();
   });
 
-  it("closeAll: closes every pooled connection", async () => {
+  it('closeAll: closes every pooled connection', async () => {
     const a = dummyServer();
     const b = dummyServer();
     await store.saveMcpServers({ servers: [a, b] });
@@ -229,15 +227,15 @@ describe("mcp client pool", () => {
 
 // ─── Adapter tests (use the same seam) ───────────────────────────────────
 
-describe("mcp adapter", () => {
-  let pool: typeof import("./client.js");
-  let adapter: typeof import("./adapter.js");
-  let store: typeof import("../store/json.js");
+describe('mcp adapter', () => {
+  let pool: typeof import('./client.js');
+  let adapter: typeof import('./adapter.js');
+  let store: typeof import('../store/json.js');
 
   before(async () => {
-    pool = await import("./client.js");
-    adapter = await import("./adapter.js");
-    store = await import("../store/json.js");
+    pool = await import('./client.js');
+    adapter = await import('./adapter.js');
+    store = await import('../store/json.js');
   });
 
   beforeEach(async () => {
@@ -249,13 +247,13 @@ describe("mcp adapter", () => {
     pool.__setConnectOverride(undefined);
   });
 
-  it("namespaces remote tool names as mcp__<id>__<toolName>", async () => {
+  it('namespaces remote tool names as mcp__<id>__<toolName>', async () => {
     const cfg: McpServerConfig = {
-      id: "srv1",
-      name: "fake",
-      transport: "stdio",
+      id: 'srv1',
+      name: 'fake',
+      transport: 'stdio',
       enabled: true,
-      command: "node",
+      command: 'node',
       lastConnectedAt: null,
       lastConnectError: null,
     };
@@ -264,39 +262,37 @@ describe("mcp adapter", () => {
     pool.__setConnectOverride(async () =>
       makeLinkedClientPair((s) => {
         s.registerTool(
-          "echo",
-          { description: "Echoes input", inputSchema: { msg: z.string() } },
-          async ({ msg }) => ({ content: [{ type: "text", text: msg as string }] }),
+          'echo',
+          { description: 'Echoes input', inputSchema: { msg: z.string() } },
+          async ({ msg }) => ({ content: [{ type: 'text', text: msg as string }] }),
         );
-        s.registerTool(
-          "ping",
-          { description: "pong", inputSchema: {} },
-          async () => ({ content: [{ type: "text", text: "pong" }] }),
-        );
+        s.registerTool('ping', { description: 'pong', inputSchema: {} }, async () => ({
+          content: [{ type: 'text', text: 'pong' }],
+        }));
       }),
     );
 
     const tools = await adapter.mcpToolsForServers([cfg.id]);
     const names = tools.map((t) => t.name).sort();
-    assert.deepEqual(names, ["mcp__srv1__echo", "mcp__srv1__ping"]);
+    assert.deepEqual(names, ['mcp__srv1__echo', 'mcp__srv1__ping']);
 
-    const echo = tools.find((t) => t.name === "mcp__srv1__echo")!;
+    const echo = tools.find((t) => t.name === 'mcp__srv1__echo')!;
     const result = await echo.execute(
-      { msg: "hello" },
-      { signal: new AbortController().signal, workingDir: "/", readPaths: new Set() },
+      { msg: 'hello' },
+      { signal: new AbortController().signal, workingDir: '/', readPaths: new Set() },
     );
-    assert.equal(result.content, "hello");
+    assert.equal(result.content, 'hello');
 
     await pool.closeAll();
   });
 
-  it("surfaces remote errors as Tool result strings (not throws)", async () => {
+  it('surfaces remote errors as Tool result strings (not throws)', async () => {
     const cfg: McpServerConfig = {
-      id: "srv2",
-      name: "fake",
-      transport: "stdio",
+      id: 'srv2',
+      name: 'fake',
+      transport: 'stdio',
       enabled: true,
-      command: "node",
+      command: 'node',
       lastConnectedAt: null,
       lastConnectError: null,
     };
@@ -304,49 +300,39 @@ describe("mcp adapter", () => {
 
     pool.__setConnectOverride(async () =>
       makeLinkedClientPair((s) => {
-        s.registerTool(
-          "boom",
-          { description: "fails", inputSchema: {} },
-          async () => ({
-            isError: true,
-            content: [{ type: "text", text: "things went wrong" }],
-          }),
-        );
+        s.registerTool('boom', { description: 'fails', inputSchema: {} }, async () => ({
+          isError: true,
+          content: [{ type: 'text', text: 'things went wrong' }],
+        }));
       }),
     );
 
     const [tool] = await adapter.mcpToolsForServers([cfg.id]);
     const out = await tool.execute(
       {},
-      { signal: new AbortController().signal, workingDir: "/", readPaths: new Set() },
+      { signal: new AbortController().signal, workingDir: '/', readPaths: new Set() },
     );
     assert.match(out.content, /things went wrong/);
 
     await pool.closeAll();
   });
 
-  it("placeholder expansion: ${CLAUDE_PLUGIN_ROOT} resolves to plugin path; env vars from process.env; unknowns left literal", async () => {
+  it('placeholder expansion: ${CLAUDE_PLUGIN_ROOT} resolves to plugin path; env vars from process.env; unknowns left literal', async () => {
     const orig = process.env.MY_TEST_VAR;
-    process.env.MY_TEST_VAR = "from-env";
+    process.env.MY_TEST_VAR = 'from-env';
     try {
       assert.equal(
-        pool.__expandForTests("${CLAUDE_PLUGIN_ROOT}/scripts/x.cjs", "/abs/plug"),
-        "/abs/plug/scripts/x.cjs",
+        pool.__expandForTests('${CLAUDE_PLUGIN_ROOT}/scripts/x.cjs', '/abs/plug'),
+        '/abs/plug/scripts/x.cjs',
       );
-      assert.equal(
-        pool.__expandForTests("Bearer ${MY_TEST_VAR}", null),
-        "Bearer from-env",
-      );
+      assert.equal(pool.__expandForTests('Bearer ${MY_TEST_VAR}', null), 'Bearer from-env');
       // Unknown placeholder stays literal so the spawned MCP server can
       // surface a meaningful error.
-      assert.equal(
-        pool.__expandForTests("${UNDEFINED_VAR_XYZ}", null),
-        "${UNDEFINED_VAR_XYZ}",
-      );
+      assert.equal(pool.__expandForTests('${UNDEFINED_VAR_XYZ}', null), '${UNDEFINED_VAR_XYZ}');
       // CLAUDE_PLUGIN_ROOT without a known root stays literal.
       assert.equal(
-        pool.__expandForTests("${CLAUDE_PLUGIN_ROOT}/x", null),
-        "${CLAUDE_PLUGIN_ROOT}/x",
+        pool.__expandForTests('${CLAUDE_PLUGIN_ROOT}/x', null),
+        '${CLAUDE_PLUGIN_ROOT}/x',
       );
     } finally {
       if (orig === undefined) delete process.env.MY_TEST_VAR;
@@ -354,21 +340,21 @@ describe("mcp adapter", () => {
     }
   });
 
-  it("skips servers that fail to connect (warn + empty contribution)", async () => {
+  it('skips servers that fail to connect (warn + empty contribution)', async () => {
     const ok: McpServerConfig = {
-      id: "ok",
-      name: "ok",
-      transport: "stdio",
+      id: 'ok',
+      name: 'ok',
+      transport: 'stdio',
       enabled: true,
-      command: "node",
+      command: 'node',
       lastConnectedAt: null,
       lastConnectError: null,
     };
-    const bad: McpServerConfig = { ...ok, id: "bad", name: "bad" };
+    const bad: McpServerConfig = { ...ok, id: 'bad', name: 'bad' };
     await store.saveMcpServers({ servers: [ok, bad] });
 
     pool.__setConnectOverride(async (s) => {
-      if (s.id === "bad") throw new Error("unreachable");
+      if (s.id === 'bad') throw new Error('unreachable');
       return makeLinkedClientPair(pingTool);
     });
 
@@ -377,7 +363,7 @@ describe("mcp adapter", () => {
     try {
       const tools = await adapter.mcpToolsForServers([ok.id, bad.id]);
       const names = tools.map((t) => t.name);
-      assert.deepEqual(names, ["mcp__ok__ping"]);
+      assert.deepEqual(names, ['mcp__ok__ping']);
     } finally {
       console.warn = origWarn;
     }

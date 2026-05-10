@@ -8,10 +8,10 @@
 // matches caretaker server's behavior; only `write` enforces the explicit
 // read-before-write guard.
 
-import { readFile, writeFile } from "node:fs/promises";
-import type { Tool } from "../types.js";
-import { assertWithinRoot, OutsideRootError } from "../sandbox.js";
-import { applyEdit } from "./edit.js";
+import { readFile, writeFile } from 'node:fs/promises';
+import type { Tool } from '../types.js';
+import { assertWithinRoot, OutsideRootError } from '../sandbox.js';
+import { applyEdit } from './edit.js';
 
 interface EditSpec {
   oldString: string;
@@ -20,49 +20,51 @@ interface EditSpec {
 }
 
 function isEditSpec(x: unknown): x is EditSpec {
-  if (!x || typeof x !== "object") return false;
+  if (!x || typeof x !== 'object') return false;
   const o = x as { oldString?: unknown; newString?: unknown; replaceAll?: unknown };
   return (
-    typeof o.oldString === "string" &&
-    typeof o.newString === "string" &&
-    (o.replaceAll === undefined || typeof o.replaceAll === "boolean")
+    typeof o.oldString === 'string' &&
+    typeof o.newString === 'string' &&
+    (o.replaceAll === undefined || typeof o.replaceAll === 'boolean')
   );
 }
 
 export const multieditTool: Tool = {
-  name: "multiedit",
+  name: 'multiedit',
   description:
-    "Apply a sequence of edits to a file atomically (all or nothing). " +
-    "Each edit follows the same rules as the edit tool — first occurrence by default, " +
-    "or all occurrences with replaceAll=true.",
+    'Apply a sequence of edits to a file atomically (all or nothing). ' +
+    'Each edit follows the same rules as the edit tool — first occurrence by default, ' +
+    'or all occurrences with replaceAll=true.',
   parameters: {
-    type: "object",
+    type: 'object',
     properties: {
-      path: { type: "string", description: "Path within the working directory." },
+      path: { type: 'string', description: 'Path within the working directory.' },
       edits: {
-        type: "array",
+        type: 'array',
         items: {
-          type: "object",
+          type: 'object',
           properties: {
-            oldString: { type: "string" },
-            newString: { type: "string" },
-            replaceAll: { type: "boolean" },
+            oldString: { type: 'string' },
+            newString: { type: 'string' },
+            replaceAll: { type: 'boolean' },
           },
-          required: ["oldString", "newString"],
+          required: ['oldString', 'newString'],
         },
       },
     },
-    required: ["path", "edits"],
+    required: ['path', 'edits'],
     additionalProperties: false,
   },
   dangerous: true,
   async execute(args, ctx) {
     const a = args as { path?: unknown; edits?: unknown };
-    if (typeof a.path !== "string" || !a.path.trim()) {
-      return { content: "Error: path must be a non-empty string" };
+    if (typeof a.path !== 'string' || !a.path.trim()) {
+      return { content: 'Error: path must be a non-empty string' };
     }
     if (!Array.isArray(a.edits) || a.edits.length === 0 || !a.edits.every(isEditSpec)) {
-      return { content: "Error: edits must be a non-empty array of {oldString,newString,replaceAll?}" };
+      return {
+        content: 'Error: edits must be a non-empty array of {oldString,newString,replaceAll?}',
+      };
     }
 
     let abs: string;
@@ -75,10 +77,10 @@ export const multieditTool: Tool = {
 
     let content: string;
     try {
-      content = await readFile(abs, "utf-8");
+      content = await readFile(abs, 'utf-8');
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
-      if (code === "ENOENT") return { content: `Error: file not found: ${a.path}` };
+      if (code === 'ENOENT') return { content: `Error: file not found: ${a.path}` };
       return { content: `Error: ${err instanceof Error ? err.message : String(err)}` };
     }
 
@@ -91,7 +93,7 @@ export const multieditTool: Tool = {
       return { content: `Error: ${err instanceof Error ? err.message : String(err)}` };
     }
 
-    await writeFile(abs, content, "utf-8");
+    await writeFile(abs, content, 'utf-8');
     ctx.readPaths.add(abs);
     return { content: `Applied ${a.edits.length} edits to ${a.path}` };
   },

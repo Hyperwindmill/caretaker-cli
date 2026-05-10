@@ -5,7 +5,7 @@
 // git fetch. The next agent run picks up the freshly-discovered plugins
 // automatically because the skill loader reads plugins.json each time.
 
-import { listSources, refreshSource, type RefreshOutcome } from "./source_manager.js";
+import { listSources, refreshSource, type RefreshOutcome } from './source_manager.js';
 
 export interface RefreshOnStartResult {
   sourceId: string;
@@ -17,7 +17,7 @@ export async function refreshSourcesOnStart(): Promise<RefreshOnStartResult[]> {
   try {
     sources = await listSources();
   } catch (err) {
-    console.error("[refresh-on-start] failed to read plugins.json:", err);
+    console.error('[refresh-on-start] failed to read plugins.json:', err);
     return [];
   }
   const targets = sources.filter((s) => s.refreshOnStart);

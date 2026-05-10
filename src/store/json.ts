@@ -1,23 +1,26 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { mkdir, readFile, writeFile, chmod } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import type {
-  AgentConfig,
-  CaretakerConfig,
-  McpServersFile,
-  PluginsFile,
-} from "../types.js";
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { mkdir, readFile, writeFile, chmod } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import type { AgentConfig, CaretakerConfig, McpServersFile, PluginsFile } from '../types.js';
 
 // Path accessors are resolved at call time, not import time, so test runs
 // that share a process can switch CARETAKER_HOME between suites.
 export function dataDir(): string {
-  return process.env.CARETAKER_HOME ?? join(homedir(), ".caretaker");
+  return process.env.CARETAKER_HOME ?? join(homedir(), '.caretaker');
 }
-export function configPath(): string { return join(dataDir(), "caretaker.json"); }
-export function agentsPath(): string { return join(dataDir(), "agents.json"); }
-export function pluginsPath(): string { return join(dataDir(), "plugins.json"); }
-export function mcpServersPath(): string { return join(dataDir(), "mcp.json"); }
+export function configPath(): string {
+  return join(dataDir(), 'caretaker.json');
+}
+export function agentsPath(): string {
+  return join(dataDir(), 'agents.json');
+}
+export function pluginsPath(): string {
+  return join(dataDir(), 'plugins.json');
+}
+export function mcpServersPath(): string {
+  return join(dataDir(), 'mcp.json');
+}
 
 export const defaultConfig: CaretakerConfig = {
   port: 17777,
@@ -38,13 +41,13 @@ async function ensureDataDir(): Promise<void> {
 
 async function readJsonOrDefault<T>(path: string, fallback: T): Promise<T> {
   if (!existsSync(path)) return fallback;
-  const raw = await readFile(path, "utf8");
+  const raw = await readFile(path, 'utf8');
   return JSON.parse(raw) as T;
 }
 
 async function writeJson(path: string, data: unknown): Promise<void> {
   await ensureDataDir();
-  await writeFile(path, JSON.stringify(data, null, 2), "utf8");
+  await writeFile(path, JSON.stringify(data, null, 2), 'utf8');
   await chmod(path, 0o600);
 }
 

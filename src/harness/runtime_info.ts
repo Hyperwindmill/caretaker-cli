@@ -12,10 +12,10 @@ export function formatRuntimeInfoBlock(input: {
   workingDir: string;
 }): string {
   const lines = [
-    `agent_name: ${input.agentName || "(unnamed)"}`,
-    `model: ${input.model || "(unset)"}`,
-    `provider: ${input.provider || "(unset)"}`,
+    `agent_name: ${input.agentName || '(unnamed)'}`,
+    `model: ${input.model || '(unset)'}`,
+    `provider: ${input.provider || '(unset)'}`,
     `working_dir: ${input.workingDir}`,
   ];
-  return `<runtime-info>\n${lines.join("\n")}\n</runtime-info>`;
+  return `<runtime-info>\n${lines.join('\n')}\n</runtime-info>`;
 }

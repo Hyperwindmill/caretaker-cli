@@ -4,15 +4,11 @@
 // has to declare its OpenAI-function-calling parameters and an `execute`
 // that takes parsed args + a runtime context and returns a structured result.
 
-import type { AgentConfig } from "../../types.js";
-import type { AssistantUsage } from "../provider.js";
+import type { AgentConfig } from '../../types.js';
+import type { AssistantUsage } from '../provider.js';
 
-export type ConfirmDecision = "once" | "always" | "reject";
-export type ConfirmGate = (
-  id: string,
-  name: string,
-  args: unknown,
-) => Promise<ConfirmDecision>;
+export type ConfirmDecision = 'once' | 'always' | 'reject';
+export type ConfirmGate = (id: string, name: string, args: unknown) => Promise<ConfirmDecision>;
 //
 // ─── Conversion path from caretaker server ───────────────────────────────
 // caretaker full hosts tools as MCP HTTP servers (src/mcp/*.ts). Two paths
@@ -92,7 +88,7 @@ export interface Tool {
 }
 
 export interface OpenAiFunctionTool {
-  type: "function";
+  type: 'function';
   function: {
     name: string;
     description: string;
@@ -103,7 +99,7 @@ export interface OpenAiFunctionTool {
 /** Convert a Tool to the OpenAI function-tool entry sent in chat-completions. */
 export function toOpenAiTool(tool: Tool): OpenAiFunctionTool {
   return {
-    type: "function",
+    type: 'function',
     function: {
       name: tool.name,
       description: tool.description,
