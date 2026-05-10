@@ -5,6 +5,7 @@
 // that takes parsed args + a runtime context and returns a structured result.
 
 import type { AgentConfig } from "../../types.js";
+import type { AssistantUsage } from "../provider.js";
 
 export type ConfirmDecision = "once" | "always" | "reject";
 export type ConfirmGate = (
@@ -60,6 +61,10 @@ export interface ToolContext {
    *  to the child run so the user keeps the gate authority for tool calls
    *  inside the sub-agent too. */
   confirmTool?: ConfirmGate;
+  /** Live token-usage handles updated by the loop in place each turn. The
+   *  `get_agent_context` builtin reads this at exec time so it reflects
+   *  the latest values (not a snapshot from when the run started). */
+  liveUsage?: { lastTurn?: AssistantUsage; cumulative: AssistantUsage };
 }
 
 export interface ToolResult {

@@ -17,6 +17,7 @@ import { listAgentsTool } from "./list_agents.js";
 import { invokeAgentTool } from "./invoke_agent.js";
 import { listCommandsTool } from "./list_commands.js";
 import { invokeCommandTool } from "./invoke_command.js";
+import { getAgentContextTool } from "./get_agent_context.js";
 
 export function registerBuiltins(registry: ToolRegistry): void {
   // Filesystem (sandboxed to ctx.workingDir).
@@ -42,6 +43,9 @@ export function registerBuiltins(registry: ToolRegistry): void {
   // the agent has at least one plugin active).
   registry.register(listCommandsTool);
   registry.register(invokeCommandTool);
+  // Self-introspection (always present — the agent should be able to ask
+  // "how much context am I using" without prerequisites).
+  registry.register(getAgentContextTool);
 }
 
 export {
@@ -59,4 +63,5 @@ export {
   invokeAgentTool,
   listCommandsTool,
   invokeCommandTool,
+  getAgentContextTool,
 };
