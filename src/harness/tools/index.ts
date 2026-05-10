@@ -6,3 +6,4 @@ export type { Tool, ToolContext, ToolResult, OpenAiFunctionTool } from "./types.
 export { toOpenAiTool } from "./types.js";
 export { ToolRegistry } from "./registry.js";
 export { registerBuiltins } from "./builtin/index.js";
+export { resolveAgentTools } from "./resolve.js";

@@ -33,6 +33,11 @@ export interface ToolContext {
    *  overwrite a file it never inspected. The loop creates a fresh Set per
    *  run; tools mutate it in place. */
   readPaths: Set<string>;
+  /** Plugin names active for this run (mirrors AgentConfig.plugins). The
+   *  list_skills / read_skill tools consult this to scope what the model can
+   *  enumerate or fetch. Optional because most tools never read it; tests
+   *  for non-skill tools can omit it. The skill tools treat undefined as []. */
+  activePlugins?: string[];
 }
 
 export interface ToolResult {

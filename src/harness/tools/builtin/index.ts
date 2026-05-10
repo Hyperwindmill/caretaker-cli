@@ -11,6 +11,8 @@ import { globTool } from "./glob.js";
 import { grepTool } from "./grep.js";
 import { fetchTool } from "./fetch.js";
 import { bashTool } from "./bash.js";
+import { listSkillsTool } from "./list_skills.js";
+import { readSkillTool } from "./read_skill.js";
 
 export function registerBuiltins(registry: ToolRegistry): void {
   // Filesystem (sandboxed to ctx.workingDir).
@@ -24,6 +26,21 @@ export function registerBuiltins(registry: ToolRegistry): void {
   registry.register(fetchTool);
   // Shell.
   registry.register(bashTool);
+  // Plugin skills (auto-included by resolveAgentTools when an agent has
+  // active plugins; not part of the agent's allowedTools surface).
+  registry.register(listSkillsTool);
+  registry.register(readSkillTool);
 }
 
-export { readFileTool, writeTool, editTool, multieditTool, globTool, grepTool, fetchTool, bashTool };
+export {
+  readFileTool,
+  writeTool,
+  editTool,
+  multieditTool,
+  globTool,
+  grepTool,
+  fetchTool,
+  bashTool,
+  listSkillsTool,
+  readSkillTool,
+};

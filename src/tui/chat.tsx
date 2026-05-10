@@ -4,6 +4,7 @@ import SelectInput from "ink-select-input";
 import TextInput from "ink-text-input";
 import { run, type ConfirmDecision } from "../harness/loop.js";
 import { tools as toolRegistry } from "../harness/tools/instance.js";
+import { resolveAgentTools } from "../harness/tools/index.js";
 import {
   appendMessage,
   createSession,
@@ -138,7 +139,7 @@ export default function ChatScreen({
         {
           agent,
           provider,
-          tools: toolRegistry.filtered(agent.allowedTools),
+          tools: resolveAgentTools(agent, toolRegistry),
           prompt: text,
           history: priorMessages,
           signal: ac.signal,

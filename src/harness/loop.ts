@@ -24,7 +24,6 @@ import { mapMessagesToChat } from "./history.js";
 import { type Tool, type ToolContext, toOpenAiTool } from "./tools/index.js";
 import { withHarnessPrelude } from "./prelude.js";
 import { loadContextFiles, formatContextBlock, resolveFileReferences } from "./context_files.js";
-import { loadPluginSkills } from "../plugins/loader.js";
 
 type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 let fetchImpl: FetchLike = globalThis.fetch.bind(globalThis);
@@ -104,6 +103,7 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
     signal: opts.signal ?? new AbortController().signal,
     workingDir: opts.workingDir ?? process.cwd(),
     readPaths: new Set(),
+    activePlugins: agent.plugins ?? [],
   };
 
   // System prompt assembly, applied unconditionally (the prelude and
@@ -123,14 +123,9 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
     : effectiveSystemPrompt;
   effectiveSystemPrompt = withHarnessPrelude(withCtx);
 
-  // Plugin skills are appended at the end of the system prompt — they are
-  // passive context (not callable tools) and the model should encounter them
-  // after both the harness prelude and the agent's own prompt, matching the
-  // server's order in src/runner/openai_style.ts.
-  const pluginSkills = await loadPluginSkills(agent.plugins ?? []);
-  if (pluginSkills) {
-    effectiveSystemPrompt = `${effectiveSystemPrompt}\n\n${pluginSkills}`.trim();
-  }
+  // Plugin skills are no longer injected here. Agents with active plugins
+  // get the `list_skills` / `read_skill` tools (added by resolveAgentTools
+  // at the call site) and pull the SKILL.md content on demand.
 
   const chat: ChatMessage[] = [];
   if (effectiveSystemPrompt) chat.push({ role: "system", content: effectiveSystemPrompt });

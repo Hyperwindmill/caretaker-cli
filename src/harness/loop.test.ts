@@ -1,9 +1,5 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import * as path from "node:path";
-import { randomUUID } from "node:crypto";
 import { run, __setFetch, __resetFetch } from "./loop.js";
 import type { AgentConfig, ProviderConfig } from "../types.js";
 
@@ -167,63 +163,47 @@ test("loop: no confirmTool callback → tools execute as before", async () => {
   }
 });
 
-test("loop: agent.plugins injects SKILL.md content into the system prompt", async () => {
-  // Set up an isolated CARETAKER_HOME with one plugin source pointing at a
-  // tmp directory that contains a SKILL.md, then verify the request body
-  // sent to the provider includes the skill block.
-  const home = mkdtempSync(path.join(tmpdir(), "caretaker-loop-skill-home-"));
-  const sourceDir = mkdtempSync(path.join(tmpdir(), "caretaker-loop-skill-src-"));
-  const prevHome = process.env.CARETAKER_HOME;
-  process.env.CARETAKER_HOME = home;
-
-  // Seed plugins.json
-  const skillDirRel = "my-plugin";
-  mkdirSync(path.join(sourceDir, skillDirRel), { recursive: true });
-  writeFileSync(path.join(sourceDir, skillDirRel, "SKILL.md"), "REMEMBER: cite your sources.\n");
-  const sourceId = randomUUID();
-  const { savePlugins } = await import("../store/json.js");
-  await savePlugins({
-    sources: [{ id: sourceId, kind: "path", url: sourceDir, refreshOnStart: false }],
-    plugins: [
-      {
-        id: randomUUID(),
-        sourceId,
-        name: "my-plugin",
-        description: null,
-        manifestKind: "skill-glob",
-        relPath: skillDirRel,
-        rawManifest: {},
-      },
-    ],
-  });
-
+test("loop: agent.plugins is plumbed to ToolContext.activePlugins (not injected into system prompt)", async () => {
+  // The previous behavior — injecting SKILL.md content into the system
+  // prompt — has been replaced by the on-demand list_skills/read_skill
+  // tools. The loop now exposes agent.plugins via ToolContext.activePlugins
+  // and leaves the system prompt clean of skill markup.
   type CapturedBody = { messages?: Array<{ role: string; content: string | null }> };
   let capturedBody: CapturedBody | null = null;
   __setFetch(async (_url, init) => {
     capturedBody = JSON.parse(init.body as string) as CapturedBody;
-    return sseResponse(SINGLE_TURN_TEXT);
+    return sseResponse(TOOL_CALL_TURN);
   });
 
+  let seenActive: string[] | undefined;
+  const probeTool: import("./tools/index.js").Tool = {
+    name: "do_thing",
+    description: "probe",
+    parameters: { type: "object", properties: {} },
+    execute: async (_args, ctx) => {
+      seenActive = ctx.activePlugins;
+      return { content: "ok" };
+    },
+  };
+
   try {
-    const result = await run(
-      { agent: { ...agent, plugins: ["my-plugin"] }, provider, tools: [], prompt: "hi" },
+    // Two-turn flow: tool call, then a final assistant message that ends.
+    let call = 0;
+    __setFetch(async (_url, init) => {
+      capturedBody = JSON.parse(init.body as string) as CapturedBody;
+      call++;
+      return sseResponse(call === 1 ? TOOL_CALL_TURN : FINAL_TURN);
+    });
+    await run(
+      { agent: { ...agent, plugins: ["my-plugin", "other"] }, provider, tools: [probeTool], prompt: "hi" },
       {},
     );
-    assert.equal(result.stop, "done");
+    assert.deepEqual(seenActive, ["my-plugin", "other"]);
     const body = capturedBody as CapturedBody | null;
-    assert.ok(body, "fetch was not called");
-    const sysMsg = body!.messages?.find((m) => m.role === "system");
-    assert.ok(sysMsg, "no system message in request");
-    const sys = sysMsg!.content ?? "";
-    assert.ok(sys.includes('<skill name="my-plugin">'), "skill tag missing");
-    assert.ok(sys.includes("REMEMBER: cite your sources."), "skill content missing");
-    assert.ok(sys.includes("not callable tools"), "passive-context header missing");
+    const sys = body?.messages?.find((m) => m.role === "system")?.content ?? "";
+    assert.ok(!sys.includes("<skill"), "system prompt must not include skill markup anymore");
   } finally {
     __resetFetch();
-    rmSync(home, { recursive: true, force: true });
-    rmSync(sourceDir, { recursive: true, force: true });
-    if (prevHome === undefined) delete process.env.CARETAKER_HOME;
-    else process.env.CARETAKER_HOME = prevHome;
   }
 });
 

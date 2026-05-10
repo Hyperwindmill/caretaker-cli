@@ -1,9 +1,13 @@
-// Skill loader: given a list of plugin names active for an agent, read the
-// SKILL.md files from each and render them as a passive-context block to
-// prepend to the system prompt. Mirrors src/plugins/plugin_loader.ts but
-// reads from plugins.json instead of the DB and takes a string[] instead of
-// the comma-separated allowedTools surface (the app uses AgentConfig.plugins,
-// a dedicated field).
+// Skill loader: exposes active plugin skills as on-demand callable surface
+// rather than injected system-prompt context. Two helpers:
+//   - listActiveSkills(activeNames) → catalog metadata for the model
+//   - readActiveSkill(name, activeNames) → SKILL.md content for one plugin
+// The harness wires these to the `list_skills` / `read_skill` builtin tools.
+//
+// Granularity is per-plugin (matches the previous injection semantics). A
+// `cc-plugin` source that bundles N SKILL.md files surfaces as one entry
+// whose content is the concatenation. Per-file granularity is a follow-up
+// (manifest enrichment direction).
 
 import { readFile, stat } from "node:fs/promises";
 import * as path from "node:path";
@@ -13,6 +17,11 @@ import { loadPlugins } from "../store/json.js";
 import type { PluginRecord, PluginSource } from "../types.js";
 
 const SKILL_FILE_BYTE_CAP = 100_000;
+
+export interface SkillSummary {
+  name: string;
+  description: string;
+}
 
 function isInside(root: string, candidate: string): boolean {
   const resolvedRoot = path.resolve(root);
@@ -31,10 +40,6 @@ function rootForSource(src: PluginSource): string {
   return src.kind === "git" ? path.join(pluginCacheRoot(), src.id) : src.url;
 }
 
-function escapeXmlAttr(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-}
-
 async function readSkillContent(
   sourceRoot: string,
   plugin: PluginRecord,
@@ -46,7 +51,6 @@ async function readSkillContent(
   const pluginRoot = path.join(sourceRoot, plugin.relPath);
 
   if (plugin.manifestKind === "skill-glob") {
-    // The plugin IS a skill directory; SKILL.md sits directly inside.
     const skillFile = path.join(pluginRoot, "SKILL.md");
     try {
       const { size } = await stat(skillFile);
@@ -60,7 +64,6 @@ async function readSkillContent(
     }
   }
 
-  // cc-marketplace / cc-plugin: glob every SKILL.md under the plugin root.
   let matches: string[];
   try {
     matches = await fg("**/SKILL.md", {
@@ -90,43 +93,62 @@ async function readSkillContent(
   return parts.length > 0 ? parts.join("\n\n---\n\n") : null;
 }
 
-/**
- * Read SKILL.md files for every active plugin name and return the
- * concatenated content, each plugin wrapped in <skill name="…"> tags.
- * Names that reference unknown plugins or whose SKILL.md is missing are
- * silently skipped. Returns "" when activeNames is empty or no plugin
- * yields any content.
- */
-export async function loadPluginSkills(activeNames: string[]): Promise<string> {
+async function activePluginRecords(activeNames: string[]): Promise<
+  Array<{ plugin: PluginRecord; source: PluginSource }>
+> {
   const wanted = activeNames.map((n) => n.trim()).filter(Boolean);
-  if (wanted.length === 0) return "";
+  if (wanted.length === 0) return [];
 
   let file;
   try {
     file = await loadPlugins();
   } catch (err) {
     console.error("[plugin loader] failed to read plugins.json:", err);
-    return "";
+    return [];
   }
 
   const sourceById = new Map<string, PluginSource>(file.sources.map((s) => [s.id, s] as const));
   const wantedSet = new Set(wanted);
-  const matchingPlugins = file.plugins.filter((p) => wantedSet.has(p.name));
-
-  const blocks: string[] = [];
-  for (const plugin of matchingPlugins) {
-    const src = sourceById.get(plugin.sourceId);
-    if (!src) continue;
-    const content = await readSkillContent(rootForSource(src), plugin);
-    if (content === null) continue;
-    blocks.push(`<skill name="${escapeXmlAttr(plugin.name)}">\n${content}\n</skill>`);
+  const out: Array<{ plugin: PluginRecord; source: PluginSource }> = [];
+  for (const plugin of file.plugins) {
+    if (!wantedSet.has(plugin.name)) continue;
+    const source = sourceById.get(plugin.sourceId);
+    if (!source) continue;
+    out.push({ plugin, source });
   }
+  return out;
+}
 
-  if (blocks.length === 0) return "";
+/**
+ * Catalog of skills available to the agent. Returns one entry per active
+ * plugin whose record exists in plugins.json. Description defaults to an
+ * empty string when the manifest does not provide one — the model uses the
+ * name to decide whether to drill in via read_skill.
+ */
+export async function listActiveSkills(activeNames: string[]): Promise<SkillSummary[]> {
+  const records = await activePluginRecords(activeNames);
+  return records.map(({ plugin }) => ({
+    name: plugin.name,
+    description: plugin.description ?? "",
+  }));
+}
 
-  const header =
-    "The following skills are injected as passive context — they are not callable tools. " +
-    "Follow their instructions directly without attempting to invoke them as functions.";
+/**
+ * Returns the SKILL.md content for one active plugin by name, or null if
+ * the plugin is not active, not installed, has no readable SKILL.md, or
+ * exceeds the size cap. A `cc-plugin`/`cc-marketplace` plugin with multiple
+ * SKILL.md files returns the concatenation, joined with `\n\n---\n\n`.
+ */
+export async function readActiveSkill(
+  name: string,
+  activeNames: string[],
+): Promise<string | null> {
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  if (!activeNames.map((n) => n.trim()).includes(trimmed)) return null;
 
-  return `${header}\n\n${blocks.join("\n\n")}`;
+  const records = await activePluginRecords(activeNames);
+  const match = records.find(({ plugin }) => plugin.name === trimmed);
+  if (!match) return null;
+  return readSkillContent(rootForSource(match.source), match.plugin);
 }

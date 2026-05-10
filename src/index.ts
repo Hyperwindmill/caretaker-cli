@@ -4,6 +4,7 @@ import App from "./tui/app.js";
 import { loadAgents, loadConfig } from "./store/json.js";
 import { run } from "./harness/loop.js";
 import { tools as toolRegistry } from "./harness/tools/instance.js";
+import { resolveAgentTools } from "./harness/tools/index.js";
 import { refreshSourcesOnStart } from "./plugins/refresh_on_start.js";
 
 const promptArg = process.argv.slice(2).join(" ").trim();
@@ -34,7 +35,7 @@ if (!promptArg) {
   console.log(`→ running "${agent.name}" (${agent.model} via ${provider.name})\n`);
 
   const result = await run(
-    { agent, provider, tools: toolRegistry.filtered(agent.allowedTools), prompt: promptArg, workingDir: agent.workingDir },
+    { agent, provider, tools: resolveAgentTools(agent, toolRegistry), prompt: promptArg, workingDir: agent.workingDir },
     {
       onChunk: (s) => process.stdout.write(s),
       onToolCall: (_id, name, args) => process.stdout.write(`\n  → tool ${name}(${JSON.stringify(args)})`),

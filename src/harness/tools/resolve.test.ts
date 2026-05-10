@@ -1,0 +1,82 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { ToolRegistry } from "./registry.js";
+import { resolveAgentTools } from "./resolve.js";
+import type { Tool } from "./types.js";
+import type { AgentConfig } from "../../types.js";
+
+function fakeTool(name: string): Tool {
+  return {
+    name,
+    description: name,
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+    async execute() {
+      return { content: name };
+    },
+  };
+}
+
+function agent(over: Partial<AgentConfig>): AgentConfig {
+  return {
+    id: "a",
+    name: "a",
+    systemPrompt: "",
+    provider: "p",
+    model: "m",
+    allowedTools: [],
+    maxTurns: 30,
+    ...over,
+  };
+}
+
+test("resolveAgentTools: filters by allowedTools when no plugins", () => {
+  const r = new ToolRegistry();
+  r.register(fakeTool("read_file"));
+  r.register(fakeTool("list_skills"));
+  r.register(fakeTool("read_skill"));
+
+  const tools = resolveAgentTools(agent({ allowedTools: ["read_file"] }), r);
+  assert.deepEqual(tools.map((t) => t.name), ["read_file"]);
+});
+
+test("resolveAgentTools: auto-includes skill tools when plugins are active", () => {
+  const r = new ToolRegistry();
+  r.register(fakeTool("read_file"));
+  r.register(fakeTool("list_skills"));
+  r.register(fakeTool("read_skill"));
+
+  const tools = resolveAgentTools(
+    agent({ allowedTools: ["read_file"], plugins: ["my-skill"] }),
+    r,
+  );
+  assert.deepEqual(
+    tools.map((t) => t.name).sort(),
+    ["list_skills", "read_file", "read_skill"],
+  );
+});
+
+test("resolveAgentTools: does not duplicate when allowedTools already lists skill tools", () => {
+  const r = new ToolRegistry();
+  r.register(fakeTool("list_skills"));
+  r.register(fakeTool("read_skill"));
+
+  const tools = resolveAgentTools(
+    agent({ allowedTools: ["list_skills", "read_skill"], plugins: ["x"] }),
+    r,
+  );
+  assert.deepEqual(
+    tools.map((t) => t.name).sort(),
+    ["list_skills", "read_skill"],
+  );
+});
+
+test("resolveAgentTools: no skill tools when registry lacks them", () => {
+  const r = new ToolRegistry();
+  r.register(fakeTool("read_file"));
+
+  const tools = resolveAgentTools(
+    agent({ allowedTools: ["read_file"], plugins: ["x"] }),
+    r,
+  );
+  assert.deepEqual(tools.map((t) => t.name), ["read_file"]);
+});
