@@ -9,49 +9,27 @@ Last updated: 2026-05-10 (post `f1b482c`).
 
 ---
 
-## In flight: subagent dispatch
+## ~~In flight~~ Done: subagent dispatch (commit `next`)
 
-Plugin agents are discovered, persisted, and managed (commit `f1b482c`).
-They are first-class rows in `agents.json`. What's missing: an **agent that
-chats with the user can invoke another agent as a tool** and pass it a task.
-The invoked agent runs one-shot with its own system prompt + tool whitelist;
-the result returns to the caller as a tool result.
+All checklist items below shipped. Plugin-managed agents are now usable as
+sub-agents straight after a plugin refresh — empty runtime fields inherit
+from the caller, so a plugin agent with no MCP/tools/provider configuration
+runs with the parent's surface.
 
-Pattern reference: sister repo's `src/mcp/agent.ts` exposes `invoke_agent`
-+ `list_agents` over MCP. We do the equivalent as **in-process builtin
-tools** (no MCP wrap — same architectural choice we made for skills).
-
-### Behavior contract
-
-- [ ] **Builtin tool `list_agents`** — returns `[{name, description?, model, provider, managed}]` for every row in `agents.json` except the *current* caller (no self-recursion at the surface). No params. Auto-included in the registry like `list_skills` / `read_skill`.
-- [ ] **Builtin tool `invoke_agent({name, task})`** — looks up the named agent, runs it one-shot, returns the final assistant text as the tool result. `name` is the AgentConfig.name (managed rows show as `<plugin>/<scoped>`).
-- [ ] **Field-level inheritance from caller** — if an invoked-agent runtime field is empty/undefined, inherit from the caller (recursively along A→B→C). Per-invocation, never persisted back. Inheritable fields:
-   - `provider`, `model` — if empty
-   - `allowedTools` — if `[]` (the common case for managed-from-plugin agents whose `tools:` frontmatter we deliberately don't map)
-   - `confirmTools` — if undefined / `[]`
-   - `plugins` — if undefined / `[]` (skill catalog)
-   - `mcpServers` — if undefined / `[]`
-   - `workingDir` — if undefined / `""`
-   - `maxTurns` — **not** inherited; default 30 is fine.
-   The systemPrompt is always the invoked agent's own (that's the whole point of dispatching to a different one).
-- [ ] **Tool surface resolution** — call `resolveAgentTools(effectiveAgent, registry)` where `effectiveAgent` is the invoked agent with empty fields filled in from the caller per the inheritance rule above. The invoked agent that DID specify its own `allowedTools` gets the sandboxed surface it asked for; one that left it empty inherits the caller's. No accidental privilege escalation: the inherited surface is bounded by what the caller already had.
-- [ ] **No history** — the invoked agent starts with empty history; the only user message is the `task` string. (Matches the sister repo's one-shot semantics.) Persistence: optionally a sub-session under the parent — defer to a follow-up; for now no persistence at all.
-- [ ] **Confirm gate inheritance** — the chat's `confirmTool` callback applies to the invoked agent's tool calls too (the user is still in the loop).
-- [ ] **Signal propagation** — Esc on the parent run aborts the child run via the same `AbortSignal`.
-- [ ] **Recursion guard** — track depth in `ToolContext.dispatchDepth`, cap at e.g. 5. An invoked agent calling `invoke_agent` again increments depth; cap exceeded → tool returns `Error: dispatch depth exceeded`.
-- [ ] **Self-invocation guard** — invoking an agent by the same id as the caller errors out (catches accidental loops without relying on the depth cap).
-- [ ] **Error surfacing** — provider error / abort during the child run → tool result is `Error: <msg>`, parent loop continues.
-
-### Implementation notes
-
-- New `ToolContext` fields: `callerAgent: AgentConfig`, `dispatchDepth: number` (default 0). Loop populates them.
-- New file `src/agents/dispatch.ts` with `runOneShot(invoked, task, ctx, providerFallback, modelFallback)`. Internally calls `harness/loop.run(...)` and returns the final text.
-- Builtin `list_agents` and `invoke_agent` live under `src/harness/tools/builtin/`. Registered in `registerBuiltins`. Auto-included by `resolveAgentTools` (or just always present? — decide: always present, since they're cheap and user needs them visible).
-- Tests with `__setFetch` to mock the provider; verify tool exec, inheritance, recursion guard, abort propagation.
+- [x] **Builtin tool `list_agents`** — returns `[{name, model, provider, managed}]` for every row in `agents.json` except the caller; auto-included by `resolveAgentTools` whenever ≥1 other agent exists.
+- [x] **Builtin tool `invoke_agent({name, task})`** — one-shot dispatch, returns final assistant text or `Error: …`.
+- [x] **Field-level inheritance** — provider, model, allowedTools, confirmTools, plugins, mcpServers, workingDir all inherit when empty/undefined; systemPrompt never; maxTurns never.
+- [x] **Tool surface resolution** — `resolveAgentTools(effective, registry)` so the inherited surface is bounded by what the caller had.
+- [x] **No history** — child starts fresh, only `task` as user message.
+- [x] **Confirm gate inheritance** — `ctx.confirmTool` is plumbed through; user gates child tool calls.
+- [x] **Signal propagation** — `ctx.signal` shared with the child run.
+- [x] **Recursion guard** — `dispatchDepth` capped at 5; over → `Error: dispatch depth exceeded`.
+- [x] **Self-invocation guard** — same id rejected with `Error: agent cannot invoke itself`.
+- [x] **Error surfacing** — guard errors / aborted / max_turns rendered as tool-result strings; parent loop continues.
 
 ### Open question (not blocking)
 
-- [ ] Sub-session persistence — do we want each invocation to leave a trace in the parent's session log? Probably "yes" eventually but not in iter 1.
+- [ ] Sub-session persistence — each invocation leaving a trace in the parent's session log. Defer.
 
 ---
 
@@ -101,3 +79,5 @@ Open design questions:
 - [x] `717e2f8` — MCP pool/adapter unit tests via SDK `InMemoryTransport`
 - [x] `a5830b4` — fix: read `.mcp.json` from plugin root (not `plugin.json`); `${CLAUDE_PLUGIN_ROOT}` + `${ENV}` expansion at connect
 - [x] `f1b482c` — managed agents from plugin manifests, mirroring the MCP pattern
+- [x] `2c47a72` / `43d9c2f` — roadmap doc + subagent inheritance broadened to all runtime fields
+- [x] `next` — subagent dispatch (`list_agents`, `invoke_agent`) with recursion + self-invoke guards, confirm-gate + abort passthrough

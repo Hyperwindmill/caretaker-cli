@@ -3,6 +3,15 @@
 // from adapter-wrapped tools (e.g. an MCP adapter, future). A `Tool` only
 // has to declare its OpenAI-function-calling parameters and an `execute`
 // that takes parsed args + a runtime context and returns a structured result.
+
+import type { AgentConfig } from "../../types.js";
+
+export type ConfirmDecision = "once" | "always" | "reject";
+export type ConfirmGate = (
+  id: string,
+  name: string,
+  args: unknown,
+) => Promise<ConfirmDecision>;
 //
 // ─── Conversion path from caretaker server ───────────────────────────────
 // caretaker full hosts tools as MCP HTTP servers (src/mcp/*.ts). Two paths
@@ -38,6 +47,19 @@ export interface ToolContext {
    *  enumerate or fetch. Optional because most tools never read it; tests
    *  for non-skill tools can omit it. The skill tools treat undefined as []. */
   activePlugins?: string[];
+  /** The agent currently executing this tool. `invoke_agent` reads this to
+   *  resolve inheritance for the invoked sub-agent (empty fields fall back
+   *  to the caller). At the top-level run this is the user's chat agent;
+   *  inside a dispatched child it is the child's already-effective config. */
+  callerAgent?: AgentConfig;
+  /** How many `invoke_agent` frames deep this run is. Top-level = 0; a
+   *  dispatched child = 1; etc. The dispatch helper rejects calls past a
+   *  small cap to prevent runaway recursion. */
+  dispatchDepth?: number;
+  /** The chat-side confirm callback. The dispatch helper passes it through
+   *  to the child run so the user keeps the gate authority for tool calls
+   *  inside the sub-agent too. */
+  confirmTool?: ConfirmGate;
 }
 
 export interface ToolResult {

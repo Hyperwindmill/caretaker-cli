@@ -13,6 +13,8 @@ import { fetchTool } from "./fetch.js";
 import { bashTool } from "./bash.js";
 import { listSkillsTool } from "./list_skills.js";
 import { readSkillTool } from "./read_skill.js";
+import { listAgentsTool } from "./list_agents.js";
+import { invokeAgentTool } from "./invoke_agent.js";
 
 export function registerBuiltins(registry: ToolRegistry): void {
   // Filesystem (sandboxed to ctx.workingDir).
@@ -30,6 +32,10 @@ export function registerBuiltins(registry: ToolRegistry): void {
   // active plugins; not part of the agent's allowedTools surface).
   registry.register(listSkillsTool);
   registry.register(readSkillTool);
+  // Sub-agent dispatch (auto-included by resolveAgentTools when there is
+  // more than one agent configured — they're useless otherwise).
+  registry.register(listAgentsTool);
+  registry.register(invokeAgentTool);
 }
 
 export {
@@ -43,4 +49,6 @@ export {
   bashTool,
   listSkillsTool,
   readSkillTool,
+  listAgentsTool,
+  invokeAgentTool,
 };

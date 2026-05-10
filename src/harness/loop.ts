@@ -21,7 +21,13 @@ import {
   type ChatMessage,
 } from "./provider.js";
 import { mapMessagesToChat } from "./history.js";
-import { type Tool, type ToolContext, toOpenAiTool } from "./tools/index.js";
+import {
+  type ConfirmGate,
+  type ConfirmDecision as ToolConfirmDecision,
+  type Tool,
+  type ToolContext,
+  toOpenAiTool,
+} from "./tools/index.js";
 import { withHarnessPrelude } from "./prelude.js";
 import { loadContextFiles, formatContextBlock, resolveFileReferences } from "./context_files.js";
 
@@ -31,7 +37,7 @@ let fetchImpl: FetchLike = globalThis.fetch.bind(globalThis);
 export function __setFetch(f: FetchLike): void { fetchImpl = f; }
 export function __resetFetch(): void { fetchImpl = globalThis.fetch.bind(globalThis); }
 
-export type ConfirmDecision = "once" | "always" | "reject";
+export type ConfirmDecision = ToolConfirmDecision;
 
 export interface RunCallbacks {
   /** Streamed assistant text fragments as they arrive. */
@@ -48,7 +54,7 @@ export interface RunCallbacks {
    * `Error: rejected by user`. The caller decides which tools to gate —
    * this hook does not consult agent.confirmTools itself.
    */
-  confirmTool?: (id: string, name: string, args: unknown) => Promise<ConfirmDecision>;
+  confirmTool?: ConfirmGate;
   /** Fired with the textual result of the tool. */
   onToolResult?: (id: string, content: string) => void;
   /** Per-turn usage breakdown from the provider. */
@@ -73,6 +79,10 @@ export interface RunOptions {
   signal?: AbortSignal;
   /** Working directory passed to fs/bash tools via ToolContext. Defaults to process.cwd(). */
   workingDir?: string;
+  /** Frame counter for `invoke_agent` chains. The top-level user-driven
+   *  run leaves this undefined (treated as 0). Each dispatched child
+   *  passes parent depth + 1. */
+  dispatchDepth?: number;
 }
 
 export interface RunResult {
@@ -104,6 +114,9 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
     workingDir: opts.workingDir ?? process.cwd(),
     readPaths: new Set(),
     activePlugins: agent.plugins ?? [],
+    callerAgent: agent,
+    dispatchDepth: opts.dispatchDepth ?? 0,
+    confirmTool: cb.confirmTool,
   };
 
   // System prompt assembly, applied unconditionally (the prelude and
