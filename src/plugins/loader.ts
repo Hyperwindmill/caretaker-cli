@@ -40,6 +40,25 @@ function rootForSource(src: PluginSource): string {
   return src.kind === "git" ? path.join(pluginCacheRoot(), src.id) : src.url;
 }
 
+/**
+ * Resolve the absolute filesystem path of a plugin by id, or null when the
+ * plugin (or its source) is not registered. Used by the MCP layer to expand
+ * `${CLAUDE_PLUGIN_ROOT}` placeholders at connect time.
+ */
+export async function pluginAbsoluteRoot(pluginId: string): Promise<string | null> {
+  let file;
+  try {
+    file = await loadPlugins();
+  } catch {
+    return null;
+  }
+  const plugin = file.plugins.find((p) => p.id === pluginId);
+  if (!plugin) return null;
+  const source = file.sources.find((s) => s.id === plugin.sourceId);
+  if (!source) return null;
+  return path.join(rootForSource(source), plugin.relPath);
+}
+
 async function readSkillContent(
   sourceRoot: string,
   plugin: PluginRecord,

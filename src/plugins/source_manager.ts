@@ -16,7 +16,7 @@ import { randomUUID } from "node:crypto";
 import { loadPlugins, savePlugins } from "../store/json.js";
 import { encrypt } from "../lib/encryption.js";
 import { syncManagedMcpServers } from "../mcp/server_manager.js";
-import { discoverPlugins } from "./manifest.js";
+import { discoverPlugins, discoverPluginMcpServers } from "./manifest.js";
 import { fetchGit } from "./fetchers/git.js";
 import { fetchPath, validatePathInput } from "./fetchers/path.js";
 import type { DiscoveredPlugin } from "./types.js";
@@ -138,6 +138,19 @@ async function runRefresh(id: string): Promise<RefreshOutcome> {
         : await fetchPath(src.url);
     sha = fetched.sha;
     discovered = await discoverPlugins(fetched.root);
+
+    // Second pass: each discovered plugin may declare MCP servers in
+    // `<plugin-root>/.mcp.json` (the official Claude Code convention — the
+    // file is a sibling of `.claude-plugin/`, not a field of plugin.json).
+    // We attach the parsed specs to the DiscoveredPlugin so the persistence
+    // step below carries them through, and the subsequent
+    // syncManagedMcpServers() call materializes one McpServerConfig per
+    // declared server.
+    for (const d of discovered) {
+      const pluginRoot = path.join(fetched.root, d.relPath);
+      const mcpServers = await discoverPluginMcpServers(pluginRoot);
+      if (mcpServers) d.mcpServers = mcpServers;
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     // Persist the failure on the source row, leave plugins from the previous

@@ -16,6 +16,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { decrypt, isEncrypted } from "../lib/encryption.js";
 import { loadMcpServers, saveMcpServers } from "../store/json.js";
+import { pluginAbsoluteRoot } from "../plugins/loader.js";
 import type { McpServerConfig } from "../types.js";
 
 interface PoolEntry {
@@ -45,6 +46,38 @@ function decryptHeaders(headers: Record<string, string> | undefined): Record<str
   return out;
 }
 
+/**
+ * Expand `${VAR}` placeholders in a single string. `${CLAUDE_PLUGIN_ROOT}`
+ * resolves to the owning plugin's absolute root (when known); other names
+ * resolve from `process.env`. Unknown placeholders are left literal so the
+ * spawned MCP server can detect and report them.
+ */
+function expandPlaceholders(value: string, pluginRoot: string | null): string {
+  return value.replace(/\$\{([A-Z_][A-Z0-9_]*)\}/gi, (match, name: string) => {
+    if (name === "CLAUDE_PLUGIN_ROOT") return pluginRoot ?? match;
+    const envValue = process.env[name];
+    return envValue !== undefined ? envValue : match;
+  });
+}
+
+function expandStrings(value: string | undefined, pluginRoot: string | null): string | undefined {
+  return value === undefined ? undefined : expandPlaceholders(value, pluginRoot);
+}
+
+function expandArray(value: string[] | undefined, pluginRoot: string | null): string[] | undefined {
+  return value?.map((s) => expandPlaceholders(s, pluginRoot));
+}
+
+function expandRecord(
+  value: Record<string, string> | undefined,
+  pluginRoot: string | null,
+): Record<string, string> | undefined {
+  if (!value) return undefined;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(value)) out[k] = expandPlaceholders(v, pluginRoot);
+  return out;
+}
+
 async function recordConnectResult(id: string, error: string | null): Promise<void> {
   // Best-effort persistence — the connect already succeeded or failed at the
   // pool level, and a failed mcp.json write should not turn a working
@@ -67,14 +100,18 @@ async function openClient(server: McpServerConfig): Promise<PoolEntry> {
     { capabilities: {} },
   );
 
+  // Resolve the plugin's absolute root once (only managed rows need it; user
+  // rows pass null and unknown placeholders stay literal).
+  const pluginRoot = server.pluginId ? await pluginAbsoluteRoot(server.pluginId) : null;
+
   if (server.transport === "stdio") {
     if (!server.command) {
       throw new Error(`MCP server "${server.name}" (stdio) is missing "command"`);
     }
     const transport = new StdioClientTransport({
-      command: server.command,
-      args: server.args ?? [],
-      env: server.env,
+      command: expandPlaceholders(server.command, pluginRoot),
+      args: expandArray(server.args, pluginRoot) ?? [],
+      env: expandRecord(server.env, pluginRoot),
       stderr: "pipe",
     });
     await client.connect(transport);
@@ -90,8 +127,10 @@ async function openClient(server: McpServerConfig): Promise<PoolEntry> {
     if (!server.url) {
       throw new Error(`MCP server "${server.name}" (http) is missing "url"`);
     }
-    const headers = decryptHeaders(server.headers);
-    const transport = new StreamableHTTPClientTransport(new URL(server.url), {
+    const decrypted = decryptHeaders(server.headers);
+    const headers = expandRecord(decrypted, pluginRoot) ?? {};
+    const url = expandStrings(server.url, pluginRoot)!;
+    const transport = new StreamableHTTPClientTransport(new URL(url), {
       requestInit: { headers },
     });
     await client.connect(transport);
@@ -164,4 +203,10 @@ export async function closeAll(): Promise<void> {
 export function __resetPool(): void {
   pool.clear();
   inflight.clear();
+}
+
+/** Test hook: expose the placeholder expander so tests can verify the
+ *  exact substitution rules without spinning up a transport. */
+export function __expandForTests(value: string, pluginRoot: string | null): string {
+  return expandPlaceholders(value, pluginRoot);
 }

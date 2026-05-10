@@ -19,6 +19,8 @@ import { parse as parseYaml } from "yaml";
 import { NoPluginsFoundError, type DiscoveredPlugin } from "./types.js";
 import type { McpServerSpec } from "../types.js";
 
+const MCP_FILE_REL = ".mcp.json";
+
 const MARKETPLACE_REL = ".claude-plugin/marketplace.json";
 const PLUGIN_REL = ".claude-plugin/plugin.json";
 
@@ -34,12 +36,14 @@ function isInside(root: string, candidate: string): boolean {
 }
 
 /**
- * Parse a `mcpServers` record from a manifest blob into validated specs.
- * Skips entries that are missing both `command` (stdio) and `url` (http) so
- * a malformed manifest can't poison sync. Returns undefined when the field
- * is absent or empty so the discovered plugin row stays clean.
+ * Parse a `mcpServers` record into validated specs. The input is the value
+ * side of a `.mcp.json` map (or its `mcpServers` wrapper). Entries missing
+ * both `command` (stdio) and `url` (http) are silently dropped so a
+ * malformed manifest can't poison sync. The optional `type` field is a hint
+ * the spec emits but we don't rely on it — `command` vs `url` discriminates
+ * unambiguously.
  */
-function parseMcpServers(raw: unknown): Record<string, McpServerSpec> | undefined {
+function parseMcpServersMap(raw: unknown): Record<string, McpServerSpec> | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const out: Record<string, McpServerSpec> = {};
   for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
@@ -63,10 +67,39 @@ function parseMcpServers(raw: unknown): Record<string, McpServerSpec> | undefine
             : undefined,
       };
     }
-    // Anything else (no command and no url) is silently dropped — the
-    // plugin author can fix the manifest and re-refresh.
   }
   return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * Read `<pluginRoot>/.mcp.json` and return the declared MCP server specs.
+ * Two shapes are observed in the wild and both are accepted:
+ *   - `{ "mcpServers": { name: { … } } }`  (lh-youtrack, official spec)
+ *   - `{ name: { … } }`                     (claude-plugins-official examples)
+ *
+ * Returns `undefined` when the file is absent, malformed, or contains zero
+ * usable entries — the caller treats that as "this plugin declares no MCP
+ * servers" and the row stays clean. Path traversal is guarded by the
+ * caller; we only read the resolved absolute path.
+ */
+export async function discoverPluginMcpServers(
+  pluginRoot: string,
+): Promise<Record<string, McpServerSpec> | undefined> {
+  const abs = path.join(pluginRoot, MCP_FILE_REL);
+  if (!(await fileExists(abs))) return undefined;
+
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await readFile(abs, "utf-8"));
+  } catch {
+    return undefined;
+  }
+  if (!raw || typeof raw !== "object") return undefined;
+
+  // Wrappered form takes precedence when both could match.
+  const wrappered = (raw as { mcpServers?: unknown }).mcpServers;
+  if (wrappered !== undefined) return parseMcpServersMap(wrappered);
+  return parseMcpServersMap(raw);
 }
 
 function dedupeByName(plugins: DiscoveredPlugin[]): DiscoveredPlugin[] {
@@ -84,12 +117,7 @@ async function readMarketplace(root: string): Promise<DiscoveredPlugin[] | null>
   const abs = path.join(root, MARKETPLACE_REL);
   if (!(await fileExists(abs))) return null;
   const raw = JSON.parse(await readFile(abs, "utf-8")) as {
-    plugins?: Array<{
-      name?: string;
-      source?: string;
-      description?: string;
-      mcpServers?: unknown;
-    }>;
+    plugins?: Array<{ name?: string; source?: string; description?: string }>;
   };
   const entries = Array.isArray(raw.plugins) ? raw.plugins : [];
   const out: DiscoveredPlugin[] = [];
@@ -102,7 +130,6 @@ async function readMarketplace(root: string): Promise<DiscoveredPlugin[] | null>
       manifestKind: "cc-marketplace",
       relPath: e.source,
       rawManifest: e,
-      mcpServers: parseMcpServers(e.mcpServers),
     });
   }
   const deduped = dedupeByName(out);
@@ -115,7 +142,6 @@ async function readSinglePlugin(root: string): Promise<DiscoveredPlugin[] | null
   const raw = JSON.parse(await readFile(abs, "utf-8")) as {
     name?: string;
     description?: string;
-    mcpServers?: unknown;
   };
   if (!raw.name) return null;
   return [{
@@ -124,7 +150,6 @@ async function readSinglePlugin(root: string): Promise<DiscoveredPlugin[] | null
     manifestKind: "cc-plugin",
     relPath: ".",
     rawManifest: raw,
-    mcpServers: parseMcpServers(raw.mcpServers),
   }];
 }
 
