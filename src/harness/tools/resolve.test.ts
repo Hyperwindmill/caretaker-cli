@@ -77,3 +77,25 @@ test('resolveAgentTools: no skill tools when registry lacks them', async () => {
     ['read_file'],
   );
 });
+
+test('resolveAgentTools: dispatch tools auto-included regardless of agent count (anonymous mode is always valid)', async () => {
+  const r = new ToolRegistry();
+  r.register(fakeTool('list_agents'));
+  r.register(fakeTool('invoke_agent'));
+  // No other agents configured anywhere — the previous gate would have
+  // hidden the dispatch tools, blocking the agent from using anonymous
+  // sub-agent dispatch (`invoke_agent({task})`).
+  const tools = await resolveAgentTools(agent({ allowedTools: [] }), r);
+  const names = tools.map((t) => t.name).sort();
+  assert.deepEqual(names, ['invoke_agent', 'list_agents']);
+});
+
+test('resolveAgentTools: get_agent_context is always-on too', async () => {
+  const r = new ToolRegistry();
+  r.register(fakeTool('get_agent_context'));
+  const tools = await resolveAgentTools(agent({ allowedTools: [] }), r);
+  assert.deepEqual(
+    tools.map((t) => t.name),
+    ['get_agent_context'],
+  );
+});
