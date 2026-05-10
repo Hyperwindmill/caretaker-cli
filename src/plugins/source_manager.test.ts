@@ -57,6 +57,30 @@ describe('source_manager', () => {
     }
   });
 
+  it('refreshSource preserves PluginRecord.id across repeated refreshes (same source+name)', async () => {
+    const dir = makePathSource('stable', 'first');
+    try {
+      const created = await mgr.createSource({ kind: 'path', url: dir });
+      await mgr.refreshSource(created.id);
+      const idAfterFirst = (await mgr.listPlugins()).find((p) => p.sourceId === created.id)?.id;
+      assert.ok(idAfterFirst, 'first refresh should produce a plugin');
+
+      // Tweak something in the source (description) and re-refresh — the
+      // plugin should keep its id even though the record is rewritten.
+      writeFileSync(
+        path.join(dir, '.claude-plugin/plugin.json'),
+        JSON.stringify({ name: 'stable', description: 'second' }),
+      );
+      await mgr.refreshSource(created.id);
+      const after = (await mgr.listPlugins()).find((p) => p.sourceId === created.id);
+      assert.ok(after);
+      assert.equal(after!.id, idAfterFirst, 'PluginRecord.id must be stable across refreshes');
+      assert.equal(after!.description, 'second');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('refreshSource against a path source populates plugins and metadata', async () => {
     const dir = makePathSource('alpha', 'Alpha plugin');
     try {

@@ -190,10 +190,21 @@ async function runRefresh(id: string): Promise<RefreshOutcome> {
     // leaving orphans.
     return { pluginsFound: 0, sha, error: 'source deleted during refresh' };
   }
+  // Preserve PluginRecord.id across refreshes so downstream references
+  // (managed MCP rows' pluginId, managed agents' pluginId, and any agent
+  // that wires those managed rows by id) survive a re-sync. Without this,
+  // every refresh would assign a fresh UUID, syncManagedMcpServers /
+  // syncManagedAgents would drop the old rows + create new ones, and
+  // pruneAgentMcpRefs / the agent-sync equivalent would silently strip
+  // those refs from every agent that had them wired.
+  const previousIdByName = new Map<string, string>();
+  for (const p of latest.plugins) {
+    if (p.sourceId === id) previousIdByName.set(p.name, p.id);
+  }
   latest.plugins = latest.plugins.filter((p) => p.sourceId !== id);
   for (const d of discovered) {
     latest.plugins.push({
-      id: randomUUID(),
+      id: previousIdByName.get(d.name) ?? randomUUID(),
       sourceId: id,
       name: d.name,
       description: d.description,
