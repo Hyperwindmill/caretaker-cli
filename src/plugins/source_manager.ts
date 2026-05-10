@@ -15,6 +15,7 @@ import * as os from "node:os";
 import { randomUUID } from "node:crypto";
 import { loadPlugins, savePlugins } from "../store/json.js";
 import { encrypt } from "../lib/encryption.js";
+import { syncManagedMcpServers } from "../mcp/server_manager.js";
 import { discoverPlugins } from "./manifest.js";
 import { fetchGit } from "./fetchers/git.js";
 import { fetchPath, validatePathInput } from "./fetchers/path.js";
@@ -80,6 +81,8 @@ export async function deleteSource(id: string): Promise<boolean> {
   const [src] = file.sources.splice(idx, 1);
   file.plugins = file.plugins.filter((p) => p.sourceId !== id);
   await savePlugins(file);
+  // Cascade: managed MCP rows whose owning plugin disappeared are dropped.
+  await syncManagedMcpServers();
   if (src.kind === "git") {
     await rm(cacheDirForSource(id), { recursive: true, force: true }).catch(() => {});
   }
@@ -169,12 +172,22 @@ async function runRefresh(id: string): Promise<RefreshOutcome> {
       manifestKind: d.manifestKind,
       relPath: d.relPath,
       rawManifest: d.rawManifest,
+      ...(d.mcpServers ? { mcpServers: d.mcpServers } : {}),
     });
   }
   ourSrc.lastFetchedAt = new Date().toISOString();
   ourSrc.lastFetchError = null;
   ourSrc.lastFetchSha = sha;
   await savePlugins(latest);
+
+  // Reconcile mcp.json so newly-declared `mcpServers` entries become managed
+  // rows and stale ones disappear. Best-effort: a sync failure should not
+  // turn a successful refresh into a failure — the user can re-trigger.
+  try {
+    await syncManagedMcpServers();
+  } catch (err) {
+    console.error(`[source manager] mcp sync after refresh failed:`, err);
+  }
 
   return { pluginsFound: discovered.length, sha, error: null };
 }

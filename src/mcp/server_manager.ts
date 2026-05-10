@@ -5,9 +5,14 @@
 
 import { randomUUID } from "node:crypto";
 import { encrypt, isEncrypted } from "../lib/encryption.js";
-import { loadMcpServers, saveMcpServers } from "../store/json.js";
+import { loadMcpServers, loadPlugins, saveMcpServers } from "../store/json.js";
 import { closeClient } from "./client.js";
-import type { McpServerConfig, McpTransport } from "../types.js";
+import type {
+  McpServerConfig,
+  McpServerSpec,
+  McpTransport,
+  PluginRecord,
+} from "../types.js";
 
 export interface CreateMcpServerInput {
   name: string;
@@ -115,6 +120,17 @@ export async function patchMcpServer(id: string, input: PatchMcpServerInput): Pr
 
   validateInput({ ...input, transport: srv.transport });
 
+  // Plugin-managed rows: only `enabled` is mutable. Everything else is the
+  // plugin manifest's responsibility and would be overwritten on next sync.
+  if (srv.pluginId) {
+    if (input.enabled !== undefined) {
+      srv.enabled = input.enabled;
+      await saveMcpServers(file);
+      await closeClient(id);
+    }
+    return srv;
+  }
+
   if (input.name !== undefined) srv.name = input.name.trim();
   if (input.enabled !== undefined) srv.enabled = input.enabled;
 
@@ -130,7 +146,122 @@ export async function patchMcpServer(id: string, input: PatchMcpServerInput): Pr
   }
 
   await saveMcpServers(file);
-  // Drop pooled connection so the next call picks up the new config.
   await closeClient(id);
   return srv;
+}
+
+// ─── Plugin-managed sync ─────────────────────────────────────────────────
+
+function specTransport(spec: McpServerSpec): McpTransport {
+  return "command" in spec ? "stdio" : "http";
+}
+
+function managedRowKey(pluginId: string, scopedName: string): string {
+  return `${pluginId}::${scopedName}`;
+}
+
+function buildManagedRow(plugin: PluginRecord, scopedName: string, spec: McpServerSpec): McpServerConfig {
+  const transport = specTransport(spec);
+  return {
+    id: randomUUID(),
+    name: `${plugin.name}/${scopedName}`,
+    transport,
+    enabled: true,
+    pluginId: plugin.id,
+    pluginScopedName: scopedName,
+    lastConnectedAt: null,
+    lastConnectError: null,
+    ...(transport === "stdio"
+      ? {
+          command: (spec as { command: string }).command,
+          args: (spec as { args?: string[] }).args ?? [],
+          env: (spec as { env?: Record<string, string> }).env,
+        }
+      : {
+          url: (spec as { url: string }).url,
+          headers: encryptHeaderValues((spec as { headers?: Record<string, string> }).headers),
+        }),
+  };
+}
+
+function applySpecToManagedRow(
+  existing: McpServerConfig,
+  plugin: PluginRecord,
+  scopedName: string,
+  spec: McpServerSpec,
+): McpServerConfig {
+  // Preserve user-controllable bits (`enabled`, `lastConnectedAt`,
+  // `lastConnectError`); refresh everything else from the manifest.
+  const transport = specTransport(spec);
+  return {
+    ...existing,
+    name: `${plugin.name}/${scopedName}`,
+    transport,
+    pluginId: plugin.id,
+    pluginScopedName: scopedName,
+    command: transport === "stdio" ? (spec as { command: string }).command : undefined,
+    args: transport === "stdio" ? (spec as { args?: string[] }).args ?? [] : undefined,
+    env: transport === "stdio" ? (spec as { env?: Record<string, string> }).env : undefined,
+    url: transport === "http" ? (spec as { url: string }).url : undefined,
+    headers:
+      transport === "http"
+        ? encryptHeaderValues((spec as { headers?: Record<string, string> }).headers)
+        : undefined,
+  };
+}
+
+/**
+ * Reconcile mcp.json with plugins.json. For every plugin with an
+ * `mcpServers` manifest entry, ensure a corresponding managed row exists in
+ * mcp.json (created if missing, refreshed in place if present). Managed rows
+ * whose source plugin or manifest entry has disappeared are removed and
+ * their pooled connection (if any) is closed.
+ *
+ * User-authored rows (no `pluginId`) are never touched. Idempotent: calling
+ * twice with no plugin changes leaves the file in the same shape.
+ */
+export async function syncManagedMcpServers(): Promise<void> {
+  const pluginsFile = await loadPlugins();
+  const mcpFile = await loadMcpServers();
+
+  // Build the set of expected (pluginId, scopedName) → (plugin, spec).
+  const expected = new Map<string, { plugin: PluginRecord; scopedName: string; spec: McpServerSpec }>();
+  for (const plugin of pluginsFile.plugins) {
+    if (!plugin.mcpServers) continue;
+    for (const [scopedName, spec] of Object.entries(plugin.mcpServers)) {
+      expected.set(managedRowKey(plugin.id, scopedName), { plugin, scopedName, spec });
+    }
+  }
+
+  const out: McpServerConfig[] = [];
+  const seenKeys = new Set<string>();
+  const droppedIds: string[] = [];
+
+  for (const srv of mcpFile.servers) {
+    if (!srv.pluginId) {
+      out.push(srv); // user-authored, leave alone
+      continue;
+    }
+    const key = managedRowKey(srv.pluginId, srv.pluginScopedName ?? "");
+    const exp = expected.get(key);
+    if (!exp) {
+      droppedIds.push(srv.id);
+      continue;
+    }
+    seenKeys.add(key);
+    out.push(applySpecToManagedRow(srv, exp.plugin, exp.scopedName, exp.spec));
+  }
+
+  for (const [key, exp] of expected) {
+    if (seenKeys.has(key)) continue;
+    out.push(buildManagedRow(exp.plugin, exp.scopedName, exp.spec));
+  }
+
+  await saveMcpServers({ servers: out });
+
+  // Drop pooled connections for removed rows so the runtime stops talking
+  // to a config that no longer exists.
+  for (const id of droppedIds) {
+    await closeClient(id);
+  }
 }

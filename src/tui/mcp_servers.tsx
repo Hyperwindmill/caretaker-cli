@@ -48,6 +48,38 @@ export default function McpServers({ onBack }: { onBack: () => void }) {
   }
 
   if (mode === "edit" && selected) {
+    if (selected.pluginId) {
+      // Managed row: only enabled is mutable from the UI.
+      return (
+        <Box flexDirection="column">
+          <Text bold>Managed by plugin</Text>
+          <Text dimColor>
+            All fields except <Text>enabled</Text> are owned by the plugin manifest and
+            refreshed from the source. Use the Plugins menu to refresh or remove the source.
+          </Text>
+          <Box marginTop={1}>
+            <Text>enabled: </Text>
+            <SelectInput
+              items={[
+                { label: "yes", value: "yes" },
+                { label: "no — keep config but skip at connect time", value: "no" },
+              ]}
+              initialIndex={selected.enabled ? 0 : 1}
+              onSelect={async (item) => {
+                const patched = await patchMcpServer(selected.id, {
+                  enabled: item.value === "yes",
+                });
+                if (patched) {
+                  await reload();
+                  setSelected(patched);
+                }
+                setMode("detail");
+              }}
+            />
+          </Box>
+        </Box>
+      );
+    }
     return (
       <ServerForm
         initial={selected}
@@ -90,9 +122,15 @@ export default function McpServers({ onBack }: { onBack: () => void }) {
   if (mode === "detail" && selected) {
     const headerCount = selected.headers ? Object.keys(selected.headers).length : 0;
     const envCount = selected.env ? Object.keys(selected.env).length : 0;
+    const managed = !!selected.pluginId;
     return (
       <Box flexDirection="column">
         <Text bold>{selected.name}</Text>
+        {managed && (
+          <Text color="cyan">
+            [managed by plugin · refresh the plugin source to update]
+          </Text>
+        )}
         <Text>transport:       {selected.transport}</Text>
         <Text>enabled:         {selected.enabled ? "yes" : "no"}</Text>
         {selected.transport === "stdio" && (
@@ -116,8 +154,8 @@ export default function McpServers({ onBack }: { onBack: () => void }) {
         <Box marginTop={1}>
           <SelectInput
             items={[
-              { label: "Edit", value: "edit" },
-              { label: "Delete", value: "delete" },
+              { label: managed ? "Toggle enabled" : "Edit", value: "edit" },
+              ...(managed ? [] : [{ label: "Delete", value: "delete" }]),
               { label: "← Back", value: "back" },
             ]}
             onSelect={(item) => {
@@ -134,8 +172,9 @@ export default function McpServers({ onBack }: { onBack: () => void }) {
   const items = [
     ...servers.map((s) => {
       const where = s.transport === "stdio" ? s.command ?? "(no command)" : s.url ?? "(no url)";
-      const flag = s.enabled ? "" : " [disabled]";
-      return { label: `${s.transport.padEnd(5)} ${s.name} — ${where}${flag}`, value: `s:${s.id}` };
+      const flags =
+        (s.enabled ? "" : " [disabled]") + (s.pluginId ? " [managed]" : "");
+      return { label: `${s.transport.padEnd(5)} ${s.name} — ${where}${flags}`, value: `s:${s.id}` };
     }),
     { label: "+ Create new", value: "__new__" },
     { label: "← Back", value: "__back__" },

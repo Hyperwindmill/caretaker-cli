@@ -4,7 +4,7 @@
 // discovery output (without ids — those are minted on persist), and the
 // discovery error.
 
-import type { PluginManifestKind } from "../types.js";
+import type { McpServerSpec, PluginManifestKind } from "../types.js";
 
 export interface FetchResult {
   /** Filesystem root containing the source contents (cache dir for git, the
@@ -24,6 +24,11 @@ export interface DiscoveredPlugin {
   /** Relative to the source root, never traverses outside. */
   relPath: string;
   rawManifest: unknown;
+  /** MCP servers declared by the plugin manifest, keyed by the
+   *  plugin-scoped name (claude-code's `mcpServers` shape). The source
+   *  manager mints one McpServerConfig row per entry tagged with this
+   *  plugin's id, so deleting the plugin cascades to its MCP rows. */
+  mcpServers?: Record<string, McpServerSpec>;
 }
 
 export class NoPluginsFoundError extends Error {

@@ -55,6 +55,64 @@ test("discoverPlugins reads .claude-plugin/plugin.json as a marketplace of one",
   }
 });
 
+test("discoverPlugins extracts mcpServers from plugin.json (stdio + http shapes)", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "plug-"));
+  try {
+    mk(
+      dir,
+      ".claude-plugin/plugin.json",
+      JSON.stringify({
+        name: "pack",
+        mcpServers: {
+          local: { command: "node", args: ["server.js"], env: { DEBUG: "1" } },
+          remote: { url: "https://mcp.example.com", headers: { Authorization: "Bearer x" } },
+          missing: { foo: "bar" }, // dropped — neither command nor url
+        },
+      }),
+    );
+    const [found] = await discoverPlugins(dir);
+    assert.ok(found.mcpServers);
+    assert.deepEqual(Object.keys(found.mcpServers!).sort(), ["local", "remote"]);
+    const local = found.mcpServers!.local as { command: string; args?: string[]; env?: Record<string, string> };
+    assert.equal(local.command, "node");
+    assert.deepEqual(local.args, ["server.js"]);
+    assert.deepEqual(local.env, { DEBUG: "1" });
+    const remote = found.mcpServers!.remote as { url: string; headers?: Record<string, string> };
+    assert.equal(remote.url, "https://mcp.example.com");
+    assert.deepEqual(remote.headers, { Authorization: "Bearer x" });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("discoverPlugins propagates mcpServers from marketplace entries", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "plug-"));
+  try {
+    mk(
+      dir,
+      ".claude-plugin/marketplace.json",
+      JSON.stringify({
+        plugins: [
+          {
+            name: "alpha",
+            source: "./alpha",
+            mcpServers: { gh: { command: "npx", args: ["-y", "@x/gh"] } },
+          },
+          { name: "beta", source: "./beta" },
+        ],
+      }),
+    );
+    const found = await discoverPlugins(dir);
+    const alpha = found.find((p) => p.name === "alpha")!;
+    const beta = found.find((p) => p.name === "beta")!;
+    assert.ok(alpha.mcpServers);
+    assert.equal(Object.keys(alpha.mcpServers!).length, 1);
+    assert.equal(beta.mcpServers, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("discoverPlugins falls back to SKILL.md glob when no manifest is present", async () => {
   const dir = mkdtempSync(path.join(tmpdir(), "plug-"));
   try {

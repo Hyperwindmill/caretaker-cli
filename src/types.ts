@@ -48,6 +48,9 @@ export type PluginRecord = {
   /** Path inside the source root (never traverses outside). */
   relPath: string;
   rawManifest: unknown;
+  /** MCP server specs declared by the plugin manifest. Each entry produces
+   *  one McpServerConfig row tagged with this plugin's id at sync time. */
+  mcpServers?: Record<string, McpServerSpec>;
 };
 
 /** On-disk shape of plugins.json. */
@@ -58,6 +61,13 @@ export type PluginsFile = {
 
 /** Wire transport for an MCP server. */
 export type McpTransport = "stdio" | "http";
+
+/** Plugin-manifest declaration of an MCP server (claude-code's `mcpServers`
+ *  record shape, value side). The plugin source manager converts each entry
+ *  into a fully-fledged McpServerConfig at refresh time. */
+export type McpServerSpec =
+  | { command: string; args?: string[]; env?: Record<string, string> }
+  | { url: string; headers?: Record<string, string> };
 
 /** A configured MCP server the agent can connect to. Tools discovered from
  *  the server are exposed in the registry as `mcp__<id>__<toolName>`. */
@@ -86,6 +96,15 @@ export type McpServerConfig = {
   lastConnectedAt?: string | null;
   /** Last connect error message; null when the last connect succeeded. */
   lastConnectError?: string | null;
+  // ─── plugin-managed origin ──────────────────────────────────────────
+  /** PluginRecord.id this server was derived from. Set on rows synthesized
+   *  from a plugin manifest's `mcpServers` field. Edit/delete are blocked
+   *  in the TUI for managed rows; toggling `enabled` stays available. The
+   *  row is removed automatically when the source plugin disappears. */
+  pluginId?: string;
+  /** The key used inside the plugin manifest's `mcpServers` record. The
+   *  pair (pluginId, pluginScopedName) is the dedupe key during sync. */
+  pluginScopedName?: string;
 };
 
 /** On-disk shape of mcp.json. */

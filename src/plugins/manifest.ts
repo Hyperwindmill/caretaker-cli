@@ -17,6 +17,7 @@ import * as path from "node:path";
 import fg from "fast-glob";
 import { parse as parseYaml } from "yaml";
 import { NoPluginsFoundError, type DiscoveredPlugin } from "./types.js";
+import type { McpServerSpec } from "../types.js";
 
 const MARKETPLACE_REL = ".claude-plugin/marketplace.json";
 const PLUGIN_REL = ".claude-plugin/plugin.json";
@@ -30,6 +31,42 @@ function isInside(root: string, candidate: string): boolean {
   const resolvedCandidate = path.resolve(root, candidate);
   const rel = path.relative(resolvedRoot, resolvedCandidate);
   return !rel.startsWith("..") && !path.isAbsolute(rel);
+}
+
+/**
+ * Parse a `mcpServers` record from a manifest blob into validated specs.
+ * Skips entries that are missing both `command` (stdio) and `url` (http) so
+ * a malformed manifest can't poison sync. Returns undefined when the field
+ * is absent or empty so the discovered plugin row stays clean.
+ */
+function parseMcpServers(raw: unknown): Record<string, McpServerSpec> | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const out: Record<string, McpServerSpec> = {};
+  for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== "object") continue;
+    const v = value as Record<string, unknown>;
+    if (typeof v.command === "string" && v.command.trim() !== "") {
+      out[name] = {
+        command: v.command,
+        args: Array.isArray(v.args) ? (v.args as string[]) : undefined,
+        env:
+          v.env && typeof v.env === "object"
+            ? (v.env as Record<string, string>)
+            : undefined,
+      };
+    } else if (typeof v.url === "string" && v.url.trim() !== "") {
+      out[name] = {
+        url: v.url,
+        headers:
+          v.headers && typeof v.headers === "object"
+            ? (v.headers as Record<string, string>)
+            : undefined,
+      };
+    }
+    // Anything else (no command and no url) is silently dropped — the
+    // plugin author can fix the manifest and re-refresh.
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 function dedupeByName(plugins: DiscoveredPlugin[]): DiscoveredPlugin[] {
@@ -47,7 +84,12 @@ async function readMarketplace(root: string): Promise<DiscoveredPlugin[] | null>
   const abs = path.join(root, MARKETPLACE_REL);
   if (!(await fileExists(abs))) return null;
   const raw = JSON.parse(await readFile(abs, "utf-8")) as {
-    plugins?: Array<{ name?: string; source?: string; description?: string }>;
+    plugins?: Array<{
+      name?: string;
+      source?: string;
+      description?: string;
+      mcpServers?: unknown;
+    }>;
   };
   const entries = Array.isArray(raw.plugins) ? raw.plugins : [];
   const out: DiscoveredPlugin[] = [];
@@ -60,6 +102,7 @@ async function readMarketplace(root: string): Promise<DiscoveredPlugin[] | null>
       manifestKind: "cc-marketplace",
       relPath: e.source,
       rawManifest: e,
+      mcpServers: parseMcpServers(e.mcpServers),
     });
   }
   const deduped = dedupeByName(out);
@@ -70,7 +113,9 @@ async function readSinglePlugin(root: string): Promise<DiscoveredPlugin[] | null
   const abs = path.join(root, PLUGIN_REL);
   if (!(await fileExists(abs))) return null;
   const raw = JSON.parse(await readFile(abs, "utf-8")) as {
-    name?: string; description?: string;
+    name?: string;
+    description?: string;
+    mcpServers?: unknown;
   };
   if (!raw.name) return null;
   return [{
@@ -79,6 +124,7 @@ async function readSinglePlugin(root: string): Promise<DiscoveredPlugin[] | null
     manifestKind: "cc-plugin",
     relPath: ".",
     rawManifest: raw,
+    mcpServers: parseMcpServers(raw.mcpServers),
   }];
 }
 
