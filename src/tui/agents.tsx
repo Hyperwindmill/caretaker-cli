@@ -251,9 +251,15 @@ export default function Agents({ onBack }: { onBack: () => void }) {
   }
 
   if (mode === "detail" && selected) {
+    const managed = !!selected.pluginId;
     return (
       <Box flexDirection="column">
         <Text bold>{selected.name}</Text>
+        {managed && (
+          <Text color="cyan">
+            [managed by plugin · name + system prompt come from the manifest]
+          </Text>
+        )}
         <Text>provider: {selected.provider}</Text>
         <Text>model:    {selected.model}</Text>
         <Text>maxTurns: {selected.maxTurns === 0 ? "unlimited" : selected.maxTurns}</Text>
@@ -273,7 +279,7 @@ export default function Agents({ onBack }: { onBack: () => void }) {
                 ? [{ label: `Past chats (${pastSessions.length})`, value: "past-chats" }]
                 : []),
               { label: "Edit", value: "edit" },
-              { label: "Delete", value: "delete" },
+              ...(managed ? [] : [{ label: "Delete", value: "delete" }]),
               { label: "← Back", value: "back" },
             ]}
             onSelect={(item) => {
@@ -293,7 +299,13 @@ export default function Agents({ onBack }: { onBack: () => void }) {
   }
 
   const items = [
-    ...agents.map((a) => ({ label: `${a.name}  —  ${a.model} via ${a.provider}`, value: `a:${a.id}` })),
+    ...agents.map((a) => {
+      const flag = a.pluginId ? " [managed]" : "";
+      return {
+        label: `${a.name}  —  ${a.model} via ${a.provider}${flag}`,
+        value: `a:${a.id}`,
+      };
+    }),
     { label: "+ Create new", value: "__new__" },
     { label: "← Back", value: "__back__" },
   ];
@@ -336,7 +348,10 @@ function AgentForm({
   onCancel: () => void;
 }) {
   const isEdit = !!initial;
-  const [step, setStep] = useState<FormStep>("name");
+  const managed = !!initial?.pluginId;
+  // Managed agents: skip the name step (locked to manifest) and start at
+  // provider. systemPrompt is locked too — handled in advance() below.
+  const [step, setStep] = useState<FormStep>(managed ? "provider" : "name");
   const [name, setName] = useState(initial?.name ?? "");
   const [provider, setProvider] = useState(initial?.provider ?? "");
   const [model, setModel] = useState(initial?.model ?? "");
@@ -370,6 +385,10 @@ function AgentForm({
     } else if (step === "systemPrompt") {
       setError(null);
       setStep("tools");
+    } else if (step === "model" && managed) {
+      // Managed agents skip the systemPrompt step — manifest-owned.
+      setError(null);
+      setStep("tools");
     } else if (step === "tools") {
       setError(null);
       setStep("plugins");
@@ -399,6 +418,12 @@ function AgentForm({
         ...(activePlugins.length > 0 ? { plugins: activePlugins } : {}),
         ...(activeMcp.length > 0 ? { mcpServers: activeMcp } : {}),
         ...(workingDir.trim() ? { workingDir: workingDir.trim() } : {}),
+        // Preserve plugin-managed origin tags so the next sync recognizes
+        // this row instead of orphaning it.
+        ...(initial?.pluginId ? { pluginId: initial.pluginId } : {}),
+        ...(initial?.pluginScopedName
+          ? { pluginScopedName: initial.pluginScopedName }
+          : {}),
       };
       void onSave(a);
     }
@@ -415,7 +440,12 @@ function AgentForm({
 
       <Box marginTop={1}>
         <Text>name:     </Text>
-        {step === "name" ? (
+        {managed ? (
+          <Text>
+            <Text>{name}</Text>
+            <Text dimColor>{"  (managed by plugin)"}</Text>
+          </Text>
+        ) : step === "name" ? (
           <TextInput value={name} onChange={setName} onSubmit={advance} />
         ) : (
           <Text>{name}</Text>
@@ -451,7 +481,8 @@ function AgentForm({
             onPick={(id) => {
               setModel(id);
               setError(null);
-              setStep("systemPrompt");
+              // Managed agents lock the systemPrompt — jump straight to tools.
+              setStep(managed ? "tools" : "systemPrompt");
             }}
           />
         ) : ["name", "provider"].includes(step) ? (
@@ -463,7 +494,12 @@ function AgentForm({
 
       <Box>
         <Text>prompt:   </Text>
-        {step === "systemPrompt" ? (
+        {managed ? (
+          <Text>
+            <Text>{(systemPrompt || "(empty)").slice(0, 80)}{systemPrompt.length > 80 ? "…" : ""}</Text>
+            <Text dimColor>{"  (managed by plugin)"}</Text>
+          </Text>
+        ) : step === "systemPrompt" ? (
           <TextInput
             value={systemPrompt}
             onChange={setSystemPrompt}
