@@ -5,6 +5,8 @@
     "moduleResolution": "bundler",
     "outDir": "./dist",
     "rootDir": "./src",
+    "declaration": true,
+    "declarationMap": true,
     "strict": true,
     "noImplicitAny": false,
     "skipLibCheck": true,
