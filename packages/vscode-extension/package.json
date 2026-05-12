@@ -1,0 +1,74 @@
+{
+  "name": "caretaker-vscode",
+  "displayName": "Caretaker",
+  "description": "Caretaker agent harness — chat sidebar for VSCode.",
+  "version": "0.0.1",
+  "private": true,
+  "publisher": "leviahub",
+  "engines": {
+    "vscode": "^1.95.0",
+    "node": ">=20"
+  },
+  "main": "./dist/extension.js",
+  "categories": ["AI", "Chat"],
+  "activationEvents": [],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "caretaker",
+          "title": "Caretaker",
+          "icon": "$(comment-discussion)"
+        }
+      ]
+    },
+    "views": {
+      "caretaker": [
+        {
+          "type": "webview",
+          "id": "caretaker.chatView",
+          "name": "Chat"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "caretaker.openChat",
+        "title": "Caretaker: Open Chat",
+        "category": "Caretaker"
+      }
+    ],
+    "configuration": {
+      "title": "Caretaker",
+      "properties": {
+        "caretaker.home": {
+          "type": "string",
+          "default": "",
+          "description": "Override the CARETAKER_HOME directory. The CARETAKER_HOME env var still takes precedence. Leave empty for the default (~/.caretaker)."
+        },
+        "caretaker.defaultAgent": {
+          "type": "string",
+          "default": "",
+          "description": "Name of the agent selected on activation. Empty = first available."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "dev": "node esbuild.config.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test \"src/**/*.test.ts\"",
+    "package": "vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "caretaker-cli": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@types/vscode": "^1.95.0",
+    "esbuild": "^0.27.7",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}
