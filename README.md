@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/caretaker.png" alt="caretaker" width="220" />
+  <img src="packages/cli/assets/caretaker.png" alt="caretaker" width="220" />
 </p>
 
 # caretaker-cli
@@ -12,7 +12,7 @@ A terminal-native home for your agents: a quiet TUI where you create _named agen
 
 ### Quick setup
 
-`npm install`, `npm run dev`, and the first-run wizard walks you through adding a provider and creating your first agent. No accounts, no daemons, no signup.
+`pnpm install`, `pnpm -F caretaker-cli dev`, and the first-run wizard walks you through adding a provider and creating your first agent. No accounts, no daemons, no signup.
 
 State lives under `~/.caretaker/` as plain JSON and JSONL — readable, inspectable, deletable. Override the root with `CARETAKER_HOME=/path/to/dir` and you have an isolated environment in one env var.
 
@@ -57,16 +57,18 @@ Refresh failures preserve the previous good state, so an outage doesn't strip pl
 ## Quick start
 
 ```bash
-npm install
-npm run dev                          # launch the TUI
-CARETAKER_HOME=/tmp/ct npm run dev   # isolated dev environment
+pnpm install
+pnpm -F caretaker-cli dev                          # launch the TUI
+CARETAKER_HOME=/tmp/ct pnpm -F caretaker-cli dev   # isolated dev environment
 ```
 
 ```bash
-npm test          # node test runner
-npm run typecheck # tsc --noEmit
-npm run build     # tsc → dist/
+pnpm -F caretaker-cli test       # node test runner
+pnpm -F caretaker-cli typecheck  # tsc --noEmit
+pnpm -F caretaker-cli build      # tsc → packages/cli/dist/
 ```
+
+Package manager: **pnpm** (≥10). The repo is a pnpm workspaces monorepo (`packages/cli/`).
 
 On first run: pick **Providers → New**, paste your base URL and key, save. Then **Agents → New**, choose a model, name the agent, set a working directory, pick your tools, write a system prompt, and start chatting.
 
@@ -77,7 +79,7 @@ On first run: pick **Providers → New**, paste your base URL and key, save. The
 ## Layout
 
 ```
-src/
+packages/cli/src/
 ├── index.ts             entry: TUI render + boot-time plugin refresh
 ├── types.ts             AgentConfig, ProviderConfig, PluginSource, PluginRecord, …
 ├── store/json.ts        file store (lazy paths, atomic writes)
