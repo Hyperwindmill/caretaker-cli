@@ -1,0 +1,157 @@
+/* Webview styles. All colors / fonts derive from VSCode-injected
+   custom properties so the panel re-themes automatically on theme
+   switch. Layout is sidebar-first (narrow column). */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+}
+
+#root {
+  height: 100%;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.app__header {
+  padding: 8px 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 11px;
+  border-bottom: 1px solid var(--vscode-panel-border, transparent);
+  color: var(--vscode-sideBarTitle-foreground, var(--vscode-foreground));
+}
+
+.app__error {
+  margin: 8px 12px;
+  padding: 6px 8px;
+  border: 1px solid var(--vscode-inputValidation-errorBorder);
+  background: var(--vscode-inputValidation-errorBackground);
+  color: var(--vscode-inputValidation-errorForeground, var(--vscode-errorForeground));
+  border-radius: 2px;
+  font-size: 12px;
+}
+
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.messages--empty {
+  align-items: center;
+  justify-content: center;
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+}
+
+.bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bubble__role {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.bubble__text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+.bubble--user .bubble__text {
+  background: var(--vscode-textBlockQuote-background);
+  border-left: 2px solid var(--vscode-textBlockQuote-border);
+  padding: 4px 8px;
+  border-radius: 2px;
+}
+
+.bubble__caret {
+  display: inline-block;
+  margin-left: 2px;
+  animation: blink 1s steps(1) infinite;
+  color: var(--vscode-descriptionForeground);
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.composer {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--vscode-panel-border, transparent);
+  background: inherit;
+}
+
+.composer__input {
+  flex: 1;
+  resize: none;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 2px;
+  padding: 4px 6px;
+}
+
+.composer__input:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.composer__input:disabled {
+  opacity: 0.6;
+}
+
+.composer__send {
+  align-self: flex-end;
+  font-family: inherit;
+  font-size: var(--vscode-font-size);
+  padding: 4px 12px;
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.composer__send:hover:not(:disabled) {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.composer__send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
