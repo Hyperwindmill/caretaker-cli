@@ -9,13 +9,26 @@
 
 import * as harness from 'caretaker-cli/harness';
 import * as session from 'caretaker-cli/session';
+import type { ConfirmDecision } from 'caretaker-cli/harness';
 import type { MessageRecord, SessionMetaRecord } from 'caretaker-cli/session';
 import type { AgentConfig, ProviderConfig } from 'caretaker-cli/types';
+
+/** Called by the controller when a tool that requires confirmation
+ * (i.e. is in `agent.confirmTools`) is about to be invoked. The
+ * caller resolves with the user's decision. Returning `'always'`
+ * tells the controller to skip future asks for the same tool name
+ * within this controller's lifetime — same semantics as the TUI. */
+export type AskConfirm = (
+  id: string,
+  toolName: string,
+  args: unknown,
+) => Promise<ConfirmDecision>;
 
 export interface ChatCallbacks {
   onChunk: (text: string) => void;
   onToolCall: (id: string, name: string, args: unknown) => void;
   onToolResult: (id: string, content: string) => void;
+  askConfirm: AskConfirm;
   onError: (message: string) => void;
   onDone: () => void;
 }
@@ -47,8 +60,15 @@ export class ChatSessionController {
   private metaRecord: SessionMetaRecord | null = null;
   private history: MessageRecord[] = [];
   private inflight: AbortController | null = null;
+  /** Tools that still require explicit confirmation. Seeded from
+   * `agent.confirmTools`; mutated in-session when the user picks
+   * "always" so subsequent calls for the same tool bypass the prompt.
+   * The persisted `agent.confirmTools` is never changed from here. */
+  private readonly confirmSet: Set<string>;
 
-  constructor(private readonly opts: ChatSessionOptions) {}
+  constructor(private readonly opts: ChatSessionOptions) {
+    this.confirmSet = new Set(opts.agent.confirmTools ?? []);
+  }
 
   get isRunning(): boolean {
     return this.inflight !== null;
@@ -89,6 +109,12 @@ export class ChatSessionController {
           onChunk: cb.onChunk,
           onToolCall: cb.onToolCall,
           onToolResult: cb.onToolResult,
+          confirmTool: async (id, name, args) => {
+            if (!this.confirmSet.has(name)) return 'once';
+            const decision = await cb.askConfirm(id, name, args);
+            if (decision === 'always') this.confirmSet.delete(name);
+            return decision;
+          },
           onMessage: async (msg) => {
             await deps.appendMessage(meta, msg);
             this.history.push(msg);

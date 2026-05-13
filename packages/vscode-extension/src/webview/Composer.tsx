@@ -2,10 +2,12 @@ import { useState, type KeyboardEvent } from 'react';
 
 export interface ComposerProps {
   disabled: boolean;
+  canAbort: boolean;
   onSend: (text: string) => void;
+  onAbort: () => void;
 }
 
-export function Composer({ disabled, onSend }: ComposerProps) {
+export function Composer({ disabled, canAbort, onSend, onAbort }: ComposerProps) {
   const [value, setValue] = useState('');
 
   const send = (): void => {
@@ -31,9 +33,15 @@ export function Composer({ disabled, onSend }: ComposerProps) {
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={onKeyDown}
       />
-      <button className="composer__send" disabled={disabled || !value.trim()} onClick={send}>
-        Send
-      </button>
+      {canAbort ? (
+        <button className="composer__send composer__send--danger" onClick={onAbort}>
+          Stop
+        </button>
+      ) : (
+        <button className="composer__send" disabled={disabled || !value.trim()} onClick={send}>
+          Send
+        </button>
+      )}
     </div>
   );
 }

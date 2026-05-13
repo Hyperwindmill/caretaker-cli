@@ -13,13 +13,24 @@ import * as harness from 'caretaker-cli/harness';
 import { loadAgents, loadConfig } from 'caretaker-cli/store';
 import type { AgentConfig, ProviderConfig } from 'caretaker-cli/types';
 
-import { parseViewToHost, type HostToView, type ViewToHost } from './bridge.js';
+import {
+  parseViewToHost,
+  type ConfirmDecision,
+  type HostToView,
+  type ViewToHost,
+} from './bridge.js';
 import { ChatSessionController } from './session.js';
 
 export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
   public static readonly viewId = 'caretaker.chatView';
 
   private controller: ChatSessionController | null = null;
+  /** Pending confirm-gate round-trips: tool-call id → resolver for the
+   * decision Promise the controller is awaiting. Cleared when the
+   * matching `permission_response` arrives or when the run aborts (in
+   * which case every pending entry resolves with `'reject'` so the
+   * harness loop unblocks). */
+  private pendingConfirms = new Map<string, (d: ConfirmDecision) => void>();
 
   constructor(private readonly extensionUri: vscode.Uri) {}
 
@@ -35,6 +46,7 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
     view.webview.html = this.renderHtml(view.webview);
 
     view.onDidDispose(() => {
+      this.resolveAllPending('reject');
       this.controller?.abort();
       this.controller = null;
     });
@@ -57,12 +69,23 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
         await this.handleStart(webview, msg.prompt);
         return;
       case 'abort':
+        this.resolveAllPending('reject');
         this.controller?.abort();
         return;
-      case 'permission_response':
-        // Confirm gate is wired in step 6.
+      case 'permission_response': {
+        const resolve = this.pendingConfirms.get(msg.id);
+        if (resolve) {
+          this.pendingConfirms.delete(msg.id);
+          resolve(msg.decision);
+        }
         return;
+      }
     }
+  }
+
+  private resolveAllPending(decision: ConfirmDecision): void {
+    for (const resolve of this.pendingConfirms.values()) resolve(decision);
+    this.pendingConfirms.clear();
   }
 
   private async handleStart(webview: vscode.Webview, prompt: string): Promise<void> {
@@ -77,8 +100,19 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
       onToolCall: (id, name, args) => this.post(webview, { type: 'tool_call', id, name, args }),
       onToolResult: (id, content) =>
         this.post(webview, { type: 'tool_result', id, content }),
-      onError: (message) => this.post(webview, { type: 'error', message }),
-      onDone: () => this.post(webview, { type: 'done' }),
+      askConfirm: (id, toolName, args) =>
+        new Promise<ConfirmDecision>((resolve) => {
+          this.pendingConfirms.set(id, resolve);
+          this.post(webview, { type: 'permission_request', id, toolName, args });
+        }),
+      onError: (message) => {
+        this.resolveAllPending('reject');
+        this.post(webview, { type: 'error', message });
+      },
+      onDone: () => {
+        this.resolveAllPending('reject');
+        this.post(webview, { type: 'done' });
+      },
     });
   }
 

@@ -44,14 +44,15 @@ Companion to [2026-05-13-vscode-extension-design.md](./2026-05-13-vscode-extensi
 - 8 unit tests on `ChatSessionController` (fake deps): lazy session creation, title truncation, session reuse, callback forwarding, message persistence ordering, history accumulation across turns, harness-error translation, concurrent-start refusal, abort propagation.
 - Total tests at this point: 18 in the extension package (10 + 8). Typecheck green. Bundles unchanged in size.
 
-## Next up
+### Step 6 — confirm gate + tool rendering (commit TBD)
+- `ChatSessionController` now owns a session-scoped `confirmSet` (seeded from `agent.confirmTools`). On each `confirmTool` fire: if the tool isn't in the set → auto-resolve `'once'`; otherwise route through `askConfirm` and, when the user picks `'always'`, drop the tool from the set so subsequent invocations bypass. Mirrors the TUI semantics 1:1 — including the "always is in-memory only" invariant.
+- Sidebar plumbs `askConfirm` to the webview via `permission_request` bridge events, keeping a `Map<id, resolver>` for in-flight round-trips. Aborts, errors, `done`, and view disposal all clear pending entries by resolving them with `'reject'` so the harness loop never deadlocks.
+- Webview gains a `ConfirmCard` (Run once / Always (this chat) / Reject) shown inline at the bottom of the message list while any permission requests are pending. Composer disabled while streaming OR while a confirm is pending. A `Stop` button replaces `Send` mid-stream for abort.
+- Tool calls and results now render as their own item kind: ⚒ tool-name + truncated JSON args, with a `↳` arrow + monospace result block (max 200px scrollable) once the harness sends the result.
+- Reducer restructured: messages are a flat `ChatItem[]` where each text → tool boundary closes the current assistant span so the next chunk opens a fresh one (multi-segment turns render correctly).
+- 5 new controller tests bring the suite to 23: auto-resolve for ungated tools, askConfirm for gated, `'always'` removes from set within and across turns, `'reject'` does not.
 
-### Step 6 — confirm gate inline
-- Plumb `confirmTool: (name, args) => Promise<boolean>` into `harness.run`. The promise is held by the controller and resolved by a `confirmResponse` from the webview.
-- Webview renders the confirm bubble inline (`🔒 Allow toolName(args)?` with Allow / Deny).
-- `abort` rejects any pending confirm.
-- Tests: round-trip confirm in controller; abort cancels pending.
-- Commit: `feat(vscode): inline confirm gate for [!] tools`.
+## Next up
 
 ### Step 7 — polish + manual checklist + roadmap update
 - README for the extension (how to run from source, F5 dev loop).
