@@ -36,7 +36,7 @@ Companion to [2026-05-13-vscode-extension-design.md](./2026-05-13-vscode-extensi
 - After this step the chat is visually live in the Activity Bar; the wire round-trip is proven end-to-end with a fixed echo response. No harness yet.
 - Verified: typecheck green, 10 tests green (6 bridge + 4 config), both bundles produced (extension 1.5MB, webview.js 616KB, webview.css 3KB).
 
-### Step 5 — live harness in the sidebar (commit TBD)
+### Step 5 — live harness in the sidebar (commit `017076f`)
 - `src/session.ts` — `ChatSessionController` owns agent + provider + tools + workingDir + in-memory history; lazy session-on-disk creation on first prompt; accumulates history across turns; abortable via `AbortController`; injectable deps (`run`, `createSession`, `appendMessage`, `userMessage`) so unit tests run without touching CARETAKER_HOME or the network.
 - Sidebar lazy-builds the controller on first `start`: loads `agents.json` + `caretaker.json` via `caretaker-cli/store`, picks agent by `caretaker.defaultAgent` setting (or first), looks up provider, resolves tools via `harness.resolveAgentTools`, derives `workingDir` from `workspace.workspaceFolders[0]`. Each precondition failure becomes an inline `error` bridge event.
 - Confirm gate is *not* wired yet — `permission_response` from the webview is still dropped.
