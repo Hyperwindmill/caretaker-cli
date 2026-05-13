@@ -1,13 +1,15 @@
-// VSCode extension entry. MVP scaffold: resolves CARETAKER_HOME from
-// (env > setting > default), imports the caretaker-cli harness to prove
-// the embedding path works, and registers a placeholder command. The
-// chat sidebar webview comes in the next step.
+// VSCode extension entry. Resolves CARETAKER_HOME from
+// (env > setting > default), imports caretaker-cli/harness as a
+// load-time smoke check, and registers the sidebar chat webview
+// provider. Step 4: the webview is wired with an echo bridge — no
+// harness invocation yet.
 
 import * as vscode from 'vscode';
 
 import * as harness from 'caretaker-cli/harness';
 
 import { resolveCaretakerHome } from './config.js';
+import { SidebarWebviewProvider } from './sidebar.js';
 
 export function activate(context: vscode.ExtensionContext): void {
   const home = resolveCaretakerHome({
@@ -22,11 +24,11 @@ export function activate(context: vscode.ExtensionContext): void {
 
   console.log(`[caretaker] activated. CARETAKER_HOME=${home} tools=${toolCount}`);
 
+  const sidebar = new SidebarWebviewProvider(context.extensionUri);
   context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(SidebarWebviewProvider.viewId, sidebar),
     vscode.commands.registerCommand('caretaker.openChat', () => {
-      vscode.window.showInformationMessage(
-        `Caretaker chat sidebar is not implemented yet (CARETAKER_HOME=${home}).`,
-      );
+      void vscode.commands.executeCommand('workbench.view.extension.caretaker');
     }),
   );
 }

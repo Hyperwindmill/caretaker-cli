@@ -62,10 +62,14 @@
     "package": "vsce package --no-dependencies"
   },
   "dependencies": {
-    "caretaker-cli": "workspace:*"
+    "caretaker-cli": "workspace:*",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "@types/vscode": "^1.95.0",
     "esbuild": "^0.27.7",
     "tsx": "^4.21.0",

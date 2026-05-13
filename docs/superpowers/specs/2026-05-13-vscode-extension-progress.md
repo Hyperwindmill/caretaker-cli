@@ -28,9 +28,17 @@ Companion to [2026-05-13-vscode-extension-design.md](./2026-05-13-vscode-extensi
 - `activate()` imports `caretaker-cli/harness` at load time as a smoke check; the `openChat` command is a placeholder for now.
 - Verified: typecheck green, 4/4 config tests green, esbuild bundle produced.
 
+### Step 4 — chat sidebar webview + bridge protocol echo (commit `c82dcac`)
+- `src/bridge.ts` — shared discriminated unions `HostToView` / `ViewToHost` (`ready`, `chunk`, `tool_call`, `tool_result`, `permission_request`, `done`, `error` ↔ `start`, `abort`, `permission_response`). Event names mirror the sister repo's SSE protocol for the concepts that overlap. Runtime validator `parseViewToHost` because the webview is not trusted.
+- `src/sidebar.ts` — `SidebarWebviewProvider implements vscode.WebviewViewProvider` with CSP (nonce'd `script-src`, `style-src ${webview.cspSource} 'unsafe-inline'`), `enableScripts: true`, `localResourceRoots: [dist]`. Echo handler: `start { prompt }` → `chunk "echo: …"` + `done`.
+- `src/webview/` — React 19 app: `index.tsx` (acquireVsCodeApi + createRoot StrictMode), `App.tsx` (reducer with `idle | streaming | error`), `MessageList.tsx`, `Composer.tsx` (textarea + Enter-to-send), `styles.css` (full theming via `--vscode-*` vars).
+- `esbuild.config.mjs` — dual bundle: extension (Node CJS, vscode external) + webview (browser IIFE, React inlined, CSS emitted as side file). Both build in parallel.
+- After this step the chat is visually live in the Activity Bar; the wire round-trip is proven end-to-end with a fixed echo response. No harness yet.
+- Verified: typecheck green, 10 tests green (6 bridge + 4 config), both bundles produced (extension 1.5MB, webview.js 616KB, webview.css 3KB).
+
 ## Next up
 
-### Step 4 — chat sidebar webview + bridge protocol (echo only)
+### Step 5 — wire harness into the sidebar (real chat, no confirm yet)
 - `src/sidebar.ts` — `SidebarWebviewProvider implements vscode.WebviewViewProvider`. Loads webview HTML + bundled JS.
 - `src/webview/` — vanilla TS + template literals (no React for MVP). Bundled separately by esbuild → `dist/webview.js` (+ `dist/webview.css`).
 - `src/bridge.ts` — shared message types: `HostToView` (`chunk`, `toolCall`, `toolResult`, `confirmRequest`, `done`, `error`, `agentsLoaded`), `ViewToHost` (`start`, `abort`, `confirmResponse`, `selectAgent`).
