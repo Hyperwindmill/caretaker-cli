@@ -4,7 +4,7 @@
   "description": "Caretaker agent harness — chat sidebar for VSCode.",
   "version": "0.0.1",
   "private": true,
-  "publisher": "leviahub",
+  "publisher": "Hyperwindmill",
   "license": "MIT",
   "icon": "icon.png",
   "repository": {
