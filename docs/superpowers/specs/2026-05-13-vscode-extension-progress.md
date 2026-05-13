@@ -36,26 +36,15 @@ Companion to [2026-05-13-vscode-extension-design.md](./2026-05-13-vscode-extensi
 - After this step the chat is visually live in the Activity Bar; the wire round-trip is proven end-to-end with a fixed echo response. No harness yet.
 - Verified: typecheck green, 10 tests green (6 bridge + 4 config), both bundles produced (extension 1.5MB, webview.js 616KB, webview.css 3KB).
 
+### Step 5 — live harness in the sidebar (commit TBD)
+- `src/session.ts` — `ChatSessionController` owns agent + provider + tools + workingDir + in-memory history; lazy session-on-disk creation on first prompt; accumulates history across turns; abortable via `AbortController`; injectable deps (`run`, `createSession`, `appendMessage`, `userMessage`) so unit tests run without touching CARETAKER_HOME or the network.
+- Sidebar lazy-builds the controller on first `start`: loads `agents.json` + `caretaker.json` via `caretaker-cli/store`, picks agent by `caretaker.defaultAgent` setting (or first), looks up provider, resolves tools via `harness.resolveAgentTools`, derives `workingDir` from `workspace.workspaceFolders[0]`. Each precondition failure becomes an inline `error` bridge event.
+- Confirm gate is *not* wired yet — `permission_response` from the webview is still dropped.
+- Webview already streams the harness output correctly because the bridge protocol didn't change.
+- 8 unit tests on `ChatSessionController` (fake deps): lazy session creation, title truncation, session reuse, callback forwarding, message persistence ordering, history accumulation across turns, harness-error translation, concurrent-start refusal, abort propagation.
+- Total tests at this point: 18 in the extension package (10 + 8). Typecheck green. Bundles unchanged in size.
+
 ## Next up
-
-### Step 5 — wire harness into the sidebar (real chat, no confirm yet)
-- `src/sidebar.ts` — `SidebarWebviewProvider implements vscode.WebviewViewProvider`. Loads webview HTML + bundled JS.
-- `src/webview/` — vanilla TS + template literals (no React for MVP). Bundled separately by esbuild → `dist/webview.js` (+ `dist/webview.css`).
-- `src/bridge.ts` — shared message types: `HostToView` (`chunk`, `toolCall`, `toolResult`, `confirmRequest`, `done`, `error`, `agentsLoaded`), `ViewToHost` (`start`, `abort`, `confirmResponse`, `selectAgent`).
-- Echo wire: webview `start { prompt }` → host replies with a fixed `chunk` "echo: …" + `done`. No harness call yet — purely validates the round-trip.
-- `extension.ts` registers the provider for `caretaker.chatView`.
-- Unit tests on bridge protocol typing / parsing.
-- User picked **vanilla TS** for the webview (vs React) — confirm before starting.
-- Commit: `feat(vscode): chat sidebar webview with echo bridge`.
-
-### Step 5 — wire harness into the sidebar (real chat, no confirm yet)
-- `src/session.ts` — `ChatSessionController` owning an agent + conversation. Calls `harness.run({ ... }, { onChunk, onToolCall, onToolResult })` and forwards callbacks to the webview.
-- Replace echo with real harness invocation.
-- Agent picker (dropdown) sourced from `loadAgents()`.
-- `workingDir` = `workspace.workspaceFolders[0].uri.fsPath`. Show empty state if no folder open.
-- Append session JSONL via the public `session/` API.
-- Unit tests on `ChatSessionController` with a faked harness module.
-- Commit: `feat(vscode): live harness-driven chat`.
 
 ### Step 6 — confirm gate inline
 - Plumb `confirmTool: (name, args) => Promise<boolean>` into `harness.run`. The promise is held by the controller and resolved by a `confirmResponse` from the webview.
