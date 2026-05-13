@@ -52,7 +52,7 @@ Companion to [2026-05-13-vscode-extension-design.md](./2026-05-13-vscode-extensi
 - Reducer restructured: messages are a flat `ChatItem[]` where each text → tool boundary closes the current assistant span so the next chunk opens a fresh one (multi-segment turns render correctly).
 - 5 new controller tests bring the suite to 23: auto-resolve for ungated tools, askConfirm for gated, `'always'` removes from set within and across turns, `'reject'` does not.
 
-### Step 7 — polish + manual checklist + roadmap update (commit TBD)
+### Step 7 — polish + manual checklist + roadmap update (commit `186f6ff`)
 - `packages/vscode-extension/.vscode/{launch,tasks}.json` — F5 from the package folder builds + spawns the Extension Development Host.
 - `packages/vscode-extension/README.md` — F5 / dev loop, watch mode, webview DevTools, what it shares with the TUI vs what it does differently, settings, `.vsix` packaging.
 - Root [CLAUDE.md](../../../CLAUDE.md) lists both packages now; embed model is explicit.
@@ -71,7 +71,7 @@ Local `.vsix` only for now (`pnpm -F caretaker-vscode package`, then `code --ins
 
 ## Status: MVP shipped
 
-Six iteration steps (`9d563c4` → step 7 commit). The extension is in
+Seven iteration steps (`9d563c4` → `186f6ff`). The extension is in
 daily use locally. Future iterations branch from this baseline.
 
 ## Open follow-ups (not blocking MVP)
