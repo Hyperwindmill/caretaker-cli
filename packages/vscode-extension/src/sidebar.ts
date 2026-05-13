@@ -1,19 +1,25 @@
-// Sidebar webview provider. Wires the bridge: receives `ViewToHost`
-// messages from the webview, validates them, and dispatches. Sends
-// `HostToView` messages back via `webview.postMessage`. This file owns
-// HTML/CSP rendering; the React UI lives in src/webview/.
+// Sidebar webview provider. Holds at most one ChatSessionController
+// per webview view; lazy-instantiates it on the first user `start`
+// after running the preconditions (workspace folder open, agent
+// configured, provider known, tools resolvable).
 //
-// Step 4 scope: echo only. A `start` from the webview triggers a
-// fixed `chunk` + `done` response, no harness yet. Steps 5+ wire in
-// ChatSessionController and harness.run().
+// Preconditions failures become `error` events shown inline in the
+// webview. No special state events yet — keep the bridge thin.
 
 import * as vscode from 'vscode';
 import { randomBytes } from 'node:crypto';
 
+import * as harness from 'caretaker-cli/harness';
+import { loadAgents, loadConfig } from 'caretaker-cli/store';
+import type { AgentConfig, ProviderConfig } from 'caretaker-cli/types';
+
 import { parseViewToHost, type HostToView, type ViewToHost } from './bridge.js';
+import { ChatSessionController } from './session.js';
 
 export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
   public static readonly viewId = 'caretaker.chatView';
+
+  private controller: ChatSessionController | null = null;
 
   constructor(private readonly extensionUri: vscode.Uri) {}
 
@@ -28,35 +34,115 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
     };
     view.webview.html = this.renderHtml(view.webview);
 
+    view.onDidDispose(() => {
+      this.controller?.abort();
+      this.controller = null;
+    });
+
     view.webview.onDidReceiveMessage((raw) => {
       const msg = parseViewToHost(raw);
       if (!msg) {
         console.warn('[caretaker] dropped malformed message from webview', raw);
         return;
       }
-      this.handleMessage(view.webview, msg);
+      void this.handleMessage(view.webview, msg);
     });
 
     this.post(view.webview, { type: 'ready' });
   }
 
-  private handleMessage(webview: vscode.Webview, msg: ViewToHost): void {
+  private async handleMessage(webview: vscode.Webview, msg: ViewToHost): Promise<void> {
     switch (msg.type) {
       case 'start':
-        this.echo(webview, msg.prompt);
+        await this.handleStart(webview, msg.prompt);
         return;
       case 'abort':
-        // Step 4 has no in-flight work to abort; ignore.
+        this.controller?.abort();
         return;
       case 'permission_response':
-        // No outstanding permission requests in the echo flow; ignore.
+        // Confirm gate is wired in step 6.
         return;
     }
   }
 
-  private echo(webview: vscode.Webview, prompt: string): void {
-    this.post(webview, { type: 'chunk', text: `echo: ${prompt}` });
-    this.post(webview, { type: 'done' });
+  private async handleStart(webview: vscode.Webview, prompt: string): Promise<void> {
+    if (!this.controller) {
+      const built = await this.buildController(webview);
+      if (!built) return;
+      this.controller = built;
+    }
+
+    await this.controller.start(prompt, {
+      onChunk: (text) => this.post(webview, { type: 'chunk', text }),
+      onToolCall: (id, name, args) => this.post(webview, { type: 'tool_call', id, name, args }),
+      onToolResult: (id, content) =>
+        this.post(webview, { type: 'tool_result', id, content }),
+      onError: (message) => this.post(webview, { type: 'error', message }),
+      onDone: () => this.post(webview, { type: 'done' }),
+    });
+  }
+
+  private async buildController(webview: vscode.Webview): Promise<ChatSessionController | null> {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!workspaceFolder) {
+      this.post(webview, {
+        type: 'error',
+        message: 'Open a folder to use Caretaker — the agent runs against the workspace root.',
+      });
+      return null;
+    }
+
+    let agents: AgentConfig[];
+    let providers: ProviderConfig[];
+    try {
+      const [agentsRes, configRes] = await Promise.all([loadAgents(), loadConfig()]);
+      agents = agentsRes;
+      providers = configRes.providers;
+    } catch (err) {
+      this.post(webview, {
+        type: 'error',
+        message: `Failed to load Caretaker config: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      return null;
+    }
+
+    if (agents.length === 0) {
+      this.post(webview, {
+        type: 'error',
+        message:
+          'No agents configured. Run the Caretaker TUI (`pnpm -F caretaker-cli dev`) to create one.',
+      });
+      return null;
+    }
+
+    const requestedName = vscode.workspace
+      .getConfiguration('caretaker')
+      .get<string>('defaultAgent')
+      ?.trim();
+    const agent = requestedName
+      ? agents.find((a) => a.name === requestedName)
+      : agents[0];
+    if (!agent) {
+      const available = agents.map((a) => a.name).join(', ');
+      this.post(webview, {
+        type: 'error',
+        message: `Agent "${requestedName}" not found. Available: ${available}.`,
+      });
+      return null;
+    }
+
+    const provider = providers.find((p) => p.name === agent.provider);
+    if (!provider) {
+      this.post(webview, {
+        type: 'error',
+        message: `Provider "${agent.provider}" for agent "${agent.name}" is missing from caretaker.json.`,
+      });
+      return null;
+    }
+
+    const tools = await harness.resolveAgentTools(agent, harness.tools);
+
+    return new ChatSessionController({ agent, provider, tools, workingDir: workspaceFolder });
   }
 
   private post(webview: vscode.Webview, msg: HostToView): void {
