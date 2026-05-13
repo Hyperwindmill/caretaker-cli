@@ -155,3 +155,147 @@ body {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.composer__send--danger {
+  background: var(--vscode-inputValidation-errorBackground);
+  color: var(--vscode-inputValidation-errorForeground, var(--vscode-errorForeground));
+  border-color: var(--vscode-inputValidation-errorBorder);
+}
+
+/* ── Tool call / result ───────────────────────────────────────────────── */
+
+.tool {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--vscode-charts-blue, var(--vscode-textLink-foreground));
+  background: var(--vscode-editorWidget-background, transparent);
+  border-radius: 2px;
+  font-size: 12px;
+}
+
+.tool__header {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.tool__icon {
+  color: var(--vscode-textLink-foreground);
+}
+
+.tool__name {
+  font-family: var(--vscode-editor-font-family, monospace);
+  color: var(--vscode-foreground);
+}
+
+.tool__args {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  word-break: break-all;
+}
+
+.tool__result {
+  display: flex;
+  gap: 6px;
+  padding-left: 2px;
+}
+
+.tool__arrow {
+  color: var(--vscode-descriptionForeground);
+}
+
+.tool__result-text {
+  margin: 0;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* ── Confirm card ─────────────────────────────────────────────────────── */
+
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--vscode-inputValidation-warningBorder, var(--vscode-panel-border));
+  background: var(--vscode-inputValidation-warningBackground, var(--vscode-editorWidget-background));
+  color: var(--vscode-inputValidation-warningForeground, var(--vscode-foreground));
+  border-radius: 2px;
+}
+
+.confirm__header {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.confirm__icon {
+  font-size: 14px;
+}
+
+.confirm__prompt {
+  font-weight: 600;
+}
+
+.confirm__tool {
+  font-family: var(--vscode-editor-font-family, monospace);
+  background: var(--vscode-textCodeBlock-background);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+.confirm__args {
+  margin: 0;
+  padding: 6px 8px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+  background: var(--vscode-textCodeBlock-background);
+  border-radius: 2px;
+  max-height: 160px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.confirm__buttons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.confirm__btn {
+  font-family: inherit;
+  font-size: var(--vscode-font-size);
+  padding: 4px 10px;
+  background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.confirm__btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground));
+}
+
+.confirm__btn--primary {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.confirm__btn--primary:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.confirm__btn--danger {
+  color: var(--vscode-errorForeground);
+}

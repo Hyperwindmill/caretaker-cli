@@ -1,18 +1,19 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 
-import type { ChatMessage } from './App.js';
+import type { ChatItem } from './App.js';
 
 export interface MessageListProps {
-  messages: ChatMessage[];
+  items: ChatItem[];
+  trailing?: ReactNode;
 }
 
-export function MessageList({ messages }: MessageListProps) {
+export function MessageList({ items, trailing }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
-  }, [messages]);
+  }, [items, trailing]);
 
-  if (messages.length === 0) {
+  if (items.length === 0 && !trailing) {
     return (
       <div className="messages messages--empty">
         <p>Send a message to start.</p>
@@ -22,16 +23,65 @@ export function MessageList({ messages }: MessageListProps) {
 
   return (
     <div className="messages">
-      {messages.map((m, i) => (
-        <div key={i} className={`bubble bubble--${m.role}`}>
-          <div className="bubble__role">{m.role}</div>
-          <div className="bubble__text">
-            {m.text}
-            {m.role === 'assistant' && m.streaming && <span className="bubble__caret">▌</span>}
-          </div>
-        </div>
+      {items.map((item, i) => (
+        <Item key={i} item={item} />
       ))}
+      {trailing}
       <div ref={bottomRef} />
     </div>
   );
+}
+
+function Item({ item }: { item: ChatItem }) {
+  switch (item.kind) {
+    case 'user':
+      return (
+        <div className="bubble bubble--user">
+          <div className="bubble__role">user</div>
+          <div className="bubble__text">{item.text}</div>
+        </div>
+      );
+    case 'assistant':
+      return (
+        <div className="bubble bubble--assistant">
+          <div className="bubble__role">assistant</div>
+          <div className="bubble__text">
+            {item.text}
+            {item.streaming && <span className="bubble__caret">▌</span>}
+          </div>
+        </div>
+      );
+    case 'tool': {
+      const argsPreview = previewJson(item.args);
+      return (
+        <div className="tool">
+          <div className="tool__header">
+            <span className="tool__icon">⚒</span>
+            <span className="tool__name">{item.name}</span>
+            <span className="tool__args">{argsPreview}</span>
+          </div>
+          {item.result !== null && (
+            <div className="tool__result">
+              <span className="tool__arrow">↳</span>
+              <pre className="tool__result-text">{truncate(item.result, 1000)}</pre>
+            </div>
+          )}
+        </div>
+      );
+    }
+  }
+}
+
+function previewJson(value: unknown, max = 80): string {
+  try {
+    const s = JSON.stringify(value);
+    if (s === undefined) return '';
+    return truncate(s, max);
+  } catch {
+    return '';
+  }
+}
+
+function truncate(s: string, max: number): string {
+  return s.length > max ? `${s.slice(0, max)}…` : s;
 }

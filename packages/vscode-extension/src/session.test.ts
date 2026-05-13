@@ -93,14 +93,19 @@ function makeDeps(overrides: Partial<ChatDeps> = {}): {
   return { deps, appendCalls, created };
 }
 
-function makeCallbacks(): { cb: ChatCallbacks; events: string[] } {
+function makeCallbacks(overrides: Partial<ChatCallbacks> = {}): {
+  cb: ChatCallbacks;
+  events: string[];
+} {
   const events: string[] = [];
   const cb: ChatCallbacks = {
     onChunk: (text) => events.push(`chunk:${text}`),
     onToolCall: (id, name) => events.push(`tool_call:${id}:${name}`),
     onToolResult: (id) => events.push(`tool_result:${id}`),
+    askConfirm: async () => 'once',
     onError: (msg) => events.push(`error:${msg}`),
     onDone: () => events.push('done'),
+    ...overrides,
   };
   return { cb, events };
 }
@@ -277,6 +282,154 @@ test('refuses concurrent starts', async () => {
   await first;
 
   assert.deepEqual(events2, ['error:A turn is already in progress.']);
+});
+
+test('confirmTool auto-resolves once for tools NOT in confirmTools', async () => {
+  const asks: string[] = [];
+  const { deps } = makeDeps({
+    run: async (_opts, cbs = {}) => {
+      const decision = await cbs.confirmTool!('id-1', 'read_file', { path: 'a' });
+      asks.push(`decided:${decision}`);
+      return { text: '', toolCalls: 0, usage: { input: 0, output: 0 }, stop: 'done' };
+    },
+  });
+  const ctl = new ChatSessionController({
+    agent: { ...fakeAgent, confirmTools: ['write'] }, // read_file is NOT gated
+    provider: fakeProvider,
+    tools: [],
+    workingDir: '/tmp',
+    deps,
+  });
+  const { cb } = makeCallbacks({
+    askConfirm: async () => {
+      asks.push('asked');
+      return 'reject';
+    },
+  });
+
+  await ctl.start('hi', cb);
+
+  // askConfirm must NOT be called; decision must be 'once'.
+  assert.deepEqual(asks, ['decided:once']);
+});
+
+test('confirmTool calls askConfirm for tools in confirmTools', async () => {
+  const { deps } = makeDeps({
+    run: async (_opts, cbs = {}) => {
+      const decision = await cbs.confirmTool!('id-1', 'write', { path: 'a' });
+      return {
+        text: `dec:${decision}`,
+        toolCalls: 0,
+        usage: { input: 0, output: 0 },
+        stop: 'done',
+      };
+    },
+  });
+  const ctl = new ChatSessionController({
+    agent: { ...fakeAgent, confirmTools: ['write'] },
+    provider: fakeProvider,
+    tools: [],
+    workingDir: '/tmp',
+    deps,
+  });
+  const asked: Array<{ id: string; name: string }> = [];
+  const { cb } = makeCallbacks({
+    askConfirm: async (id, name) => {
+      asked.push({ id, name });
+      return 'once';
+    },
+  });
+
+  await ctl.start('hi', cb);
+  assert.deepEqual(asked, [{ id: 'id-1', name: 'write' }]);
+});
+
+test('"always" decision removes the tool from the confirm set for this session', async () => {
+  const callCount = { count: 0 };
+  const { deps } = makeDeps({
+    run: async (_opts, cbs = {}) => {
+      // Two calls to the same tool in one turn.
+      await cbs.confirmTool!('1', 'write', {});
+      await cbs.confirmTool!('2', 'write', {});
+      return { text: '', toolCalls: 0, usage: { input: 0, output: 0 }, stop: 'done' };
+    },
+  });
+  const ctl = new ChatSessionController({
+    agent: { ...fakeAgent, confirmTools: ['write'] },
+    provider: fakeProvider,
+    tools: [],
+    workingDir: '/tmp',
+    deps,
+  });
+  const { cb } = makeCallbacks({
+    askConfirm: async () => {
+      callCount.count += 1;
+      return 'always';
+    },
+  });
+
+  await ctl.start('hi', cb);
+  // First call asks the user (gets "always"); second call bypasses since
+  // the tool has been removed from the in-memory confirm set.
+  assert.equal(callCount.count, 1);
+});
+
+test('"always" persists across turns within the same controller', async () => {
+  let runCount = 0;
+  const { deps } = makeDeps({
+    run: async (_opts, cbs = {}) => {
+      runCount += 1;
+      await cbs.confirmTool!(`call-${runCount}`, 'write', {});
+      return { text: '', toolCalls: 0, usage: { input: 0, output: 0 }, stop: 'done' };
+    },
+  });
+  const ctl = new ChatSessionController({
+    agent: { ...fakeAgent, confirmTools: ['write'] },
+    provider: fakeProvider,
+    tools: [],
+    workingDir: '/tmp',
+    deps,
+  });
+  let asksThisSession = 0;
+  const { cb } = makeCallbacks({
+    askConfirm: async () => {
+      asksThisSession += 1;
+      return 'always';
+    },
+  });
+
+  await ctl.start('first', cb);
+  await ctl.start('second', cb);
+
+  // Only the first turn asks; the second turn finds 'write' no longer in the set.
+  assert.equal(asksThisSession, 1);
+});
+
+test('"reject" decision does NOT remove the tool from the confirm set', async () => {
+  let asks = 0;
+  const { deps } = makeDeps({
+    run: async (_opts, cbs = {}) => {
+      await cbs.confirmTool!('1', 'write', {});
+      await cbs.confirmTool!('2', 'write', {});
+      return { text: '', toolCalls: 0, usage: { input: 0, output: 0 }, stop: 'done' };
+    },
+  });
+  const ctl = new ChatSessionController({
+    agent: { ...fakeAgent, confirmTools: ['write'] },
+    provider: fakeProvider,
+    tools: [],
+    workingDir: '/tmp',
+    deps,
+  });
+  const { cb } = makeCallbacks({
+    askConfirm: async () => {
+      asks += 1;
+      return 'reject';
+    },
+  });
+
+  await ctl.start('hi', cb);
+  assert.equal(asks, 2);
 });
 
 test('abort triggers AbortController.abort on the in-flight run', async () => {
