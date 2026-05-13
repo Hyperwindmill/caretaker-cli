@@ -4,9 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repo layout
 
-pnpm workspaces monorepo. Today there is one package:
+pnpm workspaces monorepo:
 
-- `packages/cli/` — the Caretaker CLI/TUI (published as `caretaker-cli`). Future packages (VSCode extension, etc.) live alongside it.
+- `packages/cli/` — the Caretaker CLI/TUI (published as `caretaker-cli`). Authoritative source of the harness, store, plugins, MCP, tool registry.
+- `packages/vscode-extension/` — VSCode chat sidebar (`caretaker-vscode`). Embeds `caretaker-cli` as an ESM library via the public `./harness`, `./store`, `./session`, `./types` exports. Does not subprocess the CLI. See [packages/vscode-extension/README.md](packages/vscode-extension/README.md) for the F5 / dev loop and [docs/superpowers/specs/2026-05-13-vscode-extension-design.md](docs/superpowers/specs/2026-05-13-vscode-extension-design.md) for the design.
 
 All commands below run from the repo root unless noted.
 

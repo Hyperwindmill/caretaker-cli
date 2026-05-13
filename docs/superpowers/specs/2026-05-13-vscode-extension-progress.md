@@ -52,13 +52,27 @@ Companion to [2026-05-13-vscode-extension-design.md](./2026-05-13-vscode-extensi
 - Reducer restructured: messages are a flat `ChatItem[]` where each text → tool boundary closes the current assistant span so the next chunk opens a fresh one (multi-segment turns render correctly).
 - 5 new controller tests bring the suite to 23: auto-resolve for ungated tools, askConfirm for gated, `'always'` removes from set within and across turns, `'reject'` does not.
 
-## Next up
+### Step 7 — polish + manual checklist + roadmap update (commit TBD)
+- `packages/vscode-extension/.vscode/{launch,tasks}.json` — F5 from the package folder builds + spawns the Extension Development Host.
+- `packages/vscode-extension/README.md` — F5 / dev loop, watch mode, webview DevTools, what it shares with the TUI vs what it does differently, settings, `.vsix` packaging.
+- Root [CLAUDE.md](../../../CLAUDE.md) lists both packages now; embed model is explicit.
+- [docs/roadmap.md](../../roadmap.md) §IDE extensions: marked shipped with commit range, subprocess + JSON-RPC kept as the documented future-evolution path (triggers spelled out: second consumer or isolation needed).
 
-### Step 7 — polish + manual checklist + roadmap update
-- README for the extension (how to run from source, F5 dev loop).
-- `docs/roadmap.md`: mark §IDE extensions MVP shipped (with commit hashes), keep subprocess + JSON-RPC as the deferred evolution path.
-- Manual checklist run from the design doc (§Testing).
-- Decide on first publish (private vsix package vs marketplace).
+#### Manual checklist (run by Daniele, 2026-05-14)
+- ✅ F5 → preLaunchTask builds → EDH spawns → Caretaker icon appears in Activity Bar.
+- ✅ Open folder → composer is enabled → send prompt → chunks stream → done.
+- ✅ Tool rendering: ⚒ name + args + ↳ result.
+- ✅ Skills are available to the agent (resolveAgentTools sees the same registry the TUI does — plugin/skill discovery shared via `~/.caretaker/`).
+- ✅ Theme follows VSCode (no contrast issues reported, "grafica minimale ma funzionante").
+- Pending real-world stress: long-running tool, abort mid-stream, confirm Allow / Always / Reject paths individually. To be smoke-tested as agents accumulate confirm-gated tools in practice.
+
+#### Decision on first publish
+Local `.vsix` only for now (`pnpm -F caretaker-vscode package`, then `code --install-extension …`). Marketplace publication deferred — would need a publisher account and a stable name. Not blocking; the local install is the realistic path during early use anyway.
+
+## Status: MVP shipped
+
+Six iteration steps (`9d563c4` → step 7 commit). The extension is in
+daily use locally. Future iterations branch from this baseline.
 
 ## Open follow-ups (not blocking MVP)
 
