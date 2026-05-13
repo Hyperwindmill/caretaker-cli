@@ -5,6 +5,13 @@
   "version": "0.0.1",
   "private": true,
   "publisher": "leviahub",
+  "license": "MIT",
+  "icon": "icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Hyperwindmill/caretaker-cli.git",
+    "directory": "packages/vscode-extension"
+  },
   "engines": {
     "vscode": "^1.95.0",
     "node": ">=20"
@@ -71,6 +78,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/vscode": "^1.95.0",
+    "@vscode/vsce": "^3.6.0",
     "esbuild": "^0.27.7",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
