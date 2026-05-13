@@ -44,7 +44,7 @@ Companion to [2026-05-13-vscode-extension-design.md](./2026-05-13-vscode-extensi
 - 8 unit tests on `ChatSessionController` (fake deps): lazy session creation, title truncation, session reuse, callback forwarding, message persistence ordering, history accumulation across turns, harness-error translation, concurrent-start refusal, abort propagation.
 - Total tests at this point: 18 in the extension package (10 + 8). Typecheck green. Bundles unchanged in size.
 
-### Step 6 — confirm gate + tool rendering (commit TBD)
+### Step 6 — confirm gate + tool rendering (commit `a3a349c`)
 - `ChatSessionController` now owns a session-scoped `confirmSet` (seeded from `agent.confirmTools`). On each `confirmTool` fire: if the tool isn't in the set → auto-resolve `'once'`; otherwise route through `askConfirm` and, when the user picks `'always'`, drop the tool from the set so subsequent invocations bypass. Mirrors the TUI semantics 1:1 — including the "always is in-memory only" invariant.
 - Sidebar plumbs `askConfirm` to the webview via `permission_request` bridge events, keeping a `Map<id, resolver>` for in-flight round-trips. Aborts, errors, `done`, and view disposal all clear pending entries by resolving them with `'reject'` so the harness loop never deadlocks.
 - Webview gains a `ConfirmCard` (Run once / Always (this chat) / Reject) shown inline at the bottom of the message list while any permission requests are pending. Composer disabled while streaming OR while a confirm is pending. A `Stop` button replaces `Send` mid-stream for abort.
