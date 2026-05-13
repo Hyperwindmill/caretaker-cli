@@ -90,75 +90,58 @@ Inclination is option 1 — generalizes naturally, keeps the existing tool
 surface, requires only a small change in `sandbox.ts`. Decide when the
 need is hot.
 
-## IDE extensions (exploration)
+## ~~IDE extensions~~ Done: VSCode MVP (commits `9d563c4` → `9e5267d`)
 
-Caretaker-cli is in-process by design (no DB, sessions/plugins/MCP under
-`~/.caretaker/`). The TUI is one consumer of the harness; an IDE
-extension (VS Code, JetBrains) is just another consumer. Worth pinning
-the contract before we have two of them disagreeing.
+Shipped as `packages/vscode-extension/` — chat sidebar driven in-process
+by the same `harness.run` the TUI uses. Decision recap (overrides the
+previous "child-process + JSON-RPC" lean once `caretaker run` proved
+the harness was already headless-capable):
 
-### How does the extension run the CLI?
+- **In-process library import** won over child-process + JSON-RPC.
+  The original argument against ("we'd have to invent headless mode")
+  vanished when `caretaker run` shipped; the embed cost is `pnpm
+  workspaces` + two barrel files, the subprocess cost was a full
+  JSON-RPC protocol on both sides. Lifecycle concerns (MCP children
+  adopted by the extension host, session JSONL contention) are
+  addressed by abort-on-deactivate plumbing and a documented
+  single-window assumption.
+- **Working directory**: the open VSCode workspace folder wins
+  unconditionally over `agent.workingDir` (option a from the design's
+  Q3). `@file` refs in the system prompt resolve from the workspace.
+- **CRUD surface**: read-only / chat-only MVP. Agent / plugin / MCP
+  management stays in the TUI for now.
+- **Session-store contention**: accepted as a documented limit.
+  Two VSCode windows on the same workspace + same agent will
+  interleave JSONL appends. A `session.lock` is a follow-up if anyone
+  hits it.
+- **Tool calls as first-class events**: ✅ separate bridge messages,
+  never folded into the chunk stream.
+- **Confirm gate**: tri-state inline card (Run once / Always (this
+  chat) / Reject) matches the TUI 1:1.
 
-- [ ] **Child process + stdio** — extension spawns `caretaker` with a
-  flag (e.g. `--rpc`) that swaps the Ink render for a JSON-RPC server
-  on stdin/stdout. Clean isolation, language-agnostic, mirrors how the
-  standalone TUI runs. Streams chunks as notifications. Each extension
-  window gets its own process; sessions interleave only if two windows
-  open the same chat.
-- [ ] **In-process library import** — extension `require()`s the
-  package and calls `run()` directly. Zero IPC, direct callbacks, but
-  the extension host adopts every MCP child process and plugin-cache
-  write. Couples the extension's lifecycle to caretaker's. Hard to
-  recommend unless we accept it as the explicit model.
-- [ ] **Long-lived per-user daemon** — caretaker as a background
-  process; extensions talk over a Unix socket / named pipe. State is
-  shared across consumers (vscode + desktop pointing at the same session
-  store / MCP pool). Costs lifecycle management (start/stop/upgrade,
-  PID/lock file, version mismatch handling). Defer until ≥2 consumers
-  actually want shared state.
+Spec: [`docs/superpowers/specs/2026-05-13-vscode-extension-design.md`](superpowers/specs/2026-05-13-vscode-extension-design.md).
+Progress log with per-step commit hashes: [`docs/superpowers/specs/2026-05-13-vscode-extension-progress.md`](superpowers/specs/2026-05-13-vscode-extension-progress.md).
 
-Inclination: option 1 first; daemon (3) once a second consumer materializes.
+### Future evolution path (not in flight)
 
-### Wire format
+The subprocess + JSON-RPC route is preserved for the day it pays for
+itself. Triggers:
 
-- [ ] **JSON-RPC 2.0 over stdio with Content-Length headers** (LSP-style).
-  Methods for commands (`chat.start`, `chat.abort`, `chat.confirm`,
-  `session.load`, `agents.list`, `providers.list`); notifications for
-  streaming (`chunk`, `thinking`, `toolUse`, `toolResult`, `usage`,
-  `done`). The confirm-gate fits naturally as a *server→client* request
-  the client must answer — same shape LSP uses for `window/showMessageRequest`.
-- [ ] **Raw NDJSON event stream** — every line a discrete JSON event.
-  Simpler to eyeball, no header parsing, but no request/response
-  correlation built in; we'd reinvent ids and tracking ourselves.
-- [ ] **MCP protocol, reversed** (extension as MCP client of caretaker).
-  Reject. MCP is tool-call oriented, not chat-session oriented; chats,
-  sessions, agent CRUD don't fit the model.
+- A second consumer materializes (desktop app, JetBrains plugin) that
+  wants shared state with the VSCode extension. The library-embed
+  becomes a *per-process* duplicate; a long-lived daemon over a Unix
+  socket is the natural answer.
+- Isolation becomes load-bearing (MCP servers misbehaving and bringing
+  down the VSCode extension host; user wants to upgrade caretaker
+  without reloading every IDE window).
 
-Inclination: JSON-RPC 2.0. Same shape as LSP / MCP itself / Claude Code's
-extension protocol; reuses tooling and conventions.
-
-### Open questions
-
-- [ ] **Session-store contention** — JSONL is append-only, but two writers
-  on the same `<agentId>/<sessionId>.jsonl` will interleave records. With
-  child-process per window we need a per-session lockfile (or "second
-  open wins, first goes read-only"). The daemon model sidesteps this.
-- [ ] **Plugin / MCP / agent CRUD surface** — does the extension UI mirror
-  the TUI's create/edit/delete flows, or is everything read-only and the
-  user keeps managing config via the TUI? Easiest start: read-only
-  listing methods, mutations deferred.
-- [ ] **Tool calls as first-class events** — the extension will want to
-  render tool calls in its own panel (collapsed, with timing, with the
-  result inline). Wire format must keep `toolUse` / `toolResult` as
-  separate notifications, never folded into the chunk stream.
-- [ ] **Wire-protocol versioning** — handshake with a `protocol`
-  capability so the extension can detect a CLI it doesn't understand.
-  Bump independently from the CLI version; don't break installed
-  extensions on every patch.
-- [ ] **Working directory** — extension knows the open workspace; should
-  it override `agent.workingDir` on each `chat.start`, or expose it as a
-  separate `cwd` field? Probably the latter, with the agent's stored
-  `workingDir` as fallback.
+When that happens: promote `caretaker run` to an interactive
+JSON-RPC mode (`caretaker run --rpc`, LSP-style framing) and the
+extension becomes a thin client. Wire format already sketched (chunk,
+toolUse, toolResult, permissionRequest, done as notifications; confirm
+as server→client request, mirroring `window/showMessageRequest`). Bump
+a `protocol` capability on the handshake so installed extensions don't
+break on every CLI patch.
 
 ## caretaker-agents-platform revamp (exploration)
 
