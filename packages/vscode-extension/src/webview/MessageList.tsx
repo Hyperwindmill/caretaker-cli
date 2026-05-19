@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 
 import type { ChatItem } from './App.js';
+import { MarkdownText } from './MarkdownText.js';
 
 export interface MessageListProps {
   items: ChatItem[];
@@ -38,7 +39,9 @@ function Item({ item }: { item: ChatItem }) {
       return (
         <div className="bubble bubble--user">
           <div className="bubble__role">user</div>
-          <div className="bubble__text">{item.text}</div>
+          <div className="bubble__text">
+            <MarkdownText content={item.text} inline />
+          </div>
         </div>
       );
     case 'assistant':
@@ -46,7 +49,7 @@ function Item({ item }: { item: ChatItem }) {
         <div className="bubble bubble--assistant">
           <div className="bubble__role">assistant</div>
           <div className="bubble__text">
-            {item.text}
+            <MarkdownText content={item.text} />
             {item.streaming && <span className="bubble__caret">▌</span>}
           </div>
         </div>
@@ -63,7 +66,9 @@ function Item({ item }: { item: ChatItem }) {
           {item.result !== null && (
             <div className="tool__result">
               <span className="tool__arrow">↳</span>
-              <pre className="tool__result-text">{truncate(item.result, 1000)}</pre>
+              <div className="tool__result-content">
+                <MarkdownText content={item.result} />
+              </div>
             </div>
           )}
         </div>
