@@ -11,6 +11,7 @@ import { randomBytes } from 'node:crypto';
 
 import * as harness from 'caretaker-cli/harness';
 import { loadAgents, loadConfig } from 'caretaker-cli/store';
+import { listForAgent, readSession } from 'caretaker-cli/session';
 import type { AgentConfig, ProviderConfig } from 'caretaker-cli/types';
 
 import {
@@ -24,7 +25,13 @@ import { ChatSessionController } from './session.js';
 export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
   public static readonly viewId = 'caretaker.chatView';
 
+  private view: vscode.WebviewView | null = null;
   private controller: ChatSessionController | null = null;
+  private currentAgent: AgentConfig | null = null;
+  private currentProvider: ProviderConfig | null = null;
+  private currentTools: harness.Tool[] | null = null;
+  private currentSessionId: string | null = null;
+  private agents: AgentConfig[] = [];
   /** Pending confirm-gate round-trips: tool-call id → resolver for the
    * decision Promise the controller is awaiting. Cleared when the
    * matching `permission_response` arrives or when the run aborts (in
@@ -39,6 +46,7 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
     _context: vscode.WebviewViewResolveContext,
     _token: vscode.CancellationToken,
   ): void {
+    this.view = view;
     view.webview.options = {
       enableScripts: true,
       localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist')],
@@ -49,6 +57,7 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
       this.resolveAllPending('reject');
       this.controller?.abort();
       this.controller = null;
+      this.view = null;
     });
 
     view.webview.onDidReceiveMessage((raw) => {
@@ -60,7 +69,109 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
       void this.handleMessage(view.webview, msg);
     });
 
-    this.post(view.webview, { type: 'ready' });
+    void this.initializeView(view.webview);
+  }
+
+  private async initializeView(webview: vscode.Webview): Promise<void> {
+    this.post(webview, { type: 'ready' });
+    await this.loadAgentsAndSend(webview);
+  }
+
+  private async loadAgentsAndSend(webview: vscode.Webview): Promise<void> {
+    try {
+      const [agentsRes, configRes] = await Promise.all([loadAgents(), loadConfig()]);
+      this.agents = agentsRes;
+      const providers = configRes.providers;
+
+      const agentSummaries = this.agents.map((a) => ({
+        id: a.id,
+        name: a.name,
+        model: a.model,
+        provider: a.provider,
+      }));
+      this.post(webview, { type: 'agentsLoaded', agents: agentSummaries });
+
+      // Select default agent
+      const requestedName = vscode.workspace
+        .getConfiguration('caretaker')
+        .get<string>('defaultAgent')
+        ?.trim();
+      const defaultAgent = requestedName
+        ? this.agents.find((a) => a.name === requestedName)
+        : this.agents[0];
+
+      if (defaultAgent) {
+        await this.selectAgentInternal(webview, defaultAgent, providers);
+      }
+    } catch (err) {
+      this.post(webview, {
+        type: 'error',
+        message: `Failed to load Caretaker config: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  }
+
+  private async selectAgentInternal(
+    webview: vscode.Webview,
+    agent: AgentConfig,
+    providers: ProviderConfig[],
+  ): Promise<void> {
+    const provider = providers.find((p) => p.name === agent.provider);
+    if (!provider) {
+      this.post(webview, {
+        type: 'error',
+        message: `Provider "${agent.provider}" for agent "${agent.name}" is missing from caretaker.json.`,
+      });
+      return;
+    }
+
+    this.currentAgent = agent;
+    this.currentProvider = provider;
+    this.currentTools = await harness.resolveAgentTools(agent, harness.tools);
+    this.currentSessionId = null;
+    this.controller = null;
+
+    // Load sessions for this agent
+    await this.loadSessionsAndSend(webview, agent.id);
+  }
+
+  private async loadSessionsAndSend(webview: vscode.Webview, agentId: string): Promise<void> {
+    try {
+      const entries = await listForAgent(agentId);
+      const sessionSummaries = entries.map((e) => ({
+        id: e.meta.id,
+        title: e.meta.title,
+        updatedAt: e.updatedAt.toISOString(),
+      }));
+      this.post(webview, { type: 'sessionsLoaded', sessions: sessionSummaries });
+    } catch (err) {
+      console.warn('[caretaker] failed to load sessions:', err);
+      this.post(webview, { type: 'sessionsLoaded', sessions: [] });
+    }
+  }
+
+  private async loadSessionMessagesAndSend(
+    webview: vscode.Webview,
+    agentId: string,
+    sessionId: string,
+  ): Promise<void> {
+    try {
+      const session = await readSession(agentId, sessionId);
+      const messages = session.messages
+        .filter((m): m is typeof m & { role: 'user' | 'assistant' } =>
+          m.role === 'user' || m.role === 'assistant',
+        )
+        .map((m) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          createdAt: m.createdAt,
+        }));
+      this.post(webview, { type: 'sessionLoaded', messages });
+    } catch (err) {
+      console.warn('[caretaker] failed to load session messages:', err);
+      this.post(webview, { type: 'error', message: 'Failed to load conversation history' });
+    }
   }
 
   private async handleMessage(webview: vscode.Webview, msg: ViewToHost): Promise<void> {
@@ -80,6 +191,29 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
         }
         return;
       }
+      case 'selectAgent': {
+        const agent = this.agents.find((a) => a.id === msg.agentId);
+        if (!agent || !this.view) return;
+        const providers = (await loadConfig()).providers;
+        await this.selectAgentInternal(webview, agent, providers);
+        // Automatically load sessions for the selected agent
+        await this.loadSessionsAndSend(webview, agent.id);
+        return;
+      }
+      case 'selectSession': {
+        this.currentSessionId = msg.sessionId;
+        this.controller = null; // Reset controller to load existing session
+        // Load and send the session messages
+        if (this.currentAgent) {
+          await this.loadSessionMessagesAndSend(webview, this.currentAgent.id, msg.sessionId);
+        }
+        return;
+      }
+      case 'createSession': {
+        this.currentSessionId = null;
+        this.controller = null;
+        return;
+      }
     }
   }
 
@@ -89,10 +223,31 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   private async handleStart(webview: vscode.Webview, prompt: string): Promise<void> {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!workspaceFolder) {
+      this.post(webview, {
+        type: 'error',
+        message: 'Open a folder to use Caretaker — the agent runs against the workspace root.',
+      });
+      return;
+    }
+
+    if (!this.currentAgent || !this.currentProvider || !this.currentTools) {
+      this.post(webview, {
+        type: 'error',
+        message: 'Agent not selected. Please select an agent from the dropdown.',
+      });
+      return;
+    }
+
     if (!this.controller) {
-      const built = await this.buildController(webview);
-      if (!built) return;
-      this.controller = built;
+      this.controller = new ChatSessionController({
+        agent: this.currentAgent,
+        provider: this.currentProvider,
+        tools: this.currentTools,
+        workingDir: workspaceFolder,
+        sessionId: this.currentSessionId ?? undefined,
+      });
     }
 
     await this.controller.start(prompt, {
@@ -113,70 +268,11 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
         this.resolveAllPending('reject');
         this.post(webview, { type: 'done' });
       },
+      onSessionCreated: (sessionId: string) => {
+        this.currentSessionId = sessionId;
+        void this.loadSessionsAndSend(webview, this.currentAgent!.id);
+      },
     });
-  }
-
-  private async buildController(webview: vscode.Webview): Promise<ChatSessionController | null> {
-    const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    if (!workspaceFolder) {
-      this.post(webview, {
-        type: 'error',
-        message: 'Open a folder to use Caretaker — the agent runs against the workspace root.',
-      });
-      return null;
-    }
-
-    let agents: AgentConfig[];
-    let providers: ProviderConfig[];
-    try {
-      const [agentsRes, configRes] = await Promise.all([loadAgents(), loadConfig()]);
-      agents = agentsRes;
-      providers = configRes.providers;
-    } catch (err) {
-      this.post(webview, {
-        type: 'error',
-        message: `Failed to load Caretaker config: ${err instanceof Error ? err.message : String(err)}`,
-      });
-      return null;
-    }
-
-    if (agents.length === 0) {
-      this.post(webview, {
-        type: 'error',
-        message:
-          'No agents configured. Run the Caretaker TUI (`pnpm -F caretaker-cli dev`) to create one.',
-      });
-      return null;
-    }
-
-    const requestedName = vscode.workspace
-      .getConfiguration('caretaker')
-      .get<string>('defaultAgent')
-      ?.trim();
-    const agent = requestedName
-      ? agents.find((a) => a.name === requestedName)
-      : agents[0];
-    if (!agent) {
-      const available = agents.map((a) => a.name).join(', ');
-      this.post(webview, {
-        type: 'error',
-        message: `Agent "${requestedName}" not found. Available: ${available}.`,
-      });
-      return null;
-    }
-
-    const provider = providers.find((p) => p.name === agent.provider);
-    if (!provider) {
-      this.post(webview, {
-        type: 'error',
-        message: `Provider "${agent.provider}" for agent "${agent.name}" is missing from caretaker.json.`,
-      });
-      return null;
-    }
-
-    const tools = await harness.resolveAgentTools(agent, harness.tools);
-
-    return new ChatSessionController({ agent, provider, tools, workingDir: workspaceFolder });
   }
 
   private post(webview: vscode.Webview, msg: HostToView): void {

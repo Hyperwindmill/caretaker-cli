@@ -9,9 +9,9 @@
 // span. Pending confirms live outside the message list and render as
 // ConfirmCard rows at the tail until the user resolves them.
 
-import { useEffect, useReducer } from 'react';
+import { useEffect, useReducer, useState } from 'react';
 
-import type { ConfirmDecision, HostToView, ViewToHost } from '../bridge.js';
+import type { AgentSummary, ChatMessage, ConfirmDecision, HostToView, SessionSummary, ViewToHost } from '../bridge.js';
 
 import { MessageList } from './MessageList.js';
 import { Composer } from './Composer.js';
@@ -51,6 +51,14 @@ interface State {
   pendingConfirms: PendingConfirm[];
 }
 
+interface AppState {
+  agents: AgentSummary[];
+  sessions: SessionSummary[];
+  selectedAgentId: string | null;
+  selectedSessionId: string | null;
+  chatState: State;
+}
+
 type Action =
   | { kind: 'send-user'; text: string }
   | { kind: 'append-chunk'; text: string }
@@ -59,7 +67,8 @@ type Action =
   | { kind: 'permission-request'; id: string; toolName: string; args: unknown }
   | { kind: 'permission-resolved'; id: string }
   | { kind: 'done' }
-  | { kind: 'error'; text: string };
+  | { kind: 'error'; text: string }
+  | { kind: 'load-history'; messages: ChatMessage[] };
 
 function closeStreamingAssistant(items: ChatItem[]): ChatItem[] {
   const last = items[items.length - 1];
@@ -142,6 +151,22 @@ function reducer(state: State, action: Action): State {
         pendingConfirms: [],
         items: closeStreamingAssistant(state.items),
       };
+
+    case 'load-history': {
+      const historyItems: ChatItem[] = action.messages.map((msg) => {
+        if (msg.role === 'user') {
+          return { kind: 'user', text: msg.content };
+        }
+        return { kind: 'assistant', text: msg.content, streaming: false };
+      });
+      return {
+        ...state,
+        items: historyItems,
+        status: 'idle',
+        errorText: null,
+        pendingConfirms: [],
+      };
+    }
   }
 }
 
@@ -150,12 +175,18 @@ export interface AppProps {
 }
 
 export function App({ postMessage }: AppProps) {
-  const [state, dispatch] = useReducer(reducer, {
+  const [chatState, dispatch] = useReducer(reducer, {
     items: [],
     status: 'idle',
     errorText: null,
     pendingConfirms: [],
   });
+
+  const [agents, setAgents] = useState<AgentSummary[]>([]);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [showSessions, setShowSessions] = useState(false);
 
   useEffect(() => {
     function handle(event: MessageEvent<unknown>): void {
@@ -164,6 +195,16 @@ export function App({ postMessage }: AppProps) {
 
       switch (msg.type) {
         case 'ready':
+          return;
+        case 'agentsLoaded':
+          setAgents(msg.agents);
+          // Don't auto-select - let user choose
+          return;
+        case 'sessionsLoaded':
+          setSessions(msg.sessions);
+          return;
+        case 'sessionLoaded':
+          dispatch({ kind: 'load-history', messages: msg.messages });
           return;
         case 'chunk':
           dispatch({ kind: 'append-chunk', text: msg.text });
@@ -192,11 +233,11 @@ export function App({ postMessage }: AppProps) {
     }
     window.addEventListener('message', handle);
     return () => window.removeEventListener('message', handle);
-  }, []);
+  }, [selectedAgentId]);
 
   const onSend = (text: string): void => {
     const trimmed = text.trim();
-    if (!trimmed || state.status === 'streaming') return;
+    if (!trimmed || chatState.status === 'streaming') return;
     dispatch({ kind: 'send-user', text: trimmed });
     postMessage({ type: 'start', prompt: trimmed });
   };
@@ -210,23 +251,136 @@ export function App({ postMessage }: AppProps) {
     postMessage({ type: 'abort' });
   };
 
+  const onSelectAgent = (agentId: string): void => {
+    if (!agentId) return; // Ignore empty selection
+    setSelectedAgentId(agentId);
+    setSelectedSessionId(null);
+    setShowSessions(false);
+    postMessage({ type: 'selectAgent', agentId });
+    // Reset chat state when switching agent
+    dispatch({ kind: 'done' });
+  };
+
+  const onSelectSession = (sessionId: string): void => {
+    setSelectedSessionId(sessionId);
+    setShowSessions(false);
+    postMessage({ type: 'selectSession', sessionId });
+    // Reset chat state when switching session
+    dispatch({ kind: 'done' });
+  };
+
+  const onCreateSession = (): void => {
+    setSelectedSessionId(null);
+    setShowSessions(false);
+    postMessage({ type: 'createSession' });
+    // Reset chat state when creating new session
+    dispatch({ kind: 'done' });
+  };
+
+  const onToggleSessions = (): void => {
+    if (selectedAgentId) {
+      setShowSessions(!showSessions);
+    }
+  };
+
+  // Close sessions dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      const target = event.target as HTMLElement;
+      if (showSessions && !target.closest('.app__sessions-dropdown')) {
+        setShowSessions(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showSessions]);
+
   const composerDisabled =
-    state.status === 'streaming' || state.pendingConfirms.length > 0;
+    chatState.status === 'streaming' || chatState.pendingConfirms.length > 0 || !selectedAgentId;
+
+  const selectedAgentName = agents.find((a) => a.id === selectedAgentId)?.name;
 
   return (
     <div className="app">
-      <header className="app__header">Caretaker</header>
+      <header className="app__header">
+        <div className="app__header-row">
+          <span>Caretaker</span>
+          <div className="app__controls">
+            <div className="app__agent-select-wrapper">
+              <select
+                className="app__agent-select"
+                value={selectedAgentId ?? ''}
+                onChange={(e) => onSelectAgent(e.target.value)}
+              >
+                <option value="" disabled>-- Select Agent --</option>
+                {agents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              className="app__sessions-btn"
+              onClick={onToggleSessions}
+              disabled={!selectedAgentId}
+              title="View conversations"
+            >
+              💬 {sessions.length}
+            </button>
+            <button
+              className="app__new-chat-btn"
+              onClick={onCreateSession}
+              disabled={!selectedAgentId}
+              title="New Chat"
+            >
+              + New
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {showSessions && sessions.length > 0 && (
+        <div className="app__sessions-dropdown">
+          <div className="app__sessions-title">Conversations for {selectedAgentName}</div>
+          <div className="app__sessions-list">
+            {sessions.map((session) => (
+              <button
+                key={session.id}
+                className={`app__session-item ${selectedSessionId === session.id ? 'app__session-item--active' : ''}`}
+                onClick={() => onSelectSession(session.id)}
+              >
+                {session.title}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {showSessions && sessions.length === 0 && selectedAgentId && (
+        <div className="app__sessions-dropdown app__sessions-dropdown--empty">
+          <div className="app__sessions-title">No conversations yet</div>
+          <p className="app__sessions-empty">Start a new chat to create a conversation</p>
+        </div>
+      )}
+
+      {!selectedAgentId && (
+        <div className="app__empty-state">
+          <p>Select an agent to start chatting</p>
+        </div>
+      )}
+
       <MessageList
-        items={state.items}
-        trailing={state.pendingConfirms.map((p) => (
+        items={chatState.items}
+        trailing={chatState.pendingConfirms.map((p) => (
           <ConfirmCard key={p.id} pending={p} onDecide={onConfirm} />
         ))}
       />
-      {state.errorText && <div className="app__error">⚠ {state.errorText}</div>}
+      {chatState.errorText && <div className="app__error">⚠ {chatState.errorText}</div>}
       <Composer
         disabled={composerDisabled}
         onSend={onSend}
-        canAbort={state.status === 'streaming'}
+        canAbort={chatState.status === 'streaming'}
         onAbort={onAbort}
       />
     </div>

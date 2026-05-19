@@ -11,8 +11,31 @@
 
 export type ConfirmDecision = 'once' | 'always' | 'reject';
 
+export interface AgentSummary {
+  id: string;
+  name: string;
+  model: string;
+  provider: string;
+}
+
+export interface SessionSummary {
+  id: string;
+  title: string;
+  updatedAt: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: string;
+}
+
 export type HostToView =
   | { type: 'ready' }
+  | { type: 'agentsLoaded'; agents: AgentSummary[] }
+  | { type: 'sessionsLoaded'; sessions: SessionSummary[] }
+  | { type: 'sessionLoaded'; messages: ChatMessage[] }
   | { type: 'chunk'; text: string }
   | { type: 'tool_call'; id: string; name: string; args: unknown }
   | { type: 'tool_result'; id: string; content: string }
@@ -23,7 +46,10 @@ export type HostToView =
 export type ViewToHost =
   | { type: 'start'; prompt: string }
   | { type: 'abort' }
-  | { type: 'permission_response'; id: string; decision: ConfirmDecision };
+  | { type: 'permission_response'; id: string; decision: ConfirmDecision }
+  | { type: 'selectAgent'; agentId: string }
+  | { type: 'selectSession'; sessionId: string }
+  | { type: 'createSession' };
 
 /** Runtime validator for messages coming from the webview. Returns
  * the typed message on success, or null on any structural mismatch.
@@ -45,6 +71,12 @@ export function parseViewToHost(value: unknown): ViewToHost | null {
       if (decision !== 'once' && decision !== 'always' && decision !== 'reject') return null;
       return { type, id, decision };
     }
+    case 'selectAgent':
+      return typeof value.agentId === 'string' ? { type, agentId: value.agentId } : null;
+    case 'selectSession':
+      return typeof value.sessionId === 'string' ? { type, sessionId: value.sessionId } : null;
+    case 'createSession':
+      return { type };
     default:
       return null;
   }
