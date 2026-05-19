@@ -2,7 +2,7 @@
   "name": "caretaker-vscode",
   "displayName": "Caretaker",
   "description": "Caretaker agent harness — chat sidebar for VSCode.",
-  "version": "0.0.2",
+  "version": "0.0.10",
   "private": true,
   "publisher": "Hyperwindmill",
   "license": "MIT",
@@ -17,7 +17,10 @@
     "node": ">=20"
   },
   "main": "./dist/extension.js",
-  "categories": ["AI", "Chat"],
+  "categories": [
+    "AI",
+    "Chat"
+  ],
   "activationEvents": [],
   "contributes": {
     "viewsContainers": {

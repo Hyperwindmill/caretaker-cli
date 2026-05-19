@@ -31,6 +31,7 @@ export interface ChatCallbacks {
   askConfirm: AskConfirm;
   onError: (message: string) => void;
   onDone: () => void;
+  onSessionCreated?: (sessionId: string) => void;
 }
 
 export interface ChatDeps {
@@ -52,6 +53,8 @@ export interface ChatSessionOptions {
   provider: ProviderConfig;
   tools: harness.Tool[];
   workingDir: string;
+  /** Optional existing session id. If not provided, a new session is created on first start. */
+  sessionId?: string;
   /** Override for tests; defaults to the real caretaker-cli implementations. */
   deps?: ChatDeps;
 }
@@ -65,9 +68,12 @@ export class ChatSessionController {
    * "always" so subsequent calls for the same tool bypass the prompt.
    * The persisted `agent.confirmTools` is never changed from here. */
   private readonly confirmSet: Set<string>;
+  /** Optional existing session id to load messages from. */
+  private readonly sessionId?: string;
 
   constructor(private readonly opts: ChatSessionOptions) {
     this.confirmSet = new Set(opts.agent.confirmTools ?? []);
+    this.sessionId = opts.sessionId;
   }
 
   get isRunning(): boolean {
@@ -85,10 +91,22 @@ export class ChatSessionController {
 
     try {
       if (!this.metaRecord) {
-        const title = prompt.length > 50 ? `${prompt.slice(0, 50)}…` : prompt;
-        this.metaRecord = await deps.createSession({ agentId: this.opts.agent.id, title });
+        if (this.sessionId) {
+          // Load existing session
+          const sessionData = await session.readSession(this.opts.agent.id, this.sessionId);
+          this.metaRecord = sessionData.meta;
+          this.history = sessionData.messages;
+        } else {
+          // Create new session
+          const title = prompt.length > 50 ? `${prompt.slice(0, 50)}…` : prompt;
+          this.metaRecord = await deps.createSession({ agentId: this.opts.agent.id, title });
+          cb.onSessionCreated?.(this.metaRecord.id);
+          this.history = [];
+        }
       }
-      const meta = this.metaRecord;
+
+      // At this point metaRecord is guaranteed to be set
+      const meta = this.metaRecord!;
 
       const userMsg = deps.userMessage(prompt);
       await deps.appendMessage(meta, userMsg);
