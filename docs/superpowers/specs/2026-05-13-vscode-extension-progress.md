@@ -74,6 +74,15 @@ Local `.vsix` only for now (`pnpm -F caretaker-vscode package`, then `code --ins
 Seven iteration steps (`9d563c4` → `186f6ff`). The extension is in
 daily use locally. Future iterations branch from this baseline.
 
+### Step 8 — markdown rendering (commit TBD)
+
+- `src/webview/MarkdownText.tsx` — nuovo componente che usa `marked` per parsare markdown in HTML. Include sanitizzazione di base (rimuove script, style, iframe, event handler, javascript: URL). Supporta modalità inline (per messaggi utente) e block (per messaggi assistant e risultati tool).
+- `src/webview/MessageList.tsx` — aggiornato per usare `MarkdownText` su tutti i testi: messaggi utente (inline), messaggi assistant (block), risultati tool (block).
+- `src/webview/styles.css` — stili markdown completi: heading, liste, blockquote, code inline, code block, tabelle, link, hr, img. Tutti i colori derivano da variabili VSCode (`--vscode-*`) per coerenza con il theme.
+- `package.json` — aggiunta dipendenza `marked` ^15.0.12.
+- Bundle webview: 616KB → 684KB (+68KB per marked).
+- Verified: typecheck green, build green, bundle prodotto.
+
 ## Open follow-ups (not blocking MVP)
 
 - Editor pane variant (already documented in design §Non-goals).
