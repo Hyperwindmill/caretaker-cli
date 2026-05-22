@@ -841,6 +841,7 @@ body.vscode-light .confirm__args {
 .markdown-body {
   line-height: 1.5;
   font-size: 12.5px;
+  white-space: normal;
 }
 
 .markdown-body > * {
@@ -931,6 +932,7 @@ body.vscode-light .markdown-body code {
   background: oklch(0 0 0 / 0.2);
   border-radius: var(--radius-md);
   border: 1px solid var(--glass-border);
+  white-space: pre;
 }
 
 body.vscode-light .markdown-body pre {
