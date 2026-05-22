@@ -505,6 +505,7 @@ export function App({ postMessage }: AppProps) {
       <MessageList
         items={chatState.items}
         isStreaming={chatState.status === 'streaming'}
+        agentName={selectedAgentName}
         trailing={chatState.pendingConfirms.map((p) => (
           <ConfirmCard key={p.id} pending={p} onDecide={onConfirm} />
         ))}

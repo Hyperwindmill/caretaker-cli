@@ -8,9 +8,10 @@ export interface MessageListProps {
   items: ChatItem[];
   trailing?: ReactNode;
   isStreaming?: boolean;
+  agentName?: string;
 }
 
-export function MessageList({ items, trailing, isStreaming }: MessageListProps) {
+export function MessageList({ items, trailing, isStreaming, agentName }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
@@ -33,7 +34,7 @@ export function MessageList({ items, trailing, isStreaming }: MessageListProps) 
       {isStreaming && (
         <div className="messages__loading-indicator">
           <img src={logo} alt="Loading" className="messages__loading-logo" />
-          <span className="messages__loading-text">Caretaker is thinking</span>
+          <span className="messages__loading-text">{agentName || 'Caretaker'} is thinking</span>
         </div>
       )}
       <div ref={bottomRef} />
