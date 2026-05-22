@@ -8,9 +8,11 @@
 
 import * as vscode from 'vscode';
 import { randomBytes } from 'node:crypto';
+import { watch, existsSync, mkdirSync } from 'node:fs';
+import type { FSWatcher } from 'node:fs';
 
 import * as harness from 'caretaker-cli/harness';
-import { loadAgents, loadConfig } from 'caretaker-cli/store';
+import { loadAgents, loadConfig, dataDir, agentsPath } from 'caretaker-cli/store';
 import { listForAgent, readSession } from 'caretaker-cli/session';
 import type { AgentConfig, ProviderConfig } from 'caretaker-cli/types';
 
@@ -32,6 +34,7 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
   private currentTools: harness.Tool[] | null = null;
   private currentSessionId: string | null = null;
   private agents: AgentConfig[] = [];
+  private watcher: FSWatcher | null = null;
   /** Pending confirm-gate round-trips: tool-call id → resolver for the
    * decision Promise the controller is awaiting. Cleared when the
    * matching `permission_response` arrives or when the run aborts (in
@@ -57,6 +60,10 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
       this.resolveAllPending('reject');
       this.controller?.abort();
       this.controller = null;
+      if (this.watcher) {
+        this.watcher.close();
+        this.watcher = null;
+      }
       this.view = null;
     });
 
@@ -68,13 +75,34 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
       }
       void this.handleMessage(view.webview, msg);
     });
-
-    void this.initializeView(view.webview);
   }
 
   private async initializeView(webview: vscode.Webview): Promise<void> {
     this.post(webview, { type: 'ready' });
     await this.loadAgentsAndSend(webview);
+    this.setupWatcher(webview);
+  }
+
+  private setupWatcher(webview: vscode.Webview): void {
+    if (this.watcher) {
+      this.watcher.close();
+      this.watcher = null;
+    }
+
+    try {
+      const dir = dataDir();
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true, mode: 0o700 });
+      }
+
+      this.watcher = watch(dir, (eventType, filename) => {
+        if (filename === 'agents.json') {
+          void this.loadAgentsAndSend(webview);
+        }
+      });
+    } catch (err) {
+      console.warn('[caretaker] failed to set up agents.json watcher:', err);
+    }
   }
 
   private async loadAgentsAndSend(webview: vscode.Webview): Promise<void> {
@@ -176,6 +204,9 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
 
   private async handleMessage(webview: vscode.Webview, msg: ViewToHost): Promise<void> {
     switch (msg.type) {
+      case 'webviewReady':
+        void this.initializeView(webview);
+        return;
       case 'start':
         await this.handleStart(webview, msg.prompt);
         return;
