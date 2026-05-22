@@ -13,7 +13,7 @@ import type { FSWatcher } from 'node:fs';
 
 import * as harness from 'caretaker-cli/harness';
 import { loadAgents, loadConfig, dataDir, agentsPath } from 'caretaker-cli/store';
-import { listForAgent, readSession } from 'caretaker-cli/session';
+import { listForAgent, readSession, computeContextUsage } from 'caretaker-cli/session';
 import type { AgentConfig, ProviderConfig } from 'caretaker-cli/types';
 
 import {
@@ -158,6 +158,7 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
     this.currentTools = await harness.resolveAgentTools(agent, harness.tools);
     this.currentSessionId = null;
     this.controller = null;
+    this.post(webview, { type: 'contextUsage', usage: null });
 
     // Load sessions for this agent
     await this.loadSessionsAndSend(webview, agent.id);
@@ -194,6 +195,9 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
         createdAt: m.createdAt,
       }));
       this.post(webview, { type: 'sessionLoaded', messages });
+
+      const usage = computeContextUsage(session.messages, this.currentAgent?.model ?? null);
+      this.post(webview, { type: 'contextUsage', usage });
     } catch (err) {
       console.warn('[caretaker] failed to load session messages:', err);
       this.post(webview, { type: 'error', message: 'Failed to load conversation history' });
@@ -241,6 +245,7 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
       case 'createSession': {
         this.currentSessionId = null;
         this.controller = null;
+        this.post(webview, { type: 'contextUsage', usage: null });
         return;
       }
     }
@@ -296,6 +301,10 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
       onDone: () => {
         this.resolveAllPending('reject');
         this.post(webview, { type: 'done' });
+        if (this.controller) {
+          const usage = this.controller.getContextUsage();
+          this.post(webview, { type: 'contextUsage', usage });
+        }
       },
       onSessionCreated: (sessionId: string) => {
         this.currentSessionId = sessionId;

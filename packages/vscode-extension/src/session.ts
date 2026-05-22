@@ -80,6 +80,10 @@ export class ChatSessionController {
     return this.inflight !== null;
   }
 
+  getContextUsage(): session.ContextUsage | null {
+    return session.computeContextUsage(this.history, this.opts.agent.model);
+  }
+
   async start(prompt: string, cb: ChatCallbacks): Promise<void> {
     if (this.inflight) {
       cb.onError('A turn is already in progress.');
