@@ -1182,3 +1182,53 @@ body.vscode-light .thinking[open] {
 body.vscode-light .thinking__content {
   border-top-color: oklch(0 0 0 / 0.06);
 }
+
+/* ── Streaming Chat Loader ────────────────────────────────── */
+.messages__loading-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: var(--spacing-sm) 4px var(--spacing-md) 4px;
+  padding: 6px 12px;
+  align-self: flex-start;
+  border-radius: var(--radius-md);
+  background: oklch(0.55 0.22 250 / 0.04);
+  border: 1px dashed oklch(0.55 0.22 250 / 0.15);
+  animation: fadeInUp var(--transition-medium) cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.messages__loading-logo {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+  animation: caretakerLogoPulse 2.4s ease-in-out infinite;
+}
+
+.messages__loading-text {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--accent-cyan);
+  text-transform: uppercase;
+  animation: caretakerTextPulse 1.8s ease-in-out infinite;
+}
+
+@keyframes caretakerLogoPulse {
+  0%, 100% {
+    transform: scale(0.92) rotate(0deg);
+    filter: drop-shadow(0 0 2px oklch(0.78 0.16 200 / 0.2));
+  }
+  50% {
+    transform: scale(1.1) rotate(180deg);
+    filter: drop-shadow(0 0 8px oklch(0.78 0.16 200 / 0.7));
+  }
+}
+
+@keyframes caretakerTextPulse {
+  0%, 100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
