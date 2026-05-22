@@ -451,6 +451,14 @@ export function App({ postMessage }: AppProps) {
               💬 {sessions.length}
             </button>
             <button
+              className="app__new-chat-btn"
+              onClick={onCreateSession}
+              disabled={!selectedAgentId}
+              title="New Chat"
+            >
+              + New
+            </button>
+            <button
               className="app__settings-btn"
               onClick={() => {
                 setActiveScreen('settings');
@@ -458,15 +466,9 @@ export function App({ postMessage }: AppProps) {
               }}
               title="Caretaker Settings"
             >
-              ⚙️
-            </button>
-            <button
-              className="app__new-chat-btn"
-              onClick={onCreateSession}
-              disabled={!selectedAgentId}
-              title="New Chat"
-            >
-              + New
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor">
+                <path d="M9.405 1.05c-.131-.482-.572-.8-1.072-.8h-1.33c-.5 0-.94.318-1.072.8l-.29 1.06c-.496.12-.962.316-1.386.58l-.985-.453a1.125 1.125 0 0 0-1.411.39L2.59 3.753c-.27.42-.18.986.208 1.3l.847.622c-.035.228-.053.461-.053.7s.018.472.053.7l-.847.622c-.388.314-.478.88-.208 1.3l1.33 2.126c.27.42.798.583 1.258.39l.985-.453c.424.264.89.46 1.386.58l.29 1.06c.13.482.571.8 1.072.8h1.33c.5 0 .94-.318 1.072-.8l.29-1.06c.496-.12.962-.316 1.386-.58l.985.453a1.125 1.125 0 0 0 1.41-.39l1.33-2.127c.27-.42.18-.986-.208-1.3l-.847-.622c.035-.228.053-.461.053-.7s-.018-.472-.053-.7l.847-.622c.389-.314.479-.88.208-1.3l-1.33-2.126a1.125 1.125 0 0 0-1.41-.39l-.986.453a5.53 5.53 0 0 0-1.386-.58l-.29-1.06Zm-1.405 7.45a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5Z" />
+              </svg>
             </button>
           </div>
         </div>

@@ -175,7 +175,8 @@ body {
 
 /* Sleek Buttons */
 .app__new-chat-btn,
-.app__sessions-btn {
+.app__sessions-btn,
+.app__settings-btn {
   font-family: var(--font-sans);
   font-size: 11px;
   font-weight: 600;
@@ -227,6 +228,41 @@ body {
 .app__sessions-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.app__settings-btn {
+  background: var(--vscode-button-secondaryBackground, #3a3d3e);
+  color: var(--vscode-button-secondaryForeground, #ffffff);
+  padding: 4px 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.app__settings-btn:hover:not(:disabled) {
+  background: var(--vscode-button-secondaryHoverBackground, #45494a);
+  transform: translateY(-1px);
+  box-shadow: 0 0 10px oklch(0.78 0.16 200 / 0.15);
+}
+
+.app__settings-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.app__settings-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.app__settings-btn svg {
+  width: 13px;
+  height: 13px;
+  fill: currentColor;
+  transition: transform 0.4s ease;
+}
+
+.app__settings-btn:hover:not(:disabled) svg {
+  transform: rotate(45deg);
 }
 
 /* ==========================================================================
