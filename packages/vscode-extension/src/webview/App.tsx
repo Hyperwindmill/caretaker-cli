@@ -35,7 +35,11 @@ export interface ToolItem {
   args: unknown;
   result: string | null;
 }
-export type ChatItem = UserItem | AssistantItem | ToolItem;
+export interface ThinkingItem {
+  kind: 'thinking';
+  text: string;
+}
+export type ChatItem = UserItem | AssistantItem | ToolItem | ThinkingItem;
 
 export interface PendingConfirm {
   id: string;
@@ -75,6 +79,60 @@ function closeStreamingAssistant(items: ChatItem[]): ChatItem[] {
   const last = items[items.length - 1];
   if (!last || last.kind !== 'assistant' || !last.streaming) return items;
   return [...items.slice(0, -1), { ...last, streaming: false }];
+}
+
+function reconstructChatItems(messages: ChatMessage[]): ChatItem[] {
+  let items: ChatItem[] = [];
+
+  for (const msg of messages) {
+    if (msg.role === 'user') {
+      items = closeStreamingAssistant(items);
+      items.push({ kind: 'user', text: msg.content });
+    } else if (msg.role === 'assistant') {
+      items = closeStreamingAssistant(items);
+      
+      if (msg.parts && msg.parts.length > 0) {
+        for (const part of msg.parts) {
+          if (part.type === 'text') {
+            items.push({ kind: 'assistant', text: part.text, streaming: false });
+          } else if (part.type === 'thinking') {
+            items.push({ kind: 'thinking', text: part.text });
+          } else if (part.type === 'tool_use') {
+            items.push({
+              kind: 'tool',
+              id: part.id,
+              name: part.name,
+              args: part.args,
+              result: null,
+            });
+          }
+        }
+      } else {
+        items.push({ kind: 'assistant', text: msg.content, streaming: false });
+      }
+    } else if (msg.role === 'tool') {
+      const toolCallId = msg.toolCallId;
+      if (toolCallId) {
+        const idx = items.findIndex(
+          (it) => it.kind === 'tool' && it.id === toolCallId && it.result === null,
+        );
+        if (idx !== -1) {
+          const toolItem = items[idx] as ToolItem;
+          items[idx] = { ...toolItem, result: msg.content };
+        } else {
+          items.push({
+            kind: 'tool',
+            id: toolCallId,
+            name: 'unknown_tool',
+            args: {},
+            result: msg.content,
+          });
+        }
+      }
+    }
+  }
+
+  return closeStreamingAssistant(items);
 }
 
 function reducer(state: State, action: Action): State {
@@ -154,12 +212,7 @@ function reducer(state: State, action: Action): State {
       };
 
     case 'load-history': {
-      const historyItems: ChatItem[] = action.messages.map((msg) => {
-        if (msg.role === 'user') {
-          return { kind: 'user', text: msg.content };
-        }
-        return { kind: 'assistant', text: msg.content, streaming: false };
-      });
+      const historyItems = reconstructChatItems(action.messages);
       return {
         ...state,
         items: historyItems,

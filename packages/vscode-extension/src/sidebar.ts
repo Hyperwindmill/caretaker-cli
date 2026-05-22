@@ -185,16 +185,14 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
   ): Promise<void> {
     try {
       const session = await readSession(agentId, sessionId);
-      const messages = session.messages
-        .filter((m): m is typeof m & { role: 'user' | 'assistant' } =>
-          m.role === 'user' || m.role === 'assistant',
-        )
-        .map((m) => ({
-          id: m.id,
-          role: m.role,
-          content: m.content,
-          createdAt: m.createdAt,
-        }));
+      const messages = session.messages.map((m) => ({
+        id: m.id,
+        role: m.role as 'user' | 'assistant' | 'tool',
+        content: m.content,
+        parts: m.parts,
+        toolCallId: m.toolCallId,
+        createdAt: m.createdAt,
+      }));
       this.post(webview, { type: 'sessionLoaded', messages });
     } catch (err) {
       console.warn('[caretaker] failed to load session messages:', err);

@@ -54,6 +54,19 @@ function Item({ item }: { item: ChatItem }) {
           </div>
         </div>
       );
+    case 'thinking':
+      return (
+        <details className="thinking" open>
+          <summary className="thinking__header">
+            <span className="thinking__icon">🧠</span>
+            <span className="thinking__title">Thinking Process</span>
+            <span className="thinking__chevron"></span>
+          </summary>
+          <div className="thinking__content">
+            <MarkdownText content={item.text} />
+          </div>
+        </details>
+      );
     case 'tool': {
       const argsPreview = previewJson(item.args);
       return (
