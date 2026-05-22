@@ -16,6 +16,7 @@ import type { AgentSummary, ChatMessage, ConfirmDecision, HostToView, SessionSum
 import { MessageList } from './MessageList.js';
 import { Composer } from './Composer.js';
 import { ConfirmCard } from './ConfirmCard.js';
+import logo from './caretaker_cli.png';
 
 export interface UserItem {
   kind: 'user';
@@ -308,7 +309,10 @@ export function App({ postMessage }: AppProps) {
     <div className="app">
       <header className="app__header">
         <div className="app__header-row">
-          <span>Caretaker</span>
+          <div className="app__logo-title-wrapper">
+            <img src={logo} alt="Caretaker" className="app__logo" />
+            <span>Caretaker</span>
+          </div>
           <div className="app__controls">
             <div className="app__agent-select-wrapper">
               <select
