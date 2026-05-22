@@ -505,7 +505,7 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
       `default-src 'none'`,
       `style-src ${webview.cspSource} 'unsafe-inline'`,
       `script-src 'nonce-${nonce}'`,
-      `font-src ${webview.cspSource}`,
+      `font-src ${webview.cspSource} data:`,
       `img-src ${webview.cspSource} data:`,
     ].join('; ');
 
