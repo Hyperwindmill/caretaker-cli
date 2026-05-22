@@ -11,7 +11,7 @@
 
 import { useEffect, useReducer, useState } from 'react';
 
-import type { AgentSummary, ChatMessage, ConfirmDecision, HostToView, SessionSummary, ViewToHost } from '../bridge.js';
+import type { AgentSummary, ChatMessage, ConfirmDecision, HostToView, SessionSummary, ViewToHost, ContextUsage } from '../bridge.js';
 
 import { MessageList } from './MessageList.js';
 import { Composer } from './Composer.js';
@@ -54,6 +54,7 @@ interface State {
   status: Status;
   errorText: string | null;
   pendingConfirms: PendingConfirm[];
+  contextUsage: ContextUsage | null;
 }
 
 interface AppState {
@@ -73,7 +74,8 @@ type Action =
   | { kind: 'permission-resolved'; id: string }
   | { kind: 'done' }
   | { kind: 'error'; text: string }
-  | { kind: 'load-history'; messages: ChatMessage[] };
+  | { kind: 'load-history'; messages: ChatMessage[] }
+  | { kind: 'context-usage'; usage: ContextUsage | null };
 
 function closeStreamingAssistant(items: ChatItem[]): ChatItem[] {
   const last = items[items.length - 1];
@@ -221,6 +223,12 @@ function reducer(state: State, action: Action): State {
         pendingConfirms: [],
       };
     }
+
+    case 'context-usage':
+      return {
+        ...state,
+        contextUsage: action.usage,
+      };
   }
 }
 
@@ -234,6 +242,7 @@ export function App({ postMessage }: AppProps) {
     status: 'idle',
     errorText: null,
     pendingConfirms: [],
+    contextUsage: null,
   });
 
   const [agents, setAgents] = useState<AgentSummary[]>([]);
@@ -286,6 +295,9 @@ export function App({ postMessage }: AppProps) {
           return;
         case 'error':
           dispatch({ kind: 'error', text: msg.message });
+          return;
+        case 'contextUsage':
+          dispatch({ kind: 'context-usage', usage: msg.usage });
           return;
       }
     }
@@ -443,6 +455,7 @@ export function App({ postMessage }: AppProps) {
         onSend={onSend}
         canAbort={chatState.status === 'streaming'}
         onAbort={onAbort}
+        contextUsage={chatState.contextUsage}
       />
     </div>
   );

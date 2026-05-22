@@ -37,6 +37,12 @@ export interface ChatMessage {
   createdAt: string;
 }
 
+export interface ContextUsage {
+  lastTokens: number;
+  contextWindow: number | null;
+  percent: number | null;
+}
+
 export type HostToView =
   | { type: 'ready' }
   | { type: 'agentsLoaded'; agents: AgentSummary[] }
@@ -47,7 +53,8 @@ export type HostToView =
   | { type: 'tool_result'; id: string; content: string }
   | { type: 'permission_request'; id: string; toolName: string; args: unknown }
   | { type: 'done' }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string }
+  | { type: 'contextUsage'; usage: ContextUsage | null };
 
 export type ViewToHost =
   | { type: 'start'; prompt: string }

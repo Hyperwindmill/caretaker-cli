@@ -14,6 +14,8 @@ export {
   dataDir,
   sessionsRoot,
 } from './store.js';
+export { computeContextUsage } from './context_usage.js';
+export type { ContextUsage } from './context_usage.js';
 export type { CreateSessionInput, SessionListEntry } from './store.js';
 export type {
   AssistantPart,
