@@ -10,8 +10,12 @@ import * as harness from 'caretaker-cli/harness';
 
 import { resolveCaretakerHome } from './config.js';
 import { SidebarWebviewProvider } from './sidebar.js';
+import { initModelLimits } from 'caretaker-cli/session';
 
 export function activate(context: vscode.ExtensionContext): void {
+  // Initialize the model limits fetcher from models.dev
+  initModelLimits();
+
   const home = resolveCaretakerHome({
     envValue: process.env.CARETAKER_HOME,
     settingValue: vscode.workspace.getConfiguration('caretaker').get<string>('home'),
