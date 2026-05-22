@@ -1014,3 +1014,92 @@ body.vscode-light .markdown-body pre {
 .bubble__text .markdown-body code {
   font-size: 0.9em;
 }
+
+/* ==========================================================================
+   8. Collapsible Thinking Blocks
+   ========================================================================== */
+
+.thinking {
+  display: flex;
+  flex-direction: column;
+  background: oklch(0.2 0.03 260 / 0.3);
+  border: 1px dashed oklch(0.65 0.1 240 / 0.15);
+  border-left: 3px solid oklch(0.65 0.1 240 / 0.5);
+  border-radius: var(--radius-md);
+  padding: 10px var(--spacing-md);
+  margin: 4px 0;
+  font-size: 12px;
+  animation: fadeInUp 0.24s ease forwards;
+  transition: border-color var(--transition-fast) ease, background var(--transition-fast) ease;
+}
+
+.thinking[open] {
+  border-color: oklch(0.65 0.1 240 / 0.25);
+  background: oklch(0.2 0.03 260 / 0.55);
+}
+
+body.vscode-light .thinking {
+  background: oklch(0.97 0.005 240);
+  border-color: oklch(0 0 0 / 0.05);
+  border-left-color: oklch(0.55 0.15 250 / 0.4);
+}
+
+body.vscode-light .thinking[open] {
+  background: oklch(0.95 0.008 240);
+  border-color: oklch(0 0 0 / 0.08);
+}
+
+.thinking__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground, #8c8c8c);
+  list-style: none; /* Hide default summary marker */
+  outline: none;
+}
+
+/* Hide default marker in Safari / WebKit */
+.thinking__header::-webkit-details-marker {
+  display: none;
+}
+
+.thinking__icon {
+  font-size: 14px;
+  opacity: 0.85;
+}
+
+.thinking__title {
+  flex: 1;
+}
+
+.thinking__chevron {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--vscode-descriptionForeground, #8c8c8c);
+  border-bottom: 2px solid var(--vscode-descriptionForeground, #8c8c8c);
+  transform: rotate(45deg);
+  transition: transform var(--transition-fast) cubic-bezier(0.16, 1, 0.3, 1);
+  margin-right: 4px;
+}
+
+/* Rotate chevron when details is open */
+.thinking[open] .thinking__chevron {
+  transform: rotate(-135deg);
+}
+
+.thinking__content {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed oklch(1 0 0 / 0.06);
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--vscode-descriptionForeground, #8c8c8c);
+}
+
+body.vscode-light .thinking__content {
+  border-top-color: oklch(0 0 0 / 0.06);
+}

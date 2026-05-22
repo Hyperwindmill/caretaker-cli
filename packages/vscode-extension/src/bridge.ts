@@ -26,8 +26,14 @@ export interface SessionSummary {
 
 export interface ChatMessage {
   id: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'tool';
   content: string;
+  parts?: Array<
+    | { type: 'text'; text: string }
+    | { type: 'thinking'; text: string }
+    | { type: 'tool_use'; id: string; name: string; args: unknown }
+  >;
+  toolCallId?: string;
   createdAt: string;
 }
 
