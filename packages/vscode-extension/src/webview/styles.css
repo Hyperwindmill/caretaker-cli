@@ -254,14 +254,13 @@ body {
   cursor: not-allowed;
 }
 
-.app__settings-btn svg {
-  width: 14px;
-  height: 14px;
-  fill: currentColor;
+.app__settings-btn .codicon {
+  font-size: 14px;
+  display: inline-block;
   transition: transform 0.4s ease;
 }
 
-.app__settings-btn:hover:not(:disabled) svg {
+.app__settings-btn:hover:not(:disabled) .codicon {
   transform: rotate(45deg);
 }
 
