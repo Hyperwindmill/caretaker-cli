@@ -1599,6 +1599,12 @@ body.vscode-light .settings-panel__tab-btn--active {
   transition: var(--transition-smooth);
 }
 
+.settings-card--plugin {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
 .settings-card:hover {
   border-color: var(--primary-blue);
   box-shadow: var(--blue-glow);
@@ -1662,9 +1668,9 @@ body.vscode-light .settings-panel__tab-btn--active {
 }
 
 .settings-card__footer {
-  font-size: 9px;
+  font-size: 11px;
   color: var(--vscode-descriptionForeground);
-  opacity: 0.6;
+  opacity: 0.75;
   margin-top: var(--spacing-sm);
 }
 
@@ -2009,7 +2015,7 @@ body.vscode-light .settings-panel__tab-btn--active {
 }
 
 .discovered-plugins__title {
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--vscode-descriptionForeground);
   text-transform: uppercase;
@@ -2030,7 +2036,7 @@ body.vscode-light .settings-panel__tab-btn--active {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .plugin-name {
@@ -2041,11 +2047,11 @@ body.vscode-light .settings-panel__tab-btn--active {
 }
 
 .plugin-manifest-badge {
-  font-size: 8px;
+  font-size: 9.5px;
   background: oklch(1 0 0 / 0.05);
   border: 1px solid oklch(1 0 0 / 0.03);
   color: var(--vscode-descriptionForeground);
-  padding: 1px 4px;
+  padding: 1px 5px;
   border-radius: var(--radius-xs);
   margin-left: var(--spacing-sm);
 }
