@@ -6,8 +6,8 @@ import * as os from 'node:os';
  * Inject standard AI-agent context files into the system prompt.
  *
  * Walks up from the agent's workingDir looking for AGENTS.md, CLAUDE.md,
- * GEMINI.md (per-file first match wins). Also reads global ~/.claude/CLAUDE.md
- * and ~/.config/opencode/AGENTS.md if present.
+ * GEMINI.md (per-file first match wins). Also reads global ~/.caretaker/AGENTS.md
+ * if present.
  *
  * Each file is wrapped with a `Instructions from: <abspath>` header so the
  * model knows where the rules came from.
@@ -54,11 +54,7 @@ async function walkUpFor(name: string, startDir: string): Promise<string | null>
 
 function globalCandidates(): string[] {
   const home = os.homedir();
-  return [
-    path.join(home, '.config', 'opencode', 'AGENTS.md'),
-    path.join(home, '.claude', 'CLAUDE.md'),
-    path.join(home, '.caretaker', 'AGENTS.md'),
-  ];
+  return [path.join(home, '.caretaker', 'AGENTS.md')];
 }
 
 /** Discover and read context files for a given workingDir. */

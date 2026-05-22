@@ -48,7 +48,7 @@ When editing tools, register them in `packages/cli/src/harness/tools/builtin/ind
 1. Caretaker prelude (the "care about goal/environment/project" preamble — what makes an agent a _caretaker_ agent).
 2. The agent's own `systemPrompt`.
 3. Active plugin/skill blocks.
-4. Project context: `AGENTS.md` and equivalents walked up from the agent's `workingDir`, plus the same files in `$HOME` for cross-project rules. `@<file>` refs resolved single-pass.
+4. Project context: `AGENTS.md` and equivalents walked up from the agent's `workingDir`, plus `~/.caretaker/AGENTS.md` for cross-project rules. `@<file>` refs resolved single-pass.
 5. `<runtime-info>` block from `packages/cli/src/harness/runtime_info.ts`.
 
 Caps: 100 KB per file, 250 KB total. Order is stable across turns by design — don't shuffle it.
