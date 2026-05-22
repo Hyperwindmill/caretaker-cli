@@ -11,11 +11,13 @@
 
 import { useEffect, useReducer, useState } from 'react';
 
-import type { AgentSummary, ChatMessage, ConfirmDecision, HostToView, SessionSummary, ViewToHost, ContextUsage } from '../bridge.js';
+import type { AgentSummary, ChatMessage, ConfirmDecision, HostToView, SessionSummary, ViewToHost, ContextUsage, ModelsResult, RefreshOutcome } from '../bridge.js';
+import type { CaretakerConfig, AgentConfig, PluginsFile, McpServerConfig } from 'caretaker-cli/types';
 
 import { MessageList } from './MessageList.js';
 import { Composer } from './Composer.js';
 import { ConfirmCard } from './ConfirmCard.js';
+import { SettingsPanel } from './SettingsPanel.js';
 import logo from './caretaker_cli.png';
 
 export interface UserItem {
@@ -251,6 +253,18 @@ export function App({ postMessage }: AppProps) {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [showSessions, setShowSessions] = useState(false);
 
+  const [activeScreen, setActiveScreen] = useState<'chat' | 'settings'>('chat');
+  const [settingsData, setSettingsData] = useState<{
+    config: CaretakerConfig;
+    agents: AgentConfig[];
+    pluginsFile: PluginsFile;
+    mcpServersFile: { servers: McpServerConfig[] };
+    availableTools: string[];
+  } | null>(null);
+  const [modelsResult, setModelsResult] = useState<ModelsResult | null>(null);
+  const [refreshingSourceId, setRefreshingSourceId] = useState<string | null>(null);
+  const [refreshOutcome, setRefreshOutcome] = useState<RefreshOutcome | null>(null);
+
   useEffect(() => {
     postMessage({ type: 'webviewReady' });
   }, []);
@@ -298,6 +312,26 @@ export function App({ postMessage }: AppProps) {
           return;
         case 'contextUsage':
           dispatch({ kind: 'context-usage', usage: msg.usage });
+          return;
+        case 'settingsDataLoaded':
+          setSettingsData({
+            config: msg.config,
+            agents: msg.agents,
+            pluginsFile: msg.pluginsFile,
+            mcpServersFile: msg.mcpServersFile,
+            availableTools: msg.availableTools,
+          });
+          return;
+        case 'modelsFetched':
+          setModelsResult(msg.result);
+          return;
+        case 'refreshingPlugin':
+          setRefreshingSourceId(msg.sourceId);
+          setRefreshOutcome(null);
+          return;
+        case 'refreshPluginOutcome':
+          setRefreshingSourceId(null);
+          setRefreshOutcome(msg.outcome);
           return;
       }
     }
@@ -370,6 +404,21 @@ export function App({ postMessage }: AppProps) {
 
   const selectedAgentName = agents.find((a) => a.id === selectedAgentId)?.name;
 
+  if (activeScreen === 'settings') {
+    return (
+      <SettingsPanel
+        postMessage={postMessage}
+        settingsData={settingsData}
+        modelsResult={modelsResult}
+        setModelsResult={setModelsResult}
+        refreshingSourceId={refreshingSourceId}
+        refreshOutcome={refreshOutcome}
+        setRefreshOutcome={setRefreshOutcome}
+        onClose={() => setActiveScreen('chat')}
+      />
+    );
+  }
+
   return (
     <div className="app">
       <header className="app__header">
@@ -400,6 +449,16 @@ export function App({ postMessage }: AppProps) {
               title="View conversations"
             >
               💬 {sessions.length}
+            </button>
+            <button
+              className="app__settings-btn"
+              onClick={() => {
+                setActiveScreen('settings');
+                postMessage({ type: 'getSettingsData' });
+              }}
+              title="Caretaker Settings"
+            >
+              ⚙️
             </button>
             <button
               className="app__new-chat-btn"

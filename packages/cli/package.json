@@ -24,6 +24,14 @@
       "types": "./dist/session/index.d.ts",
       "default": "./dist/session/index.js"
     },
+    "./plugins": {
+      "types": "./dist/plugins/source_manager.d.ts",
+      "default": "./dist/plugins/source_manager.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp/server_manager.d.ts",
+      "default": "./dist/mcp/server_manager.js"
+    },
     "./types": {
       "types": "./dist/types.d.ts",
       "default": "./dist/types.js"

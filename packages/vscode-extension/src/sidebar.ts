@@ -12,9 +12,34 @@ import { watch, existsSync, mkdirSync } from 'node:fs';
 import type { FSWatcher } from 'node:fs';
 
 import * as harness from 'caretaker-cli/harness';
-import { loadAgents, loadConfig, dataDir, agentsPath } from 'caretaker-cli/store';
+import {
+  loadAgents,
+  loadConfig,
+  dataDir,
+  agentsPath,
+  saveAgents,
+  saveConfig,
+  loadPlugins,
+  savePlugins,
+  loadMcpServers,
+  saveMcpServers,
+} from 'caretaker-cli/store';
+import {
+  createSource,
+  deleteSource,
+  patchSource,
+  refreshSource,
+  listSources,
+  listPlugins,
+} from 'caretaker-cli/plugins';
+import {
+  createMcpServer,
+  deleteMcpServer,
+  patchMcpServer,
+  listMcpServers,
+} from 'caretaker-cli/mcp';
 import { listForAgent, readSession, computeContextUsage } from 'caretaker-cli/session';
-import type { AgentConfig, ProviderConfig } from 'caretaker-cli/types';
+import type { AgentConfig, ProviderConfig, PluginsFile, McpServerConfig } from 'caretaker-cli/types';
 
 import {
   parseViewToHost,
@@ -96,12 +121,40 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
       }
 
       this.watcher = watch(dir, (eventType, filename) => {
-        if (filename === 'agents.json') {
+        if (
+          filename === 'agents.json' ||
+          filename === 'caretaker.json' ||
+          filename === 'plugins.json' ||
+          filename === 'mcp.json'
+        ) {
           void this.loadAgentsAndSend(webview);
+          void this.sendSettingsData(webview);
         }
       });
     } catch (err) {
-      console.warn('[caretaker] failed to set up agents.json watcher:', err);
+      console.warn('[caretaker] failed to set up file watchers:', err);
+    }
+  }
+
+  private async sendSettingsData(webview: vscode.Webview): Promise<void> {
+    try {
+      const [config, agents, pluginsFile, mcpServersFile] = await Promise.all([
+        loadConfig(),
+        loadAgents(),
+        loadPlugins(),
+        loadMcpServers(),
+      ]);
+      const availableTools = harness.tools.list().map((t) => t.name);
+      this.post(webview, {
+        type: 'settingsDataLoaded',
+        config,
+        agents,
+        pluginsFile,
+        mcpServersFile,
+        availableTools,
+      });
+    } catch (err) {
+      console.warn('[caretaker] failed to load settings data:', err);
     }
   }
 
@@ -248,7 +301,129 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
         this.post(webview, { type: 'contextUsage', usage: null });
         return;
       }
-    }
+      case 'getSettingsData':
+        void this.sendSettingsData(webview);
+        return;
+      case 'saveConfig':
+        try {
+          await saveConfig(msg.config);
+          void this.loadAgentsAndSend(webview);
+          void this.sendSettingsData(webview);
+        } catch (err) {
+          vscode.window.showErrorMessage(`Failed to save config: ${err}`);
+        }
+        return;
+      case 'saveAgent':
+        try {
+          const agents = await loadAgents();
+          const existingIdx = agents.findIndex((a) => a.id === msg.agent.id);
+          if (existingIdx !== -1) {
+            agents[existingIdx] = msg.agent;
+          } else {
+            agents.push(msg.agent);
+          }
+          await saveAgents(agents);
+          void this.loadAgentsAndSend(webview);
+          void this.sendSettingsData(webview);
+        } catch (err) {
+          vscode.window.showErrorMessage(`Failed to save agent: ${err}`);
+        }
+        return;
+      case 'deleteAgent':
+        try {
+          let agents = await loadAgents();
+          agents = agents.filter((a) => a.id !== msg.agentId);
+          await saveAgents(agents);
+          void this.loadAgentsAndSend(webview);
+          void this.sendSettingsData(webview);
+        } catch (err) {
+          vscode.window.showErrorMessage(`Failed to delete agent: ${err}`);
+        }
+        return;
+      case 'savePluginSource':
+        try {
+          if (msg.source.id) {
+            await patchSource(msg.source.id, {
+              url: msg.source.url,
+              ref: msg.source.ref,
+              authToken: msg.source.authToken,
+              refreshOnStart: msg.source.refreshOnStart,
+            });
+          } else {
+            await createSource(msg.source);
+          }
+          void this.loadAgentsAndSend(webview);
+          void this.sendSettingsData(webview);
+        } catch (err) {
+          vscode.window.showErrorMessage(`Failed to save plugin source: ${err}`);
+        }
+        return;
+      case 'deletePluginSource':
+        try {
+          await deleteSource(msg.sourceId);
+          void this.loadAgentsAndSend(webview);
+          void this.sendSettingsData(webview);
+        } catch (err) {
+          vscode.window.showErrorMessage(`Failed to delete plugin source: ${err}`);
+        }
+        return;
+      case 'refreshPluginSource':
+        try {
+          this.post(webview, { type: 'refreshingPlugin', sourceId: msg.sourceId });
+          const outcome = await refreshSource(msg.sourceId);
+          void this.loadAgentsAndSend(webview);
+          void this.sendSettingsData(webview);
+          this.post(webview, { type: 'refreshPluginOutcome', outcome });
+        } catch (err) {
+          vscode.window.showErrorMessage(`Failed to refresh plugin source: ${err}`);
+          this.post(webview, {
+            type: 'refreshPluginOutcome',
+            outcome: { pluginsFound: 0, sha: null, error: String(err) },
+          });
+        }
+        return;
+      case 'saveMcpServer':
+        try {
+          if (msg.server.id) {
+            await patchMcpServer(msg.server.id, {
+              name: msg.server.name,
+              enabled: msg.server.enabled,
+              command: msg.server.command,
+              args: msg.server.args,
+              env: msg.server.env,
+              url: msg.server.url,
+              headers: msg.server.headers,
+            });
+          } else {
+            await createMcpServer(msg.server);
+          }
+          void this.loadAgentsAndSend(webview);
+          void this.sendSettingsData(webview);
+        } catch (err) {
+          vscode.window.showErrorMessage(`Failed to save MCP server: ${err}`);
+        }
+        return;
+      case 'deleteMcpServer':
+        try {
+          await deleteMcpServer(msg.serverId);
+          void this.loadAgentsAndSend(webview);
+          void this.sendSettingsData(webview);
+        } catch (err) {
+          vscode.window.showErrorMessage(`Failed to delete MCP server: ${err}`);
+        }
+        return;
+      case 'fetchModels':
+        try {
+          const result = await harness.fetchOpenAiStyleModels(msg.endpoint, msg.apiKey ?? null);
+          this.post(webview, { type: 'modelsFetched', result });
+        } catch (err) {
+          this.post(webview, {
+            type: 'modelsFetched',
+            result: { ok: false, error: String(err) },
+          });
+        }
+        return;
+      }
   }
 
   private resolveAllPending(decision: ConfirmDecision): void {

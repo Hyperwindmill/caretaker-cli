@@ -21,3 +21,7 @@ export type {
 } from './tools/index.js';
 
 export { tools } from './tools/instance.js';
+
+export { fetchOpenAiStyleModels } from './models.js';
+export type { ModelsResult } from './models.js';
+
