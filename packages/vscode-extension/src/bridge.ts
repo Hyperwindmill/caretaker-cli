@@ -49,7 +49,8 @@ export type ViewToHost =
   | { type: 'permission_response'; id: string; decision: ConfirmDecision }
   | { type: 'selectAgent'; agentId: string }
   | { type: 'selectSession'; sessionId: string }
-  | { type: 'createSession' };
+  | { type: 'createSession' }
+  | { type: 'webviewReady' };
 
 /** Runtime validator for messages coming from the webview. Returns
  * the typed message on success, or null on any structural mismatch.
@@ -76,6 +77,8 @@ export function parseViewToHost(value: unknown): ViewToHost | null {
     case 'selectSession':
       return typeof value.sessionId === 'string' ? { type, sessionId: value.sessionId } : null;
     case 'createSession':
+      return { type };
+    case 'webviewReady':
       return { type };
     default:
       return null;
