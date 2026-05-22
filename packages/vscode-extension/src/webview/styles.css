@@ -255,8 +255,8 @@ body {
 }
 
 .app__settings-btn svg {
-  width: 13px;
-  height: 13px;
+  width: 14px;
+  height: 14px;
   fill: currentColor;
   transition: transform 0.4s ease;
 }
