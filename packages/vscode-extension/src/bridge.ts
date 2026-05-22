@@ -9,6 +9,8 @@
 // other direction (host → view) is trusted because the host builds the
 // messages itself.
 
+import type { AgentConfig, CaretakerConfig, PluginsFile, McpServerConfig } from 'caretaker-cli/types';
+
 export type ConfirmDecision = 'once' | 'always' | 'reject';
 
 export interface AgentSummary {
@@ -43,6 +45,14 @@ export interface ContextUsage {
   percent: number | null;
 }
 
+export type ModelsResult = { ok: true; ids: string[] } | { ok: false; error: string };
+
+export type RefreshOutcome = {
+  pluginsFound: number;
+  sha: string | null;
+  error: string | null;
+};
+
 export type HostToView =
   | { type: 'ready' }
   | { type: 'agentsLoaded'; agents: AgentSummary[] }
@@ -54,7 +64,18 @@ export type HostToView =
   | { type: 'permission_request'; id: string; toolName: string; args: unknown }
   | { type: 'done' }
   | { type: 'error'; message: string }
-  | { type: 'contextUsage'; usage: ContextUsage | null };
+  | { type: 'contextUsage'; usage: ContextUsage | null }
+  | {
+      type: 'settingsDataLoaded';
+      config: CaretakerConfig;
+      agents: AgentConfig[];
+      pluginsFile: PluginsFile;
+      mcpServersFile: { servers: McpServerConfig[] };
+      availableTools: string[];
+    }
+  | { type: 'modelsFetched'; result: ModelsResult }
+  | { type: 'refreshingPlugin'; sourceId: string }
+  | { type: 'refreshPluginOutcome'; outcome: RefreshOutcome };
 
 export type ViewToHost =
   | { type: 'start'; prompt: string }
@@ -63,7 +84,17 @@ export type ViewToHost =
   | { type: 'selectAgent'; agentId: string }
   | { type: 'selectSession'; sessionId: string }
   | { type: 'createSession' }
-  | { type: 'webviewReady' };
+  | { type: 'webviewReady' }
+  | { type: 'getSettingsData' }
+  | { type: 'saveConfig'; config: CaretakerConfig }
+  | { type: 'saveAgent'; agent: AgentConfig }
+  | { type: 'deleteAgent'; agentId: string }
+  | { type: 'savePluginSource'; source: any }
+  | { type: 'deletePluginSource'; sourceId: string }
+  | { type: 'refreshPluginSource'; sourceId: string }
+  | { type: 'saveMcpServer'; server: any }
+  | { type: 'deleteMcpServer'; serverId: string }
+  | { type: 'fetchModels'; endpoint: string; apiKey?: string };
 
 /** Runtime validator for messages coming from the webview. Returns
  * the typed message on success, or null on any structural mismatch.
@@ -93,6 +124,28 @@ export function parseViewToHost(value: unknown): ViewToHost | null {
       return { type };
     case 'webviewReady':
       return { type };
+    case 'getSettingsData':
+      return { type };
+    case 'saveConfig':
+      return isRecord(value.config) ? { type, config: value.config as any } : null;
+    case 'saveAgent':
+      return isRecord(value.agent) ? { type, agent: value.agent as any } : null;
+    case 'deleteAgent':
+      return typeof value.agentId === 'string' ? { type, agentId: value.agentId } : null;
+    case 'savePluginSource':
+      return isRecord(value.source) ? { type, source: value.source } : null;
+    case 'deletePluginSource':
+      return typeof value.sourceId === 'string' ? { type, sourceId: value.sourceId } : null;
+    case 'refreshPluginSource':
+      return typeof value.sourceId === 'string' ? { type, sourceId: value.sourceId } : null;
+    case 'saveMcpServer':
+      return isRecord(value.server) ? { type, server: value.server } : null;
+    case 'deleteMcpServer':
+      return typeof value.serverId === 'string' ? { type, serverId: value.serverId } : null;
+    case 'fetchModels':
+      return typeof value.endpoint === 'string'
+        ? { type, endpoint: value.endpoint, apiKey: typeof value.apiKey === 'string' ? value.apiKey : undefined }
+        : null;
     default:
       return null;
   }
