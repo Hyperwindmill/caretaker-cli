@@ -23,5 +23,6 @@ test('session barrel exports the public surface', () => {
     assert.ok(name in session, `missing export: ${name}`);
   }
   assert.equal(typeof session.createSession, 'function');
-  assert.equal(typeof session.dataDir, 'string');
+  assert.equal(typeof session.dataDir, 'function');
+  assert.equal(typeof session.sessionsRoot, 'function');
 });

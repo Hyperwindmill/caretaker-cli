@@ -32,12 +32,16 @@ import type {
   SessionMetaRecord,
 } from './types.js';
 
-export const dataDir = process.env.CARETAKER_HOME ?? join(homedir(), '.caretaker');
+export function dataDir(): string {
+  return process.env.CARETAKER_HOME ?? join(homedir(), '.caretaker');
+}
 
-export const sessionsRoot = join(dataDir, 'sessions');
+export function sessionsRoot(): string {
+  return join(dataDir(), 'sessions');
+}
 
 function agentDir(agentId: string): string {
-  return join(sessionsRoot, agentId);
+  return join(sessionsRoot(), agentId);
 }
 
 function sessionPath(agentId: string, sessionId: string): string {
