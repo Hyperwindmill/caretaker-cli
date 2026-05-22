@@ -189,6 +189,10 @@ export function App({ postMessage }: AppProps) {
   const [showSessions, setShowSessions] = useState(false);
 
   useEffect(() => {
+    postMessage({ type: 'webviewReady' });
+  }, []);
+
+  useEffect(() => {
     function handle(event: MessageEvent<unknown>): void {
       const msg = event.data as HostToView;
       if (!msg || typeof msg !== 'object' || !('type' in msg)) return;
