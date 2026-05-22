@@ -1085,6 +1085,7 @@ body.vscode-light .markdown-body pre {
   display: inline;
 }
 
+.bubble__text p,
 .bubble__text .markdown-body p {
   display: inline;
   margin: 0;

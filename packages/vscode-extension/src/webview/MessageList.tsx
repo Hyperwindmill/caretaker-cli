@@ -49,7 +49,7 @@ function Item({ item }: { item: ChatItem }) {
         <div className="bubble bubble--user">
           <div className="bubble__role">user</div>
           <div className="bubble__text">
-            <MarkdownText content={item.text} inline />
+            <MarkdownText content={item.text} />
           </div>
         </div>
       );
