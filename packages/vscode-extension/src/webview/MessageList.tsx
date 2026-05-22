@@ -2,19 +2,21 @@ import { useEffect, useRef, type ReactNode } from 'react';
 
 import type { ChatItem } from './App.js';
 import { MarkdownText } from './MarkdownText.js';
+import logo from './caretaker_cli.png';
 
 export interface MessageListProps {
   items: ChatItem[];
   trailing?: ReactNode;
+  isStreaming?: boolean;
 }
 
-export function MessageList({ items, trailing }: MessageListProps) {
+export function MessageList({ items, trailing, isStreaming }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
-  }, [items, trailing]);
+  }, [items, trailing, isStreaming]);
 
-  if (items.length === 0 && !trailing) {
+  if (items.length === 0 && !trailing && !isStreaming) {
     return (
       <div className="messages messages--empty">
         <p>Send a message to start.</p>
@@ -28,6 +30,12 @@ export function MessageList({ items, trailing }: MessageListProps) {
         <Item key={i} item={item} />
       ))}
       {trailing}
+      {isStreaming && (
+        <div className="messages__loading-indicator">
+          <img src={logo} alt="Loading" className="messages__loading-logo" />
+          <span className="messages__loading-text">Caretaker is thinking</span>
+        </div>
+      )}
       <div ref={bottomRef} />
     </div>
   );
