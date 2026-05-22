@@ -6,6 +6,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { App } from './App.js';
+import '@vscode/codicons/dist/codicon.css';
 import './styles.css';
 
 declare global {

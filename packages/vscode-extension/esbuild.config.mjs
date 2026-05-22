@@ -31,7 +31,7 @@ const webviewOpts = {
   format: 'iife',
   outfile: 'dist/webview.js',
   jsx: 'automatic',
-  loader: { '.css': 'css', '.png': 'dataurl' },
+  loader: { '.css': 'css', '.png': 'dataurl', '.ttf': 'dataurl' },
   define: {
     'process.env.NODE_ENV': '"production"',
   },
