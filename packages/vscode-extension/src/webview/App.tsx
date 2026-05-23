@@ -75,6 +75,7 @@ type Action =
   | { kind: 'permission-request'; id: string; toolName: string; args: unknown }
   | { kind: 'permission-resolved'; id: string }
   | { kind: 'done' }
+  | { kind: 'clear' }
   | { kind: 'error'; text: string }
   | { kind: 'load-history'; messages: ChatMessage[] }
   | { kind: 'context-usage'; usage: ContextUsage | null };
@@ -204,6 +205,16 @@ function reducer(state: State, action: Action): State {
         status: 'idle',
         pendingConfirms: [],
         items: closeStreamingAssistant(state.items),
+      };
+
+    case 'clear':
+      return {
+        ...state,
+        items: [],
+        status: 'idle',
+        errorText: null,
+        pendingConfirms: [],
+        contextUsage: null,
       };
 
     case 'error':
@@ -361,24 +372,24 @@ export function App({ postMessage }: AppProps) {
     setSelectedSessionId(null);
     setShowSessions(false);
     postMessage({ type: 'selectAgent', agentId });
-    // Reset chat state when switching agent
-    dispatch({ kind: 'done' });
+    // Clear chat state when switching agent
+    dispatch({ kind: 'clear' });
   };
 
   const onSelectSession = (sessionId: string): void => {
     setSelectedSessionId(sessionId);
     setShowSessions(false);
     postMessage({ type: 'selectSession', sessionId });
-    // Reset chat state when switching session
-    dispatch({ kind: 'done' });
+    // Clear chat state when switching session
+    dispatch({ kind: 'clear' });
   };
 
   const onCreateSession = (): void => {
     setSelectedSessionId(null);
     setShowSessions(false);
     postMessage({ type: 'createSession' });
-    // Reset chat state when creating new session
-    dispatch({ kind: 'done' });
+    // Clear chat state when creating new session
+    dispatch({ kind: 'clear' });
   };
 
   const onToggleSessions = (): void => {
