@@ -30,7 +30,11 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const sidebar = new SidebarWebviewProvider(context.extensionUri);
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(SidebarWebviewProvider.viewId, sidebar),
+    vscode.window.registerWebviewViewProvider(SidebarWebviewProvider.viewId, sidebar, {
+      webviewOptions: {
+        retainContextWhenHidden: true,
+      },
+    }),
     vscode.commands.registerCommand('caretaker.openChat', () => {
       void vscode.commands.executeCommand('workbench.view.extension.caretaker');
     }),
