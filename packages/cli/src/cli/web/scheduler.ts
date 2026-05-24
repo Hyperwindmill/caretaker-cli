@@ -436,7 +436,9 @@ async function executeTelegramTaskRun(
 
   let typingInterval: NodeJS.Timeout | null = null;
   const sendTyping = () => {
-    void tgApi(token, 'sendChatAction', { chat_id: chatId, action: 'typing' }).catch(() => {});
+    void tgApi(token, 'sendChatAction', { chat_id: chatId, action: 'typing' }).catch((err) => {
+      console.warn(`[scheduler/telegram] Failed to send typing indicator:`, err);
+    });
   };
 
   sendTyping();
