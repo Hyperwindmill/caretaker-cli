@@ -134,11 +134,21 @@ export function matchesCron(cronStr: string, date: Date): boolean {
   );
 }
 
+/** Task IDs currently being executed — prevents concurrent runs of the same task. */
+const runningTasks = new Set<string>();
+
 /**
  * Headless runner execution of a single task prompt loop.
  * Runs completely in background, automatically approving tool runs.
+ * Guards against concurrent execution: if the task is already running, skips.
  */
 export async function executeTaskRun(task: ScheduledTaskConfig): Promise<void> {
+  if (runningTasks.has(task.id)) {
+    console.log(`[scheduler] Task "${task.name}" is already running — skipping.`);
+    return;
+  }
+  runningTasks.add(task.id);
+
   const runId = `run_${randomUUID().slice(0, 8)}`;
   console.log(`[scheduler] Starting execution run ${runId} for task: "${task.name}"`);
 
@@ -237,6 +247,9 @@ export async function executeTaskRun(task: ScheduledTaskConfig): Promise<void> {
       error: errorMsg,
       messages: chatMessages,
     });
+  } finally {
+    // Always release the lock so future ticks can re-schedule this task
+    runningTasks.delete(task.id);
   }
 }
 
