@@ -4,18 +4,23 @@ export type ProviderConfig = {
   apiKey?: string;
 };
 
-export type HeartbeatSchedulerConfig = {
+export type ScheduledTaskConfig = {
+  id: string;
+  name: string;
+  type: 'heartbeat';
   enabled: boolean;
   agentId: string;
+  cron: string;
   workingDir?: string;
   prompt: string;
-  cron: string;
 };
 
 export type CaretakerConfig = {
   port: number;
   providers: ProviderConfig[];
-  scheduler?: HeartbeatSchedulerConfig;
+  scheduler?: {
+    tasks: ScheduledTaskConfig[];
+  };
 };
 
 export type PluginManifestKind = 'cc-marketplace' | 'cc-plugin' | 'skill-glob';
