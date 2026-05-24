@@ -434,17 +434,19 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
 
   if (activeScreen === 'settings') {
     return (
-      <SettingsPanel
-        layout={layout}
-        postMessage={postMessage}
-        settingsData={settingsData}
-        modelsResult={modelsResult}
-        setModelsResult={setModelsResult}
-        refreshingSourceId={refreshingSourceId}
-        refreshOutcome={refreshOutcome}
-        setRefreshOutcome={setRefreshOutcome}
-        onClose={() => setActiveScreen('chat')}
-      />
+      <div className={`app ${layout === 'sidebar' ? 'app--settings-centered' : ''}`}>
+        <SettingsPanel
+          layout={layout}
+          postMessage={postMessage}
+          settingsData={settingsData}
+          modelsResult={modelsResult}
+          setModelsResult={setModelsResult}
+          refreshingSourceId={refreshingSourceId}
+          refreshOutcome={refreshOutcome}
+          setRefreshOutcome={setRefreshOutcome}
+          onClose={() => setActiveScreen('chat')}
+        />
+      </div>
     );
   }
 
