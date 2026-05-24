@@ -254,13 +254,12 @@ body {
   cursor: not-allowed;
 }
 
-.app__settings-btn .codicon {
-  font-size: 14px;
+.app__settings-btn .app__settings-icon {
   display: inline-block;
   transition: transform 0.4s ease;
 }
 
-.app__settings-btn:hover:not(:disabled) .codicon {
+.app__settings-btn:hover:not(:disabled) .app__settings-icon {
   transform: rotate(45deg);
 }
 

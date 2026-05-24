@@ -3,7 +3,7 @@
 // tool. Mirrors the TUI labels: Run once / Always (this session) /
 // Reject — same vocabulary the harness ConfirmDecision uses.
 
-import type { ConfirmDecision } from '../bridge.js';
+import type { ConfirmDecision } from './bridge.js';
 import type { PendingConfirm } from './App.js';
 
 export interface ConfirmCardProps {

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { CaretakerConfig, AgentConfig, ProviderConfig } from 'caretaker-cli/types';
-import type { ViewToHost } from '../bridge.js';
+import type { ViewToHost } from './bridge.js';
 
 interface ProvidersTabProps {
   config: CaretakerConfig;

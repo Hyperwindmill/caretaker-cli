@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { PluginsFile, PluginSource, PluginRecord } from 'caretaker-cli/types';
-import type { ViewToHost, RefreshOutcome } from '../bridge.js';
+import type { ViewToHost, RefreshOutcome } from './bridge.js';
 
 interface PluginsTabProps {
   pluginsFile: PluginsFile;

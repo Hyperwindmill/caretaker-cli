@@ -46,7 +46,7 @@ import {
   type ConfirmDecision,
   type HostToView,
   type ViewToHost,
-} from './bridge.js';
+} from 'webview-ui/bridge';
 import { ChatSessionController } from './session.js';
 
 export class SidebarWebviewProvider implements vscode.WebviewViewProvider {

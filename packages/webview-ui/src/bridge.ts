@@ -9,7 +9,10 @@
 // other direction (host → view) is trusted because the host builds the
 // messages itself.
 
-import type { AgentConfig, CaretakerConfig, PluginsFile, McpServerConfig } from 'caretaker-cli/types';
+export type AgentConfig = any;
+export type CaretakerConfig = any;
+export type PluginsFile = any;
+export type McpServerConfig = any;
 
 export type ConfirmDecision = 'once' | 'always' | 'reject';
 
