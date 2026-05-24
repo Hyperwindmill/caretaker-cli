@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rm, readFile } from 'node:fs/promises';
+import { rm, readFile, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 import {
   schedulerLogPath,
@@ -10,7 +11,11 @@ import {
   schedulerLogsDir,
 } from './scheduler.js';
 import { matchesCron } from './scheduler/heartbeat.js';
-import { splitMessage } from './scheduler/telegram.js';
+import {
+  splitMessage,
+  saveTelegramOffset,
+  loadTelegramOffset,
+} from './scheduler/telegram.js';
 
 test('scheduler: matchesCron evaluates wildcard correctly', () => {
   const d = new Date('2026-05-24T12:30:00Z');
@@ -110,4 +115,45 @@ test('scheduler: splitMessage splits long text correctly', () => {
   assert.equal(chunks.length, 2);
   assert.equal(chunks[0], segment1);
   assert.equal(chunks[1], segment2);
+});
+
+test('scheduler: telegram offset round-trip and atomic write leaves no .tmp orphans', async () => {
+  const taskId = 'test-offset-task';
+  const path = join(schedulerLogsDir(), `${taskId}.offset`);
+  await rm(path, { force: true });
+
+  assert.equal(await loadTelegramOffset(taskId), undefined);
+
+  await saveTelegramOffset(taskId, 42);
+  assert.equal(await loadTelegramOffset(taskId), 42);
+
+  // Overwrite to verify rename-over-existing works
+  await saveTelegramOffset(taskId, 100);
+  assert.equal(await loadTelegramOffset(taskId), 100);
+
+  // No leftover .tmp files for this task
+  const dir = schedulerLogsDir();
+  const entries = await readdir(dir);
+  const orphans = entries.filter(
+    (e) => e.startsWith(`${taskId}.offset.tmp.`),
+  );
+  assert.deepEqual(orphans, []);
+
+  await rm(path, { force: true });
+});
+
+test('scheduler: loadTelegramOffset returns undefined on corrupted file', async () => {
+  const taskId = 'test-offset-corrupt';
+  const path = join(schedulerLogsDir(), `${taskId}.offset`);
+  await rm(path, { force: true });
+
+  // Hand-craft a non-numeric file
+  const { writeFile } = await import('node:fs/promises');
+  const { mkdir } = await import('node:fs/promises');
+  await mkdir(schedulerLogsDir(), { recursive: true });
+  await writeFile(path, 'not-a-number', 'utf8');
+
+  assert.equal(await loadTelegramOffset(taskId), undefined);
+
+  await rm(path, { force: true });
 });
