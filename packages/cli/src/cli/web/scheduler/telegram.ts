@@ -15,7 +15,8 @@ import {
 import type { MessageRecord } from '../../../session/types.js';
 import type { ScheduledTaskConfig } from '../../../types.js';
 import { decrypt, isEncrypted } from '../../../lib/encryption.js';
-import { runningTasks, schedulerLogsDir } from '../scheduler.js';
+import { schedulerLogsDir } from './logs.js';
+import { runningTasks } from './locks.js';
 import type { SchedulerStrategy } from './strategy.js';
 
 export async function saveTelegramOffset(taskId: string, updateId: number): Promise<void> {
@@ -185,9 +186,7 @@ async function executeTelegramTaskRun(
     await tgApi(token, 'sendMessage', {
       chat_id: msg.chat.id,
       text: '⚠️ A session is already in progress in this chat. Please wait for it to complete.',
-    }).catch((err) => {
-      console.warn(`[scheduler/telegram] Failed to send busy notice to chat ${msg.chat.id}:`, err);
-    });
+    }).catch(() => {});
     return;
   }
   runningTasks.add(compoundLockKey);
