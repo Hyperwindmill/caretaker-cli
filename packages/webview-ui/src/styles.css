@@ -2295,6 +2295,52 @@ body.vscode-light .settings-panel__tab-btn--active {
   }
 }
 
+/* Agent Collapsible Switcher Styling */
+.app__sidebar-agent-item--collapsed-active {
+  background: oklch(0.55 0.22 250 / 0.08) !important;
+  border: 1px solid oklch(0.55 0.22 250 / 0.25) !important;
+  font-weight: 600;
+}
+
+.app__sidebar-agent-item--collapsed-active:hover {
+  background: oklch(0.55 0.22 250 / 0.12) !important;
+  border-color: oklch(0.55 0.22 250 / 0.4) !important;
+  box-shadow: 0 4px 14px oklch(0.55 0.22 250 / 0.12);
+}
+
+.app__sidebar-chevron {
+  margin-left: auto;
+  opacity: 0.5;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+}
+
+.app__sidebar-agent-item:hover .app__sidebar-chevron {
+  opacity: 0.9;
+}
+
+.app__sidebar-chevron--up {
+  margin-left: auto;
+  opacity: 0.6;
+}
+
+.app__sidebar-agents-list-expanded {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  animation: slideDownFade 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes slideDownFade {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .app__chat-pane {
   flex: 1;
   display: flex;
