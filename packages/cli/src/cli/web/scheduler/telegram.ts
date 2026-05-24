@@ -186,7 +186,9 @@ async function executeTelegramTaskRun(
     await tgApi(token, 'sendMessage', {
       chat_id: msg.chat.id,
       text: '⚠️ A session is already in progress in this chat. Please wait for it to complete.',
-    }).catch(() => {});
+    }).catch((err) => {
+      console.warn(`[scheduler/telegram] Failed to send busy notice to chat ${msg.chat.id}:`, err);
+    });
     return;
   }
   runningTasks.add(compoundLockKey);
@@ -221,7 +223,12 @@ async function executeTelegramTaskRun(
       clearTimeout(toolCallTimer);
       toolCallTimer = null;
     }
-    await tgApi(token, 'sendMessage', { chat_id: chatId, text }).catch(() => {});
+    await tgApi(token, 'sendMessage', { chat_id: chatId, text }).catch((err) => {
+      console.warn(
+        `[scheduler/telegram] Failed to flush tool-call summary to chat ${chatId}:`,
+        err,
+      );
+    });
   };
 
   const queueToolCall = (toolName: string, summary: string) => {
@@ -320,10 +327,16 @@ async function executeTelegramTaskRun(
                   text: chunk,
                   parse_mode: 'Markdown',
                 }).catch(async () => {
+                  // Markdown rejected by Telegram (unbalanced backticks, etc.) — retry as plain text.
                   await tgApi(token, 'sendMessage', {
                     chat_id: chatId,
                     text: chunk,
-                  }).catch(() => {});
+                  }).catch((err) => {
+                    console.warn(
+                      `[scheduler/telegram] Failed to deliver assistant chunk to chat ${chatId}:`,
+                      err,
+                    );
+                  });
                 });
               }
             }
@@ -357,7 +370,12 @@ async function executeTelegramTaskRun(
     await tgApi(token, 'sendMessage', {
       chat_id: chatId,
       text: `❌ Agent error: ${errorMsg}`,
-    }).catch(() => {});
+    }).catch((sendErr) => {
+      console.warn(
+        `[scheduler/telegram] Failed to deliver error notice to chat ${chatId}:`,
+        sendErr,
+      );
+    });
 
   } finally {
     if (typingInterval) {
