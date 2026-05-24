@@ -277,6 +277,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [showSessions, setShowSessions] = useState(false);
+  const [showAllAgents, setShowAllAgents] = useState(false);
 
   const [activeScreen, setActiveScreen] = useState<'chat' | 'settings'>('chat');
   const [settingsData, setSettingsData] = useState<{
@@ -385,6 +386,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
     setSelectedAgentId(agentId);
     setSelectedSessionId(null);
     setShowSessions(false);
+    setShowAllAgents(false);
     postMessage({ type: 'selectAgent', agentId });
     // Clear chat state when switching agent
     dispatch({ kind: 'clear' });
@@ -428,6 +430,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
     chatState.status === 'streaming' || chatState.pendingConfirms.length > 0 || !selectedAgentId;
 
   const selectedAgentName = agents.find((a) => a.id === selectedAgentId)?.name;
+  const activeAgent = agents.find((a) => a.id === selectedAgentId);
 
   if (activeScreen === 'settings') {
     return (
@@ -459,19 +462,49 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
             <div className="app__sidebar-section">
               <div className="app__sidebar-section-title">Agents</div>
               <div className="app__sidebar-agents-list">
-                {agents.length === 0 ? (
-                  <div className="app__sidebar-empty-text">No agents found</div>
+                {selectedAgentId && !showAllAgents ? (
+                  <button
+                    className="app__sidebar-agent-item app__sidebar-agent-item--collapsed-active"
+                    onClick={() => setShowAllAgents(true)}
+                    title="Switch Agent"
+                  >
+                    <span className="agent-status-dot agent-status-dot--active" />
+                    <span className="app__sidebar-agent-name">{activeAgent?.name || selectedAgentId}</span>
+                    <svg className="app__sidebar-chevron" width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+                      <path d="M1 3.5 L5 7.5 L9 3.5 Z" />
+                    </svg>
+                  </button>
                 ) : (
-                  agents.map((agent) => (
-                    <button
-                      key={agent.id}
-                      className={`app__sidebar-agent-item ${selectedAgentId === agent.id ? 'app__sidebar-agent-item--active' : ''}`}
-                      onClick={() => onSelectAgent(agent.id)}
-                    >
-                      <span className={`agent-status-dot ${selectedAgentId === agent.id ? 'agent-status-dot--active' : ''}`} />
-                      <span className="app__sidebar-agent-name">{agent.name}</span>
-                    </button>
-                  ))
+                  <div className={`app__sidebar-agents-list-expanded ${selectedAgentId ? 'app__sidebar-agents-list-expanded--has-active' : ''}`}>
+                    {agents.length === 0 ? (
+                      <div className="app__sidebar-empty-text">No agents found</div>
+                    ) : (
+                      agents.map((agent) => {
+                        const isSelected = selectedAgentId === agent.id;
+                        return (
+                          <button
+                            key={agent.id}
+                            className={`app__sidebar-agent-item ${isSelected ? 'app__sidebar-agent-item--active' : ''}`}
+                            onClick={() => {
+                              if (isSelected) {
+                                setShowAllAgents(false);
+                              } else {
+                                onSelectAgent(agent.id);
+                              }
+                            }}
+                          >
+                            <span className={`agent-status-dot ${isSelected ? 'agent-status-dot--active' : ''}`} />
+                            <span className="app__sidebar-agent-name">{agent.name}</span>
+                            {isSelected && (
+                              <svg className="app__sidebar-chevron app__sidebar-chevron--up" width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+                                <path d="M1 6.5 L5 2.5 L9 6.5 Z" />
+                              </svg>
+                            )}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
                 )}
               </div>
             </div>
