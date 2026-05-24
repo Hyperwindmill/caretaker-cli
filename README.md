@@ -72,10 +72,10 @@ Refresh failures preserve the previous good state, so an outage doesn't strip pl
 
 ### Sub-agent dispatch
 
-`list_agents` and `invoke_agent` are always-on. Two modes:
+When you opt the agent into `list_agents` and `invoke_agent` (same tri-state as every other tool), the agent can dispatch work in two modes:
 
 - **Named** — `invoke_agent({name, task})` dispatches a configured agent. The child inherits provider/model/tools/plugins/mcpServers/workingDir from the caller when its own fields are empty, but **never** `systemPrompt` or `maxTurns`. Self-invocation is rejected.
-- **Anonymous** — `invoke_agent({task})` (no `name`) spins up an ephemeral generic agent that inherits everything from the caller and has no `systemPrompt` of its own; the task IS the prompt. Useful for delegating speculative subtasks without polluting the parent's history or dragging the parent's identity along. Works fine when only one agent is configured — that's the whole point of anonymous dispatch.
+- **Anonymous** — `invoke_agent({task})` (no `name`) spins up an ephemeral generic agent that inherits everything from the caller and has no `systemPrompt` of its own; the task IS the prompt. Useful for delegating speculative subtasks without polluting the parent's history or dragging the parent's identity along. Works even when only one agent is configured — that's the whole point of anonymous dispatch.
 
 Recursion is capped at depth 5. The confirm gate is plumbed all the way through, so the user still gates child tool calls.
 
@@ -114,11 +114,18 @@ Filesystem (sandboxed to the agent's working directory): `read_file`, `write`, `
 
 Network: `fetch`. Shell: `bash`.
 
-Auto-injected by the resolver (so the agent's opt-in surface isn't polluted by them):
+Always-on (not configurable from the picker because it's pure introspection):
 
-- `get_agent_context`, `list_agents`, `invoke_agent` — **always on**. `invoke_agent` is useful even with a single agent thanks to its anonymous mode (see _Sub-agent dispatch_), so the tools are always discoverable.
+- `get_agent_context` — live token usage and context-window percentage. Read-only, no side effects.
+
+Auto-injected by the resolver when their preconditions hold (so a fresh agent's opt-in surface isn't polluted by them):
+
 - `list_skills`, `read_skill` — when the agent has at least one active plugin.
 - `list_commands`, `invoke_command` — same gating as skills.
+
+Standard opt-in (tri-state in the agent's tool picker, like every other tool):
+
+- `list_agents`, `invoke_agent` — sub-agent dispatch. `[x]` allowed or `[!]` confirm. `invoke_agent` is dual-mode (named + anonymous) — see _Sub-agent dispatch_.
 
 ## Layout
 

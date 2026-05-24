@@ -1,15 +1,22 @@
 // Resolve the Tool[] visible to a single run, given the agent config and
 // the process-wide registry. Layers on top of allowedTools:
-//   - Always-on builtins: `get_agent_context` (live token usage),
-//     `list_agents` + `invoke_agent` (sub-agent dispatch — anonymous mode
-//     `invoke_agent({task})` is always valid regardless of how many agents
-//     are configured, so the tools are always discoverable).
+//   - Always-on builtin: `get_agent_context`. Pure introspection (live
+//     token usage / context-window %); read-only, no side effects, no
+//     reason to ever hide it from the model.
 //   - Plugin-gated builtins: when the agent has at least one active
 //     plugin, the skill (`list_skills`/`read_skill`) and command
-//     (`list_commands`/`invoke_command`) access tools are added.
+//     (`list_commands`/`invoke_command`) access tools are added even if
+//     the user did not list them in allowedTools — they are useless
+//     without an active plugin and noisy if shown without one.
 //   - MCP tools: when the agent references MCP servers, their tools/list
 //     output is fetched via the adapter and appended (names already
 //     namespaced as `mcp__<id>__<toolName>`).
+//
+// Every other builtin — including `list_agents` and `invoke_agent` — is
+// gated by the user's `allowedTools` selection. The agents UI exposes
+// the same tri-state for them as for any other tool; the runtime
+// honours the chosen state instead of silently re-enabling capabilities
+// the user disabled.
 //
 // MCP tools are NOT registered into the process-wide registry: we resolve
 // them per-run because the remote tool list can change between runs and we
@@ -22,7 +29,7 @@ import { mcpToolsForServers } from '../../mcp/adapter.js';
 
 const SKILL_TOOL_NAMES = ['list_skills', 'read_skill'] as const;
 const COMMAND_TOOL_NAMES = ['list_commands', 'invoke_command'] as const;
-const ALWAYS_ON_TOOL_NAMES = ['get_agent_context', 'list_agents', 'invoke_agent'] as const;
+const ALWAYS_ON_TOOL_NAMES = ['get_agent_context'] as const;
 
 function autoInclude(tools: Tool[], registry: ToolRegistry, names: readonly string[]): void {
   const have = new Set(tools.map((t) => t.name));
