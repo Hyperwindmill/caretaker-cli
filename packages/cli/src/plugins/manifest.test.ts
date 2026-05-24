@@ -323,74 +323,71 @@ test('discoverPlugins falls through when marketplace.json contains only invalid 
   }
 });
 
-test("discoverPluginSkills (cc-plugin): one entry per skills/<name>/SKILL.md", async () => {
-  const dir = mkdtempSync(path.join(tmpdir(), "plug-skills-"));
+test('discoverPluginSkills (cc-plugin): one entry per skills/<name>/SKILL.md', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'plug-skills-'));
   try {
     mk(
       dir,
-      "skills/brainstorming/SKILL.md",
-      "---\nname: brainstorming\ndescription: brainstorm stuff\n---\n\nBody A.",
+      'skills/brainstorming/SKILL.md',
+      '---\nname: brainstorming\ndescription: brainstorm stuff\n---\n\nBody A.',
     );
     mk(
       dir,
-      "skills/requesting-code-review/SKILL.md",
-      "---\nname: requesting-code-review\ndescription: review\n---\n\nBody B.",
+      'skills/requesting-code-review/SKILL.md',
+      '---\nname: requesting-code-review\ndescription: review\n---\n\nBody B.',
     );
-    mk(dir, "skills/no-frontmatter/SKILL.md", "Body C without frontmatter.");
+    mk(dir, 'skills/no-frontmatter/SKILL.md', 'Body C without frontmatter.');
 
-    const out = await discoverPluginSkills(dir, "cc-plugin", "fallback-name");
+    const out = await discoverPluginSkills(dir, 'cc-plugin', 'fallback-name');
     assert.ok(out);
-    assert.deepEqual(
-      Object.keys(out!).sort(),
-      ["brainstorming", "no-frontmatter", "requesting-code-review"],
-    );
+    assert.deepEqual(Object.keys(out!).sort(), [
+      'brainstorming',
+      'no-frontmatter',
+      'requesting-code-review',
+    ]);
     const a = out!.brainstorming;
-    assert.equal(a.name, "brainstorming");
-    assert.equal(a.description, "brainstorm stuff");
-    assert.equal(a.relPath, "skills/brainstorming/SKILL.md");
+    assert.equal(a.name, 'brainstorming');
+    assert.equal(a.description, 'brainstorm stuff');
+    assert.equal(a.relPath, 'skills/brainstorming/SKILL.md');
     // No-frontmatter file uses the directory basename as scopedName.
-    assert.equal(out!["no-frontmatter"].name, "no-frontmatter");
-    assert.equal(out!["no-frontmatter"].description, undefined);
+    assert.equal(out!['no-frontmatter'].name, 'no-frontmatter');
+    assert.equal(out!['no-frontmatter'].description, undefined);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("discoverPluginSkills (skill-glob): single SKILL.md at plugin root", async () => {
-  const dir = mkdtempSync(path.join(tmpdir(), "plug-skills-"));
+test('discoverPluginSkills (skill-glob): single SKILL.md at plugin root', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'plug-skills-'));
   try {
-    mk(
-      dir,
-      "SKILL.md",
-      "---\nname: brainstorming\ndescription: top-level skill\n---\n\nBody.",
-    );
-    const out = await discoverPluginSkills(dir, "skill-glob", "fallback");
+    mk(dir, 'SKILL.md', '---\nname: brainstorming\ndescription: top-level skill\n---\n\nBody.');
+    const out = await discoverPluginSkills(dir, 'skill-glob', 'fallback');
     assert.ok(out);
     // Only one entry; key = frontmatter name.
-    assert.deepEqual(Object.keys(out!), ["brainstorming"]);
-    assert.equal(out!.brainstorming.relPath, "SKILL.md");
+    assert.deepEqual(Object.keys(out!), ['brainstorming']);
+    assert.equal(out!.brainstorming.relPath, 'SKILL.md');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("discoverPluginSkills (skill-glob): falls back to plugin name when SKILL.md has no frontmatter", async () => {
-  const dir = mkdtempSync(path.join(tmpdir(), "plug-skills-"));
+test('discoverPluginSkills (skill-glob): falls back to plugin name when SKILL.md has no frontmatter', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'plug-skills-'));
   try {
-    mk(dir, "SKILL.md", "Just body, no frontmatter.");
-    const out = await discoverPluginSkills(dir, "skill-glob", "my-plugin");
+    mk(dir, 'SKILL.md', 'Just body, no frontmatter.');
+    const out = await discoverPluginSkills(dir, 'skill-glob', 'my-plugin');
     assert.ok(out);
-    assert.deepEqual(Object.keys(out!), ["my-plugin"]);
+    assert.deepEqual(Object.keys(out!), ['my-plugin']);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("discoverPluginSkills returns undefined when no SKILL.md is present", async () => {
-  const dir = mkdtempSync(path.join(tmpdir(), "plug-skills-"));
+test('discoverPluginSkills returns undefined when no SKILL.md is present', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'plug-skills-'));
   try {
-    assert.equal(await discoverPluginSkills(dir, "cc-plugin", "x"), undefined);
-    assert.equal(await discoverPluginSkills(dir, "skill-glob", "x"), undefined);
+    assert.equal(await discoverPluginSkills(dir, 'cc-plugin', 'x'), undefined);
+    assert.equal(await discoverPluginSkills(dir, 'skill-glob', 'x'), undefined);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

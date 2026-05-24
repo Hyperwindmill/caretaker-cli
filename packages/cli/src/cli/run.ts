@@ -99,8 +99,7 @@ export async function runCommand(prompt: string, opts: RunOptions): Promise<numb
           onChunk: (s) => process.stdout.write(s),
           onToolCall: (_id, name, args) =>
             process.stdout.write(`\n  → tool ${name}(${JSON.stringify(args)})`),
-          onToolResult: (_id, content) =>
-            process.stdout.write(`\n  ← ${content.slice(0, 200)}\n`),
+          onToolResult: (_id, content) => process.stdout.write(`\n  ← ${content.slice(0, 200)}\n`),
         },
   );
 

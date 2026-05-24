@@ -69,9 +69,7 @@ describe('list_skills tool', () => {
       });
       const out = await listSkills.execute({}, ctx(['alpha']));
       const parsed = JSON.parse(out.content);
-      assert.deepEqual(parsed, [
-        { name: 'alpha', description: 'alpha desc', plugin: 'alpha' },
-      ]);
+      assert.deepEqual(parsed, [{ name: 'alpha', description: 'alpha desc', plugin: 'alpha' }]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

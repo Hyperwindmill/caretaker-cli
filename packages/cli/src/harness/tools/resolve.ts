@@ -22,11 +22,7 @@ import { mcpToolsForServers } from '../../mcp/adapter.js';
 
 const SKILL_TOOL_NAMES = ['list_skills', 'read_skill'] as const;
 const COMMAND_TOOL_NAMES = ['list_commands', 'invoke_command'] as const;
-const ALWAYS_ON_TOOL_NAMES = [
-  'get_agent_context',
-  'list_agents',
-  'invoke_agent',
-] as const;
+const ALWAYS_ON_TOOL_NAMES = ['get_agent_context', 'list_agents', 'invoke_agent'] as const;
 
 function autoInclude(tools: Tool[], registry: ToolRegistry, names: readonly string[]): void {
   const have = new Set(tools.map((t) => t.name));

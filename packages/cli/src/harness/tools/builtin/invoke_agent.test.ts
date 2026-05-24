@@ -87,10 +87,7 @@ describe('invoke_agent tool', () => {
   });
 
   it('rejects when name is provided but the agent does not exist', async () => {
-    const out = await invokeAgentTool.execute(
-      { name: 'nonexistent', task: 'hi' },
-      ctx(agent()),
-    );
+    const out = await invokeAgentTool.execute({ name: 'nonexistent', task: 'hi' }, ctx(agent()));
     assert.match(out.content, /not found/);
   });
 

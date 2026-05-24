@@ -81,7 +81,7 @@ describe('source_manager', () => {
     }
   });
 
-it('refreshSource preserves managed AgentConfig.id (downstream of stable PluginRecord.id)', async () => {
+  it('refreshSource preserves managed AgentConfig.id (downstream of stable PluginRecord.id)', async () => {
     const dir = makePathSource('with-agents', 'has a sub-agent');
     mkdirSync(path.join(dir, 'agents'), { recursive: true });
     writeFileSync(
@@ -91,9 +91,7 @@ it('refreshSource preserves managed AgentConfig.id (downstream of stable PluginR
     try {
       const created = await mgr.createSource({ kind: 'path', url: dir });
       await mgr.refreshSource(created.id);
-      const managedFirst = (await store.loadAgents()).find(
-        (a) => a.pluginScopedName === 'helper',
-      );
+      const managedFirst = (await store.loadAgents()).find((a) => a.pluginScopedName === 'helper');
       assert.ok(managedFirst, 'first refresh should materialize a managed agent');
 
       // Tweak the plugin.json so the refresh has something to rewrite.
@@ -102,15 +100,9 @@ it('refreshSource preserves managed AgentConfig.id (downstream of stable PluginR
         JSON.stringify({ name: 'with-agents', description: 'tweaked' }),
       );
       await mgr.refreshSource(created.id);
-      const managedSecond = (await store.loadAgents()).find(
-        (a) => a.pluginScopedName === 'helper',
-      );
+      const managedSecond = (await store.loadAgents()).find((a) => a.pluginScopedName === 'helper');
       assert.ok(managedSecond);
-      assert.equal(
-        managedSecond!.id,
-        managedFirst!.id,
-        'managed agent id must survive refresh',
-      );
+      assert.equal(managedSecond!.id, managedFirst!.id, 'managed agent id must survive refresh');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -23,11 +23,7 @@ import {
   patchSource,
   refreshSource,
 } from '../../plugins/source_manager.js';
-import {
-  createMcpServer,
-  deleteMcpServer,
-  patchMcpServer,
-} from '../../mcp/server_manager.js';
+import { createMcpServer, deleteMcpServer, patchMcpServer } from '../../mcp/server_manager.js';
 import {
   listForAgent,
   readSession,
@@ -36,15 +32,12 @@ import {
   userMessage,
   appendMessage,
   type MessageRecord,
-  type SessionMetaRecord
+  type SessionMetaRecord,
 } from '../../session/index.js';
 
 import type { AgentConfig, ProviderConfig, PluginsFile, McpServerConfig } from '../../types.js';
 import type { ConfirmDecision, HostToView, ViewToHost } from 'webview-ui/bridge';
-import {
-  startBackgroundScheduler,
-  loadTaskRuns,
-} from './scheduler.js';
+import { startBackgroundScheduler, loadTaskRuns } from './scheduler.js';
 
 // Resolve Webview static files path
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -74,7 +67,7 @@ export class WebSessionController {
       tools: harness.Tool[];
       workingDir: string;
       sessionId?: string;
-    }
+    },
   ) {
     this.confirmSet = new Set(opts.agent.confirmTools ?? []);
     this.sessionId = opts.sessionId;
@@ -165,7 +158,10 @@ export async function startServer(port: number, host: string): Promise<void> {
       const html = fs.readFileSync(path.join(webviewDistPath, 'index.html'), 'utf-8');
       return c.html(html);
     } catch {
-      return c.text('Caretaker Web standalone build not found. Did you run "pnpm -F webview-ui build"?', 500);
+      return c.text(
+        'Caretaker Web standalone build not found. Did you run "pnpm -F webview-ui build"?',
+        500,
+      );
     }
   });
 
