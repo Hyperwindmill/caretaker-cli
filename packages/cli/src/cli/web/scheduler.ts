@@ -153,6 +153,8 @@ export async function executeTaskRun(task: ScheduledTaskConfig): Promise<void> {
   console.log(`[scheduler] Starting execution run ${runId} for task: "${task.name}"`);
 
   const runMessages: MessageRecord[] = [];
+  const unattendedNotice = `[UNATTENDED RUN] Note: You are running as an unattended scheduled task. No human is supervising this execution. Act autonomously, execute required tools, and complete the task to the best of your ability.`;
+  const effectivePrompt = `${unattendedNotice}\n\n${task.prompt}`;
 
   try {
     const [agents, config] = await Promise.all([loadAgents(), loadConfig()]);
@@ -168,9 +170,6 @@ export async function executeTaskRun(task: ScheduledTaskConfig): Promise<void> {
 
     const tools = await harness.resolveAgentTools(agent, harness.tools);
     const workingDir = task.workingDir || agent.workingDir || process.cwd();
-
-    const unattendedNotice = `[UNATTENDED RUN] Note: You are running as an unattended scheduled task. No human is supervising this execution. Act autonomously, execute required tools, and complete the task to the best of your ability.`;
-    const effectivePrompt = `${unattendedNotice}\n\n${task.prompt}`;
 
     // Track the initial user prompt inside run history
     const startMsg = userMessage(effectivePrompt);
