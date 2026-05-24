@@ -129,7 +129,7 @@ function StandaloneApp() {
     );
   }
 
-  return <App postMessage={postMessage} />;
+  return <App postMessage={postMessage} layout="sidebar" />;
 }
 
 const rootEl = document.getElementById('root');

@@ -260,9 +260,10 @@ function reducer(state: State, action: Action): State {
 
 export interface AppProps {
   postMessage: (msg: ViewToHost) => void;
+  layout?: 'compact' | 'sidebar';
 }
 
-export function App({ postMessage }: AppProps) {
+export function App({ postMessage, layout = 'compact' }: AppProps) {
   const [chatState, dispatch] = useReducer(reducer, {
     items: [],
     status: 'idle',
@@ -440,6 +441,126 @@ export function App({ postMessage }: AppProps) {
         setRefreshOutcome={setRefreshOutcome}
         onClose={() => setActiveScreen('chat')}
       />
+    );
+  }
+
+  if (layout === 'sidebar') {
+    return (
+      <div className="app app--with-sidebar">
+        <aside className="app__sidebar">
+          <div className="app__sidebar-header">
+            <div className="app__logo-title-wrapper">
+              <img src={logo} alt="Caretaker" className="app__logo" />
+              <span>Caretaker</span>
+            </div>
+          </div>
+          
+          <div className="app__sidebar-content">
+            <div className="app__sidebar-section">
+              <div className="app__sidebar-section-title">Agents</div>
+              <div className="app__sidebar-agents-list">
+                {agents.length === 0 ? (
+                  <div className="app__sidebar-empty-text">No agents found</div>
+                ) : (
+                  agents.map((agent) => (
+                    <button
+                      key={agent.id}
+                      className={`app__sidebar-agent-item ${selectedAgentId === agent.id ? 'app__sidebar-agent-item--active' : ''}`}
+                      onClick={() => onSelectAgent(agent.id)}
+                    >
+                      <span className={`agent-status-dot ${selectedAgentId === agent.id ? 'agent-status-dot--active' : ''}`} />
+                      <span className="app__sidebar-agent-name">{agent.name}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {selectedAgentId && (
+              <div className="app__sidebar-section">
+                <div className="app__sidebar-section-header">
+                  <span className="app__sidebar-section-title">Conversations</span>
+                  <button
+                    className="app__sidebar-new-chat-btn"
+                    onClick={onCreateSession}
+                    title="New Chat"
+                  >
+                    + New
+                  </button>
+                </div>
+                <div className="app__sidebar-sessions-list">
+                  {sessions.length === 0 ? (
+                    <div className="app__sidebar-empty-text">No conversations yet</div>
+                  ) : (
+                    sessions.map((session) => (
+                      <button
+                        key={session.id}
+                        className={`app__sidebar-session-item ${selectedSessionId === session.id ? 'app__sidebar-session-item--active' : ''}`}
+                        onClick={() => onSelectSession(session.id)}
+                      >
+                        <span className="app__sidebar-session-icon">💬</span>
+                        <span className="app__sidebar-session-title" title={session.title}>{session.title}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="app__sidebar-footer">
+            <button
+              className="app__sidebar-settings-btn"
+              onClick={() => {
+                setActiveScreen('settings');
+                postMessage({ type: 'getSettingsData' });
+              }}
+              title="Caretaker Settings"
+            >
+              <svg className="app__settings-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+                <path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.17.311c.58.988.004 2.257-.872 2.105l-.34-.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.699 1.283.705 2.686 1.987 1.987l.311-.17a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.699 2.686-.705 1.987-1.987l-.17-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.699-1.283-.705-2.686-1.987-1.987l-.311.17a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"/>
+              </svg>
+              <span>Settings</span>
+            </button>
+          </div>
+        </aside>
+
+        <main className="app__chat-pane">
+          {selectedAgentId ? (
+            <>
+              <header className="app__chat-header">
+                <div className="app__chat-header-info">
+                  <h2 className="app__chat-header-title">{selectedAgentName}</h2>
+                  <span className="app__chat-header-status">
+                    <span className={`agent-status-dot agent-status-dot--active ${chatState.status === 'streaming' ? 'agent-status-dot--pulsing' : ''}`} />
+                    {chatState.status === 'streaming' ? 'Streaming response...' : 'Ready'}
+                  </span>
+                </div>
+              </header>
+              <MessageList
+                items={chatState.items}
+                isStreaming={chatState.status === 'streaming'}
+                agentName={selectedAgentName}
+                trailing={chatState.pendingConfirms.map((p) => (
+                  <ConfirmCard key={p.id} pending={p} onDecide={onConfirm} />
+                ))}
+              />
+              {chatState.errorText && <div className="app__error">⚠ {chatState.errorText}</div>}
+              <Composer
+                disabled={composerDisabled}
+                onSend={onSend}
+                canAbort={chatState.status === 'streaming'}
+                onAbort={onAbort}
+                contextUsage={chatState.contextUsage}
+              />
+            </>
+          ) : (
+            <div className="app__empty-state">
+              <p>Select an agent from the sidebar to start chatting</p>
+            </div>
+          )}
+        </main>
+      </div>
     );
   }
 
