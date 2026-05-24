@@ -93,12 +93,14 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
 
   // Form states
   const [name, setName] = useState('');
-  const [type, setType] = useState<'heartbeat'>('heartbeat');
+  const [type, setType] = useState<'heartbeat' | 'telegram'>('heartbeat');
   const [enabled, setEnabled] = useState(true);
   const [agentId, setAgentId] = useState('');
   const [workingDir, setWorkingDir] = useState('');
   const [prompt, setPrompt] = useState('');
   const [cron, setCron] = useState('*/15 * * * *');
+  const [telegramBotToken, setTelegramBotToken] = useState('');
+  const [telegramAllowedChats, setTelegramAllowedChats] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const startEdit = (task: ScheduledTaskConfig) => {
@@ -111,6 +113,8 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
     setWorkingDir(task.workingDir || '');
     setPrompt(task.prompt);
     setCron(task.cron);
+    setTelegramBotToken(task.telegramBotToken || '');
+    setTelegramAllowedChats(task.telegramAllowedChats || '');
     setErrorMsg(null);
   };
 
@@ -124,6 +128,8 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
     setWorkingDir('');
     setPrompt('');
     setCron('*/15 * * * *');
+    setTelegramBotToken('');
+    setTelegramAllowedChats('');
     setErrorMsg(null);
   };
 
@@ -148,19 +154,33 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
       setErrorMsg('Please select an agent for this task.');
       return;
     }
-    if (!trimmedPrompt) {
-      setErrorMsg('Periodic Prompt is required.');
-      return;
-    }
-    if (!trimmedCron) {
-      setErrorMsg('Cron timing is required.');
-      return;
-    }
 
-    const cronParts = trimmedCron.split(/\s+/);
-    if (cronParts.length !== 5) {
-      setErrorMsg('Invalid cron expression. It must contain exactly 5 space-separated fields (e.g. "*/15 * * * *").');
-      return;
+    let finalPrompt = trimmedPrompt;
+    let finalCron = trimmedCron;
+
+    if (type === 'heartbeat') {
+      if (!trimmedPrompt) {
+        setErrorMsg('Periodic Prompt is required.');
+        return;
+      }
+      if (!trimmedCron) {
+        setErrorMsg('Cron timing is required.');
+        return;
+      }
+
+      const cronParts = trimmedCron.split(/\s+/);
+      if (cronParts.length !== 5) {
+        setErrorMsg('Invalid cron expression. It must contain exactly 5 space-separated fields (e.g. "*/15 * * * *").');
+        return;
+      }
+    } else if (type === 'telegram') {
+      if (!telegramBotToken.trim()) {
+        setErrorMsg('Telegram Bot Token is required.');
+        return;
+      }
+      // Populate defaults for cron and prompt
+      finalPrompt = 'Telegram Poller';
+      finalCron = '* * * * *';
     }
 
     const existing = tasks.find(t => t.name.toLowerCase() === trimmedName.toLowerCase());
@@ -179,9 +199,15 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
       type,
       enabled,
       agentId,
-      cron: trimmedCron,
-      prompt: trimmedPrompt,
+      cron: finalCron,
+      prompt: finalPrompt,
       ...(trimmedWorkingDir ? { workingDir: trimmedWorkingDir } : {}),
+      ...(type === 'telegram'
+        ? {
+            telegramBotToken: telegramBotToken.trim(),
+            telegramAllowedChats: telegramAllowedChats.trim(),
+          }
+        : {}),
     };
 
     let updatedTasks = [...tasks];
@@ -288,7 +314,7 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
             <select
               id="task-type"
               value={type}
-              onChange={(e) => setType(e.target.value as 'heartbeat')}
+              onChange={(e) => setType(e.target.value as 'heartbeat' | 'telegram')}
               style={{
                 width: '100%',
                 padding: '6px 8px',
@@ -301,6 +327,7 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
               }}
             >
               <option value="heartbeat">Heartbeat (Recurring Agent Execution)</option>
+              <option value="telegram">Telegram Poller (Autonomous Telegram Agent)</option>
             </select>
           </div>
 
@@ -343,49 +370,95 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
             </select>
           </div>
 
-          <div className="form-group">
-            <label htmlFor="task-cron">Cron Timing</label>
-            <input
-              id="task-cron"
-              type="text"
-              placeholder="e.g. */15 * * * * (every 15m), 0 9 * * * (every morning at 9)"
-              value={cron}
-              onChange={(e) => setCron(e.target.value)}
-            />
-          </div>
+          {type === 'heartbeat' ? (
+            <>
+              <div className="form-group">
+                <label htmlFor="task-cron">Cron Timing</label>
+                <input
+                  id="task-cron"
+                  type="text"
+                  placeholder="e.g. */15 * * * * (every 15m), 0 9 * * * (every morning at 9)"
+                  value={cron}
+                  onChange={(e) => setCron(e.target.value)}
+                />
+              </div>
 
-          <div className="form-group">
-            <label htmlFor="task-dir">Working Directory (Absolute path, optional)</label>
-            <input
-              id="task-dir"
-              type="text"
-              placeholder="e.g. /home/user/project (default: process.cwd())"
-              value={workingDir}
-              onChange={(e) => setWorkingDir(e.target.value)}
-            />
-          </div>
+              <div className="form-group">
+                <label htmlFor="task-dir">Working Directory (Absolute path, optional)</label>
+                <input
+                  id="task-dir"
+                  type="text"
+                  placeholder="e.g. /home/user/project (default: process.cwd())"
+                  value={workingDir}
+                  onChange={(e) => setWorkingDir(e.target.value)}
+                />
+              </div>
 
-          <div className="form-group">
-            <label htmlFor="task-prompt">Periodic Prompt</label>
-            <textarea
-              id="task-prompt"
-              placeholder="What instructions should the agent execute on each run?"
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              rows={4}
-              style={{
-                width: '100%',
-                padding: '8px',
-                borderRadius: 'var(--radius-sm)',
-                background: 'var(--vscode-input-background, #252526)',
-                color: 'var(--vscode-input-foreground, #cccccc)',
-                border: '1px solid var(--vscode-input-border, #3c3c3c)',
-                fontFamily: 'inherit',
-                fontSize: '12px',
-                resize: 'vertical'
-              }}
-            />
-          </div>
+              <div className="form-group">
+                <label htmlFor="task-prompt">Periodic Prompt</label>
+                <textarea
+                  id="task-prompt"
+                  placeholder="What instructions should the agent execute on each run?"
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  rows={4}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--vscode-input-background, #252526)',
+                    color: 'var(--vscode-input-foreground, #cccccc)',
+                    border: '1px solid var(--vscode-input-border, #3c3c3c)',
+                    fontFamily: 'inherit',
+                    fontSize: '12px',
+                    resize: 'vertical'
+                  }}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="form-group">
+                <label htmlFor="tg-token">Telegram Bot Token</label>
+                <input
+                  id="tg-token"
+                  type="password"
+                  placeholder="e.g. 123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
+                  value={telegramBotToken}
+                  onChange={(e) => setTelegramBotToken(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="tg-chats">Allowed Chat IDs (Comma-separated, optional)</label>
+                <input
+                  id="tg-chats"
+                  type="text"
+                  placeholder="e.g. 987654321, 555666777 (Leave empty to ignore whitelist security)"
+                  value={telegramAllowedChats}
+                  onChange={(e) => setTelegramAllowedChats(e.target.value)}
+                />
+              </div>
+
+              <div className="glass-form__help-card" style={{
+                background: 'rgba(255, 255, 255, 0.03)',
+                border: '1px solid rgba(255, 255, 255, 0.05)',
+                borderRadius: 'var(--radius-md)',
+                padding: '10px 12px',
+                fontSize: '11px',
+                marginTop: '12px',
+                lineHeight: '1.4',
+                color: 'var(--vscode-descriptionForeground)'
+              }}>
+                <strong>💡 Quick Setup Guide:</strong>
+                <ol style={{ margin: '6px 0 0 16px', padding: 0 }}>
+                  <li>Create a new bot via Telegram's <strong>@BotFather</strong> to obtain your HTTP API token.</li>
+                  <li>Obtain your chat ID by messaging <strong>@userinfobot</strong> on Telegram.</li>
+                  <li>Whitelist your chat ID above to prevent unauthorized users from using your local shell/tools!</li>
+                </ol>
+              </div>
+            </>
+          )}
 
           <div className="form-actions">
             <button className="btn btn--secondary" onClick={cancelForm}>
@@ -428,12 +501,20 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
                         {task.enabled ? '● Active' : '○ Off'}
                       </span>
                     </div>
-                    <div className="settings-card__subtitle" style={{ fontSize: '11px', marginTop: '4px' }}>
-                      <strong>Agent:</strong> {agentName} · <strong>Schedule:</strong> <code>{task.cron}</code>
-                    </div>
-                    <div className="settings-card__subtitle" style={{ fontSize: '11px', fontStyle: 'italic', opacity: 0.85, marginTop: '2px' }}>
-                      "{task.prompt.length > 60 ? task.prompt.substring(0, 57) + '...' : task.prompt}"
-                    </div>
+                    {task.type === 'telegram' ? (
+                      <div className="settings-card__subtitle" style={{ fontSize: '11px', marginTop: '4px' }}>
+                        <strong>Agent:</strong> {agentName} · <strong>Type:</strong> <code>Telegram Poller</code>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="settings-card__subtitle" style={{ fontSize: '11px', marginTop: '4px' }}>
+                          <strong>Agent:</strong> {agentName} · <strong>Schedule:</strong> <code>{task.cron}</code>
+                        </div>
+                        <div className="settings-card__subtitle" style={{ fontSize: '11px', fontStyle: 'italic', opacity: 0.85, marginTop: '2px' }}>
+                          "{task.prompt.length > 60 ? task.prompt.substring(0, 57) + '...' : task.prompt}"
+                        </div>
+                      </>
+                    )}
                   </div>
                   <div className="settings-card__actions">
                     <button

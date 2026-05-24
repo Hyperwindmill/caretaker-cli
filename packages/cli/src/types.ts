@@ -7,12 +7,14 @@ export type ProviderConfig = {
 export type ScheduledTaskConfig = {
   id: string;
   name: string;
-  type: 'heartbeat';
+  type: 'heartbeat' | 'telegram';
   enabled: boolean;
   agentId: string;
   cron: string;
   workingDir?: string;
   prompt: string;
+  telegramBotToken?: string;
+  telegramAllowedChats?: string;
 };
 
 export type CaretakerConfig = {
