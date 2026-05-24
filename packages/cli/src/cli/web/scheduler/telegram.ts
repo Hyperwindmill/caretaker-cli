@@ -323,8 +323,6 @@ async function executeTelegramTaskRun(
       },
     );
 
-    await saveTelegramOffset(task.id, updateId);
-
     console.log(`[scheduler/telegram] Run ${runId} finished successfully.`);
   } catch (err: any) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -341,7 +339,6 @@ async function executeTelegramTaskRun(
       text: `❌ Agent error: ${errorMsg}`,
     }).catch(() => {});
 
-    await saveTelegramOffset(task.id, updateId);
   } finally {
     if (typingInterval) {
       clearInterval(typingInterval);
@@ -375,6 +372,10 @@ async function executeTelegramPoller(task: ScheduledTaskConfig): Promise<void> {
     const updates = await tgGetUpdates(token, offset !== undefined ? offset + 1 : undefined);
     if (updates.length === 0) return;
 
+    // Save the highest offset immediately to prevent reprocessing on subsequent ticks
+    const highestUpdate = updates[updates.length - 1]!;
+    await saveTelegramOffset(task.id, highestUpdate.update_id);
+
     for (const update of updates) {
       const msg = update.message;
       if (!msg || !msg.text) continue;
@@ -391,21 +392,6 @@ async function executeTelegramPoller(task: ScheduledTaskConfig): Promise<void> {
           err,
         );
       });
-    }
-
-    // Sync progress offset even if all updates in batch were skipped
-    if (updates.length > 0) {
-      const highestUpdate = updates[updates.length - 1]!;
-      let anyProcessed = false;
-      for (const update of updates) {
-        const msg = update.message;
-        if (msg && msg.text && (allowedChats.size === 0 || allowedChats.has(String(msg.chat.id)))) {
-          anyProcessed = true;
-        }
-      }
-      if (!anyProcessed) {
-        await saveTelegramOffset(task.id, highestUpdate.update_id);
-      }
     }
   } catch (err) {
     console.error(`[scheduler/telegram] Polling error for task "${task.name}":`, err);
