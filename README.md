@@ -14,10 +14,9 @@ The harness, agents store, plugins, MCP servers, skills, slash commands and conf
 
 - **Web server (`caretaker-cli web`)** — `pnpm -F caretaker-cli dev web` (or `caretaker-cli web --port 3000`) starts a local Hono + WebSocket server that serves the webview as a desktop-grade two-column web app. **Web-only** features:
   - the in-process **scheduler** (both heartbeat and Telegram strategies — see below) — the daemon only boots inside the web server, so scheduled tasks need the web process up to fire.
-  - the **Execution Console** that renders past scheduler runs.
-  - the **Scheduler / Settings / MCP / Plugins** premium panels (the webview UI is shared with the VSCode extension, but the routes and persistence are only mounted under the web server).
+  - the **Scheduler** tab in the Settings panel and the **Execution Console** that renders past runs. Providers / Agents / Plugins / MCP tabs are exposed by the VSCode sidebar too — only the scheduler surface is gated to the web layout.
 - **TUI** — `pnpm -F caretaker-cli dev` launches the Ink terminal app. Use it to manage providers, agents, plugins, MCP servers, and to chat. It does **not** run the scheduler and does not expose the scheduler UI.
-- **VSCode sidebar** — `packages/vscode-extension/` embeds the harness as an ESM library (no subprocess). Same `~/.caretaker/` state, same agents, same conversations. Chat-focused; does not boot the scheduler. See [packages/vscode-extension/README.md](packages/vscode-extension/README.md) for the F5 / dev loop.
+- **VSCode sidebar** — `packages/vscode-extension/` embeds the harness as an ESM library (no subprocess). Same `~/.caretaker/` state, same agents, same conversations. Full Providers / Agents / Plugins / MCP configuration is available from the sidebar Settings panel; only the scheduler is missing because the daemon is not booted here. See [packages/vscode-extension/README.md](packages/vscode-extension/README.md) for the F5 / dev loop.
 - **Headless** — `caretaker-cli run [prompt...] --agent <name>` does one-shot dispatches for scripts and CI; `--output json` for a structured blob.
 
 ## What makes it caretaker
