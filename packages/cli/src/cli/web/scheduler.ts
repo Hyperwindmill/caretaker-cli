@@ -8,6 +8,7 @@ import { loadAgents, loadConfig, dataDir } from '../../store/json.js';
 import { userMessage } from '../../session/store.js';
 import type { MessageRecord } from '../../session/types.js';
 import type { ScheduledTaskConfig } from '../../types.js';
+import { decrypt, isEncrypted } from '../../lib/encryption.js';
 
 /**
  * Returns the folder where scheduler logs are cached under ~/.caretaker/scheduler-logs
@@ -409,9 +410,13 @@ async function executeTelegramTaskRun(
   msg: TgMessage,
   updateId: number,
 ): Promise<void> {
+  let token = task.telegramBotToken?.trim() || '';
+  if (token && isEncrypted(token)) {
+    token = decrypt(token);
+  }
+
   const compoundLockKey = `${task.id}:${msg.chat.id}`;
   if (runningTasks.has(compoundLockKey)) {
-    const token = task.telegramBotToken!.trim();
     await tgApi(token, 'sendMessage', {
       chat_id: msg.chat.id,
       text: '⚠️ A session is already in progress in this chat. Please wait for it to complete.',
@@ -427,7 +432,6 @@ async function executeTelegramTaskRun(
   );
 
   const runMessages: MessageRecord[] = [];
-  const token = task.telegramBotToken!.trim();
   const chatId = msg.chat.id;
 
   let typingInterval: NodeJS.Timeout | null = null;
@@ -623,7 +627,10 @@ async function executeTelegramPoller(task: ScheduledTaskConfig): Promise<void> {
   pollingTasks.add(task.id);
 
   try {
-    const token = task.telegramBotToken?.trim() || process.env.TELEGRAM_BOT_TOKEN?.trim();
+    let token = task.telegramBotToken?.trim() || process.env.TELEGRAM_BOT_TOKEN?.trim() || '';
+    if (token && isEncrypted(token)) {
+      token = decrypt(token);
+    }
     if (!token) return;
 
     const allowedChats = new Set(

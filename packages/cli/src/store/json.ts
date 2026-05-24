@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { mkdir, readFile, writeFile, chmod } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import type { AgentConfig, CaretakerConfig, McpServersFile, PluginsFile } from '../types.js';
+import { encrypt, isEncrypted } from '../lib/encryption.js';
 
 // Path accessors are resolved at call time, not import time, so test runs
 // that share a process can switch CARETAKER_HOME between suites.
@@ -56,6 +57,15 @@ export async function loadConfig(): Promise<CaretakerConfig> {
 }
 
 export async function saveConfig(c: CaretakerConfig): Promise<void> {
+  if (c.scheduler?.tasks) {
+    for (const task of c.scheduler.tasks) {
+      if (task.type === 'telegram' && task.telegramBotToken) {
+        if (!isEncrypted(task.telegramBotToken)) {
+          task.telegramBotToken = encrypt(task.telegramBotToken);
+        }
+      }
+    }
+  }
   await writeJson(configPath(), c);
 }
 
