@@ -151,6 +151,8 @@ export function parseViewToHost(value: unknown): ViewToHost | null {
       return typeof value.endpoint === 'string'
         ? { type, endpoint: value.endpoint, apiKey: typeof value.apiKey === 'string' ? value.apiKey : undefined }
         : null;
+    case 'getTaskRuns':
+      return typeof value.taskId === 'string' ? { type, taskId: value.taskId } : null;
     default:
       return null;
   }

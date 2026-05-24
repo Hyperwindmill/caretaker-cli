@@ -41,6 +41,10 @@ import {
 
 import type { AgentConfig, ProviderConfig, PluginsFile, McpServerConfig } from '../../types.js';
 import type { ConfirmDecision, HostToView, ViewToHost } from 'webview-ui/bridge';
+import {
+  startBackgroundScheduler,
+  loadTaskRuns,
+} from './scheduler.js';
 
 // Resolve Webview static files path
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -209,6 +213,9 @@ export async function startServer(port: number, host: string): Promise<void> {
   });
 
   console.log(`\n🚀 Caretaker Server running at http://${host}:${port}\n`);
+
+  // Start the background scheduler trigger daemon
+  startBackgroundScheduler();
 
   wss.on('connection', async (ws: WebSocket) => {
     let controller: WebSessionController | null = null;
@@ -564,6 +571,18 @@ export async function startServer(port: number, host: string): Promise<void> {
               post({
                 type: 'modelsFetched',
                 result: { ok: false, error: String(err) },
+              });
+            }
+            return;
+          case 'getTaskRuns':
+            try {
+              const runs = await loadTaskRuns(msg.taskId);
+              post({ type: 'taskRunsLoaded', taskId: msg.taskId, runs });
+            } catch (err) {
+              console.error('[web] failed to load task runs:', err);
+              post({
+                type: 'error',
+                message: `Failed to load task runs: ${err instanceof Error ? err.message : String(err)}`,
               });
             }
             return;
