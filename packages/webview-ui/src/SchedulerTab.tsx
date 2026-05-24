@@ -115,7 +115,7 @@ export function SchedulerTab({ config, agents, postMessage }: SchedulerTabProps)
           marginBottom: '16px'
         }}>
           Set up a recurring autonomous run ("heartbeat") to execute an agent periodically with a specific prompt.
-          This scheduler runs in-process inside the Hono web server process.
+          This scheduler runs in-process inside the Caretaker web server.
         </p>
 
         <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
