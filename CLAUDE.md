@@ -51,10 +51,12 @@ Subcommand routing lives in `packages/cli/src/cli/index.ts` (commander). Adding 
 
 ### 2. Agent execution = harness loop + resolved surface
 
-`packages/cli/src/harness/loop.ts` is the chat loop. For each turn it calls `packages/cli/src/harness/provider.ts` (an OpenAI-compatible client) and dispatches tool calls. The set of tools available to a turn is **not** the agent's stored config — it is the output of `packages/cli/src/harness/tools/resolve.ts` (`resolveAgentTools`), which intersects what the agent opted into with what the registry exposes, layers on auto-injected discovery builtins, and applies the tri-state policy (`[ ]` off, `[x]` allowed, `[!]` confirm-each-call). The auto-injection has two tiers:
+`packages/cli/src/harness/loop.ts` is the chat loop. For each turn it calls `packages/cli/src/harness/provider.ts` (an OpenAI-compatible client) and dispatches tool calls. The set of tools available to a turn is **not** the agent's stored config — it is the output of `packages/cli/src/harness/tools/resolve.ts` (`resolveAgentTools`), which intersects what the agent opted into with what the registry exposes, layers on auto-injected builtins, and applies the tri-state policy (`[ ]` off, `[x]` allowed, `[!]` confirm-each-call). The auto-injection has two tiers, kept narrow on purpose:
 
-- **Always on**: `get_agent_context`, `list_agents`, `invoke_agent`. `invoke_agent` is dual-mode (named + anonymous), and anonymous dispatch (`invoke_agent({task})`) is valid regardless of how many agents are configured — so these tools are always discoverable.
+- **Always on**: `get_agent_context`. Pure introspection (live token usage / context-window %), read-only — there's no reason to ever hide it.
 - **Plugin-gated**: `list_skills`/`read_skill` and `list_commands`/`invoke_command` are added only when the agent has at least one active plugin (otherwise they'd return empty lists). MCP tools are resolved per-run from the configured servers (namespaced `mcp__<id>__<toolName>`) and never registered into the process-wide registry.
+
+Every other builtin — including `list_agents` and `invoke_agent` — is gated by `allowedTools` like any other tool: if the user clicks `[ ]` off in the picker, the runtime honours that. `invoke_agent`'s anonymous mode (`invoke_agent({task})` with no `name`) is useful even with a single agent configured, so users typically opt it in regardless of agent count — but that's a UX hint, not a runtime override. **Do not re-introduce a silent always-on list for capability tools**: the UI / runtime mismatch hides behaviour from the user.
 
 The confirm gate (`ctx.confirmTool`) is plumbed into every tool invocation, including sub-agent dispatch.
 

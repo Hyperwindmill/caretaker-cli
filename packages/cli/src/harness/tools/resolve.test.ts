@@ -78,24 +78,28 @@ test('resolveAgentTools: no skill tools when registry lacks them', async () => {
   );
 });
 
-test('resolveAgentTools: dispatch tools auto-included regardless of agent count (anonymous mode is always valid)', async () => {
+test('resolveAgentTools: dispatch tools are gated by allowedTools (no silent always-on)', async () => {
   const r = new ToolRegistry();
   r.register(fakeTool('list_agents'));
   r.register(fakeTool('invoke_agent'));
-  // No other agents configured anywhere — the previous gate would have
-  // hidden the dispatch tools, blocking the agent from using anonymous
-  // sub-agent dispatch (`invoke_agent({task})`).
-  const tools = await resolveAgentTools(agent({ allowedTools: [] }), r);
-  const names = tools.map((t) => t.name).sort();
-  assert.deepEqual(names, ['invoke_agent', 'list_agents']);
+
+  // Empty allowedTools → dispatch tools stay off. The UI exposes the
+  // tri-state for them like any other tool; the runtime honours [ ] off.
+  let tools = await resolveAgentTools(agent({ allowedTools: [] }), r);
+  assert.deepEqual(tools.map((t) => t.name), []);
+
+  // Explicit opt-in → both included.
+  tools = await resolveAgentTools(
+    agent({ allowedTools: ['invoke_agent', 'list_agents'] }),
+    r,
+  );
+  assert.deepEqual(tools.map((t) => t.name).sort(), ['invoke_agent', 'list_agents']);
 });
 
-test('resolveAgentTools: get_agent_context is always-on too', async () => {
+test('resolveAgentTools: get_agent_context is always-on (pure introspection)', async () => {
   const r = new ToolRegistry();
   r.register(fakeTool('get_agent_context'));
+
   const tools = await resolveAgentTools(agent({ allowedTools: [] }), r);
-  assert.deepEqual(
-    tools.map((t) => t.name),
-    ['get_agent_context'],
-  );
+  assert.deepEqual(tools.map((t) => t.name), ['get_agent_context']);
 });
