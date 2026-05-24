@@ -5,7 +5,8 @@ import { loadAgents, loadConfig } from '../../../store/json.js';
 import { userMessage } from '../../../session/store.js';
 import type { MessageRecord } from '../../../session/types.js';
 import type { ScheduledTaskConfig } from '../../../types.js';
-import { saveTaskRun, runningTasks } from '../scheduler.js';
+import { saveTaskRun } from './logs.js';
+import { runningTasks } from './locks.js';
 import type { SchedulerStrategy } from './strategy.js';
 
 /**
