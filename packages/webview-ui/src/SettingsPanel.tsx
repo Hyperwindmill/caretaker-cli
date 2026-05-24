@@ -23,6 +23,7 @@ interface SettingsPanelProps {
   refreshingSourceId: string | null;
   refreshOutcome: RefreshOutcome | null;
   setRefreshOutcome: (out: RefreshOutcome | null) => void;
+  taskRuns?: Record<string, any[]>;
   onClose: () => void;
 }
 
@@ -37,6 +38,7 @@ export function SettingsPanel({
   refreshingSourceId,
   refreshOutcome,
   setRefreshOutcome,
+  taskRuns = {},
   onClose,
 }: SettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<TabId>('providers');
@@ -103,6 +105,7 @@ export function SettingsPanel({
             config={config}
             agents={agents}
             postMessage={postMessage}
+            taskRuns={taskRuns}
           />
         );
     }

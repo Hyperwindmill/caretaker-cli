@@ -78,7 +78,8 @@ export type HostToView =
     }
   | { type: 'modelsFetched'; result: ModelsResult }
   | { type: 'refreshingPlugin'; sourceId: string }
-  | { type: 'refreshPluginOutcome'; outcome: RefreshOutcome };
+  | { type: 'refreshPluginOutcome'; outcome: RefreshOutcome }
+  | { type: 'taskRunsLoaded'; taskId: string; runs: any[] };
 
 export type ViewToHost =
   | { type: 'start'; prompt: string }
@@ -97,7 +98,8 @@ export type ViewToHost =
   | { type: 'refreshPluginSource'; sourceId: string }
   | { type: 'saveMcpServer'; server: any }
   | { type: 'deleteMcpServer'; serverId: string }
-  | { type: 'fetchModels'; endpoint: string; apiKey?: string };
+  | { type: 'fetchModels'; endpoint: string; apiKey?: string }
+  | { type: 'getTaskRuns'; taskId: string };
 
 /** Runtime validator for messages coming from the webview. Returns
  * the typed message on success, or null on any structural mismatch.
