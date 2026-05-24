@@ -517,14 +517,16 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
                     )}
                   </div>
                   <div className="settings-card__actions">
-                    <button
-                      className="icon-btn"
-                      onClick={() => openLogViewer(task)}
-                      title="View execution logs"
-                      style={{ fontSize: '12px', marginRight: '4px' }}
-                    >
-                      📋
-                    </button>
+                    {task.type !== 'telegram' && (
+                      <button
+                        className="icon-btn"
+                        onClick={() => openLogViewer(task)}
+                        title="View execution logs"
+                        style={{ fontSize: '12px', marginRight: '4px' }}
+                      >
+                        📋
+                      </button>
+                    )}
                     <button
                       className="icon-btn"
                       onClick={() => startEdit(task)}

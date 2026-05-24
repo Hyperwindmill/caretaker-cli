@@ -4,13 +4,13 @@ import { rm, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 
 import {
-  matchesCron,
   schedulerLogPath,
   saveTaskRun,
   loadTaskRuns,
   schedulerLogsDir,
-  splitMessage,
 } from './scheduler.js';
+import { matchesCron } from './scheduler/heartbeat.js';
+import { splitMessage } from './scheduler/telegram.js';
 
 test('scheduler: matchesCron evaluates wildcard correctly', () => {
   const d = new Date('2026-05-24T12:30:00Z');
