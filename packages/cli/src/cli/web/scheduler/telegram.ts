@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { writeFile, readFile } from 'node:fs/promises';
+import { writeFile, readFile, rename } from 'node:fs/promises';
 
 import * as harness from '../../../harness/index.js';
 import { loadAgents, loadConfig } from '../../../store/json.js';
@@ -20,7 +20,26 @@ import type { SchedulerStrategy } from './strategy.js';
 
 export async function saveTelegramOffset(taskId: string, updateId: number): Promise<void> {
   const path = join(schedulerLogsDir(), `${taskId}.offset`);
-  await writeFile(path, String(updateId), 'utf8');
+  const tmpPath = `${path}.tmp.${process.pid}.${Date.now()}`;
+  await writeFile(tmpPath, String(updateId), 'utf8');
+
+  // Same rationale as store/json.ts writeJson: retry rename on Windows-style
+  // transient lock errors before propagating.
+  const maxAttempts = process.platform === 'win32' ? 5 : 1;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await rename(tmpPath, path);
+      return;
+    } catch (err) {
+      lastErr = err;
+      const code = (err as NodeJS.ErrnoException).code;
+      const retryable = code === 'EACCES' || code === 'EPERM' || code === 'EBUSY';
+      if (attempt === maxAttempts || !retryable) break;
+      await new Promise((r) => setTimeout(r, 50 * 2 ** (attempt - 1)));
+    }
+  }
+  throw lastErr;
 }
 
 export async function loadTelegramOffset(taskId: string): Promise<number | undefined> {
@@ -166,7 +185,9 @@ async function executeTelegramTaskRun(
     await tgApi(token, 'sendMessage', {
       chat_id: msg.chat.id,
       text: '⚠️ A session is already in progress in this chat. Please wait for it to complete.',
-    }).catch(() => {});
+    }).catch((err) => {
+      console.warn(`[scheduler/telegram] Failed to send busy notice to chat ${msg.chat.id}:`, err);
+    });
     return;
   }
   runningTasks.add(compoundLockKey);
@@ -376,6 +397,10 @@ async function executeTelegramPoller(task: ScheduledTaskConfig): Promise<void> {
     const highestUpdate = updates[updates.length - 1]!;
     await saveTelegramOffset(task.id, highestUpdate.update_id);
 
+    // Group updates by chat.id so messages from the same chat are processed
+    // sequentially (preserves order, avoids "session already in progress" drops),
+    // while different chats progress in parallel.
+    const byChat = new Map<number, Array<{ update: TgUpdate; msg: TgMessage }>>();
     for (const update of updates) {
       const msg = update.message;
       if (!msg || !msg.text) continue;
@@ -386,13 +411,25 @@ async function executeTelegramPoller(task: ScheduledTaskConfig): Promise<void> {
         continue;
       }
 
-      void executeTelegramTaskRun(task, msg, update.update_id).catch((err) => {
-        console.error(
-          `[scheduler/telegram] Failed to execute task run for update ${update.update_id}:`,
-          err,
-        );
-      });
+      const list = byChat.get(msg.chat.id) ?? [];
+      list.push({ update, msg });
+      byChat.set(msg.chat.id, list);
     }
+
+    await Promise.all(
+      Array.from(byChat.values()).map(async (group) => {
+        for (const { update, msg } of group) {
+          try {
+            await executeTelegramTaskRun(task, msg, update.update_id);
+          } catch (err) {
+            console.error(
+              `[scheduler/telegram] Failed to execute task run for update ${update.update_id}:`,
+              err,
+            );
+          }
+        }
+      }),
+    );
   } catch (err) {
     console.error(`[scheduler/telegram] Polling error for task "${task.name}":`, err);
   } finally {
