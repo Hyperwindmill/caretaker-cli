@@ -38,20 +38,25 @@ Package manager: **pnpm** (≥10). The root has `pnpm-workspace.yaml`; `package-
 
 ## Architecture
 
-The codebase is a multi-surface agent harness (TUI, web GUI, VSCode sidebar, headless `run`). All surfaces drive the same in-process harness against the same `~/.caretaker/` state. Five layers worth understanding before touching anything:
+The codebase is a multi-surface agent harness (TUI, web GUI, VSCode sidebar, headless `run`). All surfaces drive the same in-process harness against the same `~/.caretaker/` state. **The web server is the functional superset** — the scheduler and the scheduler UI live only there. Five layers worth understanding before touching anything:
 
-### 1. Surfaces are thin; harness is shared
+### 1. Surfaces are thin; harness is shared; the web server is the superset
 
-- TUI: `packages/cli/src/tui/` (Ink). Default when `caretaker-cli` is invoked with no subcommand.
+- TUI: `packages/cli/src/tui/` (Ink). Default when `caretaker-cli` is invoked with no subcommand. No scheduler boot, no scheduler UI.
 - Headless: `packages/cli/src/cli/run.ts`. `caretaker-cli run [prompt] --agent <name> [--tools …] [--output plain|json]`.
-- Local web GUI: `packages/cli/src/cli/web/server.ts` — Hono HTTP + WebSocket bridge that serves the `webview-ui` bundle and proxies chat / settings / scheduler actions into the same harness functions the TUI uses.
-- VSCode sidebar: `packages/vscode-extension/` imports `caretaker-cli` directly through its public exports. No subprocess; same harness, same store.
+- Local web GUI: `packages/cli/src/cli/web/server.ts` — Hono HTTP + WebSocket bridge that serves the `webview-ui` bundle and proxies chat / settings / scheduler actions into the same harness functions the TUI uses. **Only this surface calls `startBackgroundScheduler()`** (see layer 5), so any scheduled work needs the web server up.
+- VSCode sidebar: `packages/vscode-extension/` imports `caretaker-cli` directly through its public exports. No subprocess; same harness, same store; does not boot the scheduler.
 
-Subcommand routing lives in `packages/cli/src/cli/index.ts` (commander). Adding a new surface should reuse the harness/store/session modules — never re-implement the loop.
+Subcommand routing lives in `packages/cli/src/cli/index.ts` (commander). Adding a new surface should reuse the harness/store/session modules — never re-implement the loop. If the new surface needs scheduled work, it must `startBackgroundScheduler()` explicitly (today only `cli/web/server.ts` does).
 
 ### 2. Agent execution = harness loop + resolved surface
 
-`packages/cli/src/harness/loop.ts` is the chat loop. For each turn it calls `packages/cli/src/harness/provider.ts` (an OpenAI-compatible client) and dispatches tool calls. The set of tools available to a turn is **not** the agent's stored config — it is the output of `packages/cli/src/harness/tools/resolve.ts` (`resolveAgentTools`), which intersects what the agent opted into with what the registry exposes, auto-injects discovery builtins (`list_skills`, `read_skill`, `list_commands`, `invoke_command`, `list_agents`, `invoke_agent`, `get_agent_context`) when their preconditions hold, and applies the tri-state policy (`[ ]` off, `[x]` allowed, `[!]` confirm-each-call). The confirm gate (`ctx.confirmTool`) is plumbed into every tool invocation, including sub-agent dispatch.
+`packages/cli/src/harness/loop.ts` is the chat loop. For each turn it calls `packages/cli/src/harness/provider.ts` (an OpenAI-compatible client) and dispatches tool calls. The set of tools available to a turn is **not** the agent's stored config — it is the output of `packages/cli/src/harness/tools/resolve.ts` (`resolveAgentTools`), which intersects what the agent opted into with what the registry exposes, layers on auto-injected discovery builtins, and applies the tri-state policy (`[ ]` off, `[x]` allowed, `[!]` confirm-each-call). The auto-injection has two tiers:
+
+- **Always on**: `get_agent_context`, `list_agents`, `invoke_agent`. `invoke_agent` is dual-mode (named + anonymous), and anonymous dispatch (`invoke_agent({task})`) is valid regardless of how many agents are configured — so these tools are always discoverable.
+- **Plugin-gated**: `list_skills`/`read_skill` and `list_commands`/`invoke_command` are added only when the agent has at least one active plugin (otherwise they'd return empty lists). MCP tools are resolved per-run from the configured servers (namespaced `mcp__<id>__<toolName>`) and never registered into the process-wide registry.
+
+The confirm gate (`ctx.confirmTool`) is plumbed into every tool invocation, including sub-agent dispatch.
 
 When editing tools, register them in `packages/cli/src/harness/tools/builtin/index.ts` and the central registry — `resolveAgentTools` is the single source of truth at runtime.
 
@@ -73,9 +78,9 @@ Caps: 100 KB per file, 250 KB total. Order is stable across turns by design — 
 
 MCP servers are pooled by `mcp/client.ts` (both stdio and HTTP/SSE); their tools/prompts/resources flow into the same registry as native builtins via `mcp/adapter.ts`. Managed agents and managed MCP servers follow a cascading-delete model tied to their source plugin. Sub-agent dispatch (`invoke_agent`, in `packages/cli/src/agents/dispatch.ts`) inherits empty runtime fields from the caller (provider/model/tools/plugins/mcpServers/workingDir) but **never** `systemPrompt` or `maxTurns`. Recursion is capped at depth 5; self-invocation is rejected.
 
-### 5. Scheduler
+### 5. Scheduler (web-only)
 
-The web server boots an in-process background scheduler (`packages/cli/src/cli/web/scheduler.ts`) that ticks every 15 s. Two strategies ship — both per-agent, configured from the Scheduler settings panel:
+`packages/cli/src/cli/web/scheduler.ts` exposes `startBackgroundScheduler()` / `stopBackgroundScheduler()`. The only caller today is `cli/web/server.ts` — neither the TUI nor the VSCode extension boots it. Scheduled tasks therefore only fire while the web process is up; document this clearly when wiring new surfaces. The daemon ticks every 15 s. Two strategies ship — both per-agent, configured from the Scheduler settings panel:
 
 - **Heartbeat** (`scheduler/heartbeat.ts`): standard 5-field cron with wildcards, lists, ranges, and step patterns. Fires `executeTaskRun(task)`, which auto-approves all tool calls (the run is unattended).
 - **Telegram** (`scheduler/telegram.ts`): polls `getUpdates` against the Telegram API and routes messages into `executeTelegramTaskRun` as an interactive conversation. Encryption applied on save; the update offset is committed atomically *before* processing to make duplicate runs impossible across concurrent ticks; messages from the same `chat.id` are grouped and processed sequentially (different chats progress in parallel) so a rapid second message from the same user can't be silently dropped.
