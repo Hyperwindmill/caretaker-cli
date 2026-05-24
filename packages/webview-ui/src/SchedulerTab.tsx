@@ -47,7 +47,7 @@ export function SchedulerTab({ config, agents, postMessage }: SchedulerTabProps)
     // Pick the first agent if available as a convenient default
     setAgentId(agents[0]?.id || '');
     setWorkingDir('');
-    setPrompt('Hello! Run a health check on this workspace and report any issues.');
+    setPrompt('');
     setCron('*/15 * * * *');
     setErrorMsg(null);
   };
