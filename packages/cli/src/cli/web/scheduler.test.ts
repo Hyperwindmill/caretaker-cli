@@ -9,6 +9,7 @@ import {
   saveTaskRun,
   loadTaskRuns,
   schedulerLogsDir,
+  splitMessage,
 } from './scheduler.js';
 
 test('scheduler: matchesCron evaluates wildcard correctly', () => {
@@ -91,4 +92,22 @@ test('scheduler: log loading and saving', async () => {
 
   // Clean up
   await rm(logFile, { force: true });
+});
+
+test('scheduler: splitMessage handles short text without splitting', () => {
+  const text = 'hello telegram world';
+  const chunks = splitMessage(text);
+  assert.deepEqual(chunks, [text]);
+});
+
+test('scheduler: splitMessage splits long text correctly', () => {
+  // Construct a long text: 4500 characters
+  const segment1 = 'a'.repeat(3000) + '\n\n';
+  const segment2 = 'b'.repeat(1500);
+  const text = segment1 + segment2;
+
+  const chunks = splitMessage(text, 4000);
+  assert.equal(chunks.length, 2);
+  assert.equal(chunks[0], segment1);
+  assert.equal(chunks[1], segment2);
 });
