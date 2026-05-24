@@ -55,16 +55,28 @@ async function readJsonOrDefault<T>(path: string, fallback: T): Promise<T> {
 async function writeJson(path: string, data: unknown): Promise<void> {
   await ensureDataDir();
   const tmpPath = `${path}.tmp.${process.pid}.${Date.now()}`;
-  try {
-    await writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf8');
-    await chmod(tmpPath, 0o600);
-    await rename(tmpPath, path);
-  } catch (err) {
-    console.error(`[store/json] atomic write failed for ${path}:`, err);
-    // Fallback to direct write if rename fails (e.g. cross-device link issues)
-    await writeFile(path, JSON.stringify(data, null, 2), 'utf8');
-    await chmod(path, 0o600);
+  await writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf8');
+  await chmod(tmpPath, 0o600);
+
+  // Windows: rename can fail transiently with EACCES/EPERM/EBUSY when the
+  // destination is briefly locked by AV/indexer/sync clients. Retry with
+  // exponential backoff so we never sacrifice atomicity to a falling-back
+  // direct write.
+  const maxAttempts = process.platform === 'win32' ? 5 : 1;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await rename(tmpPath, path);
+      return;
+    } catch (err) {
+      lastErr = err;
+      const code = (err as NodeJS.ErrnoException).code;
+      const retryable = code === 'EACCES' || code === 'EPERM' || code === 'EBUSY';
+      if (attempt === maxAttempts || !retryable) break;
+      await new Promise((r) => setTimeout(r, 50 * 2 ** (attempt - 1)));
+    }
   }
+  throw lastErr;
 }
 
 export async function loadConfig(): Promise<CaretakerConfig> {
