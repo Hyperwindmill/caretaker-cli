@@ -483,8 +483,30 @@ async function executeTelegramTaskRun(
     const tools = await harness.resolveAgentTools(agent, harness.tools);
     const workingDir = task.workingDir || agent.workingDir || process.cwd();
 
-    const unattendedNotice = `[UNATTENDED RUN] Note: You are running as an unattended Telegram scheduled poller session. No human is supervising this execution directly. Act autonomously, execute required tools, and reply to the user message.`;
-    const effectivePrompt = `[Telegram Message from ${fromUser}]\n\n${msg.text}\n\n---\n${unattendedNotice}`;
+    const telegramNotice = `[Telegram Session] Note: You are interacting with the developer via a Telegram chat session. Execute required tools and reply directly.`;
+    const effectivePrompt = `[Telegram Message from ${fromUser}]\n\n${msg.text}\n\n---\n${telegramNotice}`;
+
+    // Load historical runs and filter for this specific Telegram chat to reconstruct conversation history
+    const priorRuns = await loadTaskRuns(task.id);
+    const chatRuns = priorRuns
+      .filter((r) => r.telegramChatId === chatId && r.messages && r.messages.length > 0)
+      .reverse(); // loadTaskRuns returns newest first, so we reverse it to get oldest first!
+
+    const historyMessages: MessageRecord[] = [];
+    for (const run of chatRuns) {
+      for (const m of run.messages) {
+        historyMessages.push({
+          v: 1,
+          type: 'message',
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          parts: m.parts,
+          toolCallId: m.toolCallId,
+          createdAt: m.createdAt,
+        });
+      }
+    }
 
     const startMsg = userMessage(effectivePrompt);
     runMessages.push(startMsg);
@@ -495,7 +517,7 @@ async function executeTelegramTaskRun(
         provider,
         tools,
         prompt: effectivePrompt,
-        history: [],
+        history: historyMessages,
         workingDir,
       },
       {
@@ -561,6 +583,7 @@ async function executeTelegramTaskRun(
       timestamp: new Date().toISOString(),
       status: 'success',
       telegramUpdateId: updateId,
+      telegramChatId: chatId,
       messages: chatMessages,
     });
 
@@ -610,6 +633,7 @@ async function executeTelegramTaskRun(
       timestamp: new Date().toISOString(),
       status: 'failure',
       telegramUpdateId: updateId,
+      telegramChatId: chatId,
       error: errorMsg,
       messages: chatMessages,
     });
