@@ -5,9 +5,9 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
-import { App } from './App.js';
+import { App } from 'webview-ui';
 import '@vscode/codicons/dist/codicon.css';
-import './styles.css';
+import 'webview-ui/src/styles.css';
 
 declare global {
   interface Window {

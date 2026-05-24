@@ -49,5 +49,15 @@ export async function runCli(argv: string[]): Promise<void> {
       },
     );
 
+  program
+    .command('web')
+    .description('Launch the Caretaker web server local-first GUI.')
+    .option('-p, --port <number>', 'Port to listen on', '3000')
+    .option('-h, --host <string>', 'Host to bind to', '127.0.0.1')
+    .action(async (opts: { port: string; host: string }) => {
+      const { startServer } = await import('./web/server.js');
+      await startServer(parseInt(opts.port, 10), opts.host);
+    });
+
   await program.parseAsync(argv);
 }

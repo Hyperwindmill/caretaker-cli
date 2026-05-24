@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { McpServersFile, McpServerConfig, McpTransport } from 'caretaker-cli/types';
-import type { ViewToHost } from '../bridge.js';
+import type { ViewToHost } from './bridge.js';
 
 interface McpTabProps {
   mcpServersFile: McpServersFile;

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseViewToHost } from './bridge.js';
+import { parseViewToHost } from 'webview-ui/bridge';
 
 test('parseViewToHost: accepts valid start message', () => {
   const msg = parseViewToHost({ type: 'start', prompt: 'hello' });

@@ -54,6 +54,7 @@
     "@types/node": "^25.5.0",
     "@types/react": "^19.2.14",
     "@types/turndown": "^5.0.6",
+    "@types/ws": "^8.18.1",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react": "^7.37.5",
@@ -65,9 +66,11 @@
     "zod": "^4.4.3"
   },
   "dependencies": {
+    "@hono/node-server": "^2.0.4",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "commander": "^14.0.3",
     "fast-glob": "^3.3.3",
+    "hono": "^4.12.22",
     "ink": "^7.0.2",
     "ink-big-text": "^2.0.0",
     "ink-select-input": "^6.2.0",
@@ -75,6 +78,8 @@
     "isomorphic-git": "^1.37.6",
     "react": "^19.2.6",
     "turndown": "^7.2.4",
+    "webview-ui": "workspace:*",
+    "ws": "^8.21.0",
     "yaml": "^2.8.4"
   }
 }

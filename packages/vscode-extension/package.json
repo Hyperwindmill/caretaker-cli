@@ -2,7 +2,7 @@
   "name": "caretaker-vscode",
   "displayName": "Caretaker",
   "description": "Caretaker agent harness — chat sidebar for VSCode.",
-  "version": "0.1.8",
+  "version": "0.1.10",
   "private": true,
   "publisher": "Hyperwindmill",
   "license": "MIT",
@@ -28,7 +28,7 @@
         {
           "id": "caretaker",
           "title": "Caretaker",
-          "icon": "$(comment-discussion)"
+          "icon": "activity-bar-icon.png"
         }
       ]
     },
@@ -74,6 +74,7 @@
   "dependencies": {
     "@vscode/codicons": "^0.0.45",
     "caretaker-cli": "workspace:*",
+    "webview-ui": "workspace:*",
     "marked": "^15.0.12",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"

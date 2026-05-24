@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ViewToHost, ModelsResult, RefreshOutcome } from '../bridge.js';
+import type { ViewToHost, ModelsResult, RefreshOutcome } from './bridge.js';
 import type { CaretakerConfig, AgentConfig, PluginsFile, McpServerConfig } from 'caretaker-cli/types';
 
 import { ProvidersTab } from './ProvidersTab.js';

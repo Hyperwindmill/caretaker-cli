@@ -1,5 +1,5 @@
 import { useState, type KeyboardEvent } from 'react';
-import type { ContextUsage } from '../bridge.js';
+import type { ContextUsage } from './bridge.js';
 
 export interface ComposerProps {
   disabled: boolean;
