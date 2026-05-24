@@ -1,19 +1,95 @@
 import { useState } from 'react';
 import type { CaretakerConfig, AgentConfig, ScheduledTaskConfig } from 'caretaker-cli/types';
-import type { ViewToHost } from './bridge.js';
+import type { ViewToHost, ChatMessage } from './bridge.js';
+import type { ChatItem } from './App.js';
+import { MessageList } from './MessageList.js';
 
 interface SchedulerTabProps {
   config: CaretakerConfig;
   agents: AgentConfig[];
   postMessage: (msg: ViewToHost) => void;
+  taskRuns?: Record<string, any[]>;
 }
 
-export function SchedulerTab({ config, agents, postMessage }: SchedulerTabProps) {
+// Helper types for ChatItem conversion
+interface ToolItem {
+  kind: 'tool';
+  id: string;
+  name: string;
+  args: unknown;
+  result: string | null;
+}
+
+function closeStreamingAssistant(items: ChatItem[]): ChatItem[] {
+  const last = items[items.length - 1];
+  if (!last || last.kind !== 'assistant' || !last.streaming) return items;
+  return [...items.slice(0, -1), { ...last, streaming: false }];
+}
+
+function reconstructChatItems(messages: ChatMessage[]): ChatItem[] {
+  let items: ChatItem[] = [];
+
+  for (const msg of messages) {
+    if (msg.role === 'user') {
+      items = closeStreamingAssistant(items);
+      items.push({ kind: 'user', text: msg.content });
+    } else if (msg.role === 'assistant') {
+      items = closeStreamingAssistant(items);
+      
+      if (msg.parts && msg.parts.length > 0) {
+        for (const part of msg.parts) {
+          if (part.type === 'text') {
+            items.push({ kind: 'assistant', text: part.text, streaming: false });
+          } else if (part.type === 'thinking') {
+            items.push({ kind: 'thinking', text: part.text });
+          } else if (part.type === 'tool_use') {
+            items.push({
+              kind: 'tool',
+              id: part.id,
+              name: part.name,
+              args: part.args,
+              result: null,
+            });
+          }
+        }
+      } else {
+        items.push({ kind: 'assistant', text: msg.content, streaming: false });
+      }
+    } else if (msg.role === 'tool') {
+      const toolCallId = msg.toolCallId;
+      if (toolCallId) {
+        const idx = items.findIndex(
+          (it) => it.kind === 'tool' && it.id === toolCallId && it.result === null,
+        );
+        if (idx !== -1) {
+          const toolItem = items[idx] as ToolItem;
+          items[idx] = { ...toolItem, result: msg.content };
+        } else {
+          items.push({
+            kind: 'tool',
+            id: toolCallId,
+            name: 'unknown_tool',
+            args: {},
+            result: msg.content,
+          });
+        }
+      }
+    }
+  }
+
+  return closeStreamingAssistant(items);
+}
+
+export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: SchedulerTabProps) {
   // Ensure tasks array is initialized
   const tasks = config.scheduler?.tasks || [];
 
   const [editingTask, setEditingTask] = useState<ScheduledTaskConfig | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+
+  // Task log viewer states
+  const [viewingTaskLogs, setViewingTaskLogs] = useState<ScheduledTaskConfig | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
 
   // Form states
   const [name, setName] = useState('');
@@ -44,7 +120,6 @@ export function SchedulerTab({ config, agents, postMessage }: SchedulerTabProps)
     setName('');
     setType('heartbeat');
     setEnabled(true);
-    // Pick the first agent if available as a convenient default
     setAgentId(agents[0]?.id || '');
     setWorkingDir('');
     setPrompt('');
@@ -82,14 +157,12 @@ export function SchedulerTab({ config, agents, postMessage }: SchedulerTabProps)
       return;
     }
 
-    // Cron Timing validation (must be 5 space-separated parts)
     const cronParts = trimmedCron.split(/\s+/);
     if (cronParts.length !== 5) {
       setErrorMsg('Invalid cron expression. It must contain exactly 5 space-separated fields (e.g. "*/15 * * * *").');
       return;
     }
 
-    // Unique task name validation
     const existing = tasks.find(t => t.name.toLowerCase() === trimmedName.toLowerCase());
     if (isCreating && existing) {
       setErrorMsg(`A task named "${trimmedName}" already exists.`);
@@ -167,7 +240,20 @@ export function SchedulerTab({ config, agents, postMessage }: SchedulerTabProps)
     });
   };
 
+  const openLogViewer = (task: ScheduledTaskConfig) => {
+    setViewingTaskLogs(task);
+    setSelectedRunId(null);
+    postMessage({ type: 'getTaskRuns', taskId: task.id });
+  };
+
   const showForm = isCreating || editingTask !== null;
+
+  // Filter current runs for viewing
+  const runs = viewingTaskLogs ? taskRuns[viewingTaskLogs.id] || [] : [];
+  const activeRunId = selectedRunId || runs[0]?.runId;
+  const activeRun = runs.find(r => r.runId === activeRunId);
+  const activeRunChatItems = activeRun ? reconstructChatItems(activeRun.messages || []) : [];
+  const selectedAgentName = viewingTaskLogs ? agents.find(a => a.id === viewingTaskLogs.agentId)?.name : '';
 
   return (
     <div className="tab-pane scheduler-tab">
@@ -352,6 +438,14 @@ export function SchedulerTab({ config, agents, postMessage }: SchedulerTabProps)
                   <div className="settings-card__actions">
                     <button
                       className="icon-btn"
+                      onClick={() => openLogViewer(task)}
+                      title="View execution logs"
+                      style={{ fontSize: '12px', marginRight: '4px' }}
+                    >
+                      📋
+                    </button>
+                    <button
+                      className="icon-btn"
                       onClick={() => startEdit(task)}
                       title="Edit task"
                     >
@@ -369,6 +463,108 @@ export function SchedulerTab({ config, agents, postMessage }: SchedulerTabProps)
               );
             })
           )}
+        </div>
+      )}
+
+      {/* Execution Console Side Drawer */}
+      {viewingTaskLogs && (
+        <div className="execution-console">
+          <div className="execution-console__panel">
+            <header className="execution-console__header">
+              <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 700 }}>
+                📋 Execution Logs: {viewingTaskLogs.name}
+              </h3>
+              <button 
+                className="execution-console__close-btn"
+                onClick={() => setViewingTaskLogs(null)}
+                title="Close console"
+              >
+                ✕
+              </button>
+            </header>
+
+            <div className="execution-console__body">
+              {/* Left runs sidebar list */}
+              <div className="execution-console__runs-list">
+                <span className="app__sidebar-section-title" style={{ paddingLeft: '4px', marginBottom: '8px' }}>
+                  Execution History
+                </span>
+                {runs.length === 0 ? (
+                  <div className="app__sidebar-empty-text">No execution runs recorded yet.</div>
+                ) : (
+                  runs.map((run) => {
+                    const isSelected = run.runId === activeRunId;
+                    const date = new Date(run.timestamp);
+                    const formattedDate = date.toLocaleString();
+                    const isSuccess = run.status === 'success';
+
+                    return (
+                      <button
+                        key={run.runId}
+                        className={`execution-console__run-item ${isSelected ? 'execution-console__run-item--active' : ''}`}
+                        onClick={() => setSelectedRunId(run.runId)}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                          <span style={{ fontSize: '10px', color: 'var(--vscode-descriptionForeground)' }}>
+                            {run.runId}
+                          </span>
+                          <span style={{
+                            fontSize: '9px',
+                            fontWeight: 700,
+                            padding: '1px 5px',
+                            borderRadius: '10px',
+                            background: isSuccess ? 'oklch(0.72 0.18 140 / 0.12)' : 'oklch(0.6 0.18 20 / 0.12)',
+                            color: isSuccess ? 'oklch(0.72 0.18 140)' : 'oklch(0.6 0.18 20)',
+                            border: `1px solid ${isSuccess ? 'oklch(0.72 0.18 140 / 0.3)' : 'oklch(0.6 0.18 20 / 0.3)'}`
+                          }}>
+                            {run.status.toUpperCase()}
+                          </span>
+                        </div>
+                        <span style={{ fontSize: '11px', fontWeight: 600, marginTop: '2px' }}>
+                          {formattedDate}
+                        </span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Right main run trace log */}
+              <div className="execution-console__run-details">
+                {activeRun ? (
+                  <>
+                    <div className="execution-console__run-header">
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <span style={{ fontSize: '12px', fontWeight: 700 }}>
+                          Run: {activeRun.runId}
+                        </span>
+                        <span style={{ fontSize: '10px', color: 'var(--vscode-descriptionForeground)' }}>
+                          Executed on: {new Date(activeRun.timestamp).toLocaleString()}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--vscode-descriptionForeground)' }}>
+                          Agent: <strong>{selectedAgentName}</strong>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="messages" style={{ padding: '20px 24px', flex: 1, overflowY: 'auto' }}>
+                      <MessageList
+                        items={activeRunChatItems}
+                        isStreaming={false}
+                        agentName={selectedAgentName}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div className="app__empty-state" style={{ height: '100%', justifyContent: 'center' }}>
+                    <p>Select an execution run from the left sidebar to view details</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

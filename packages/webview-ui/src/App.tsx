@@ -290,6 +290,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
   const [modelsResult, setModelsResult] = useState<ModelsResult | null>(null);
   const [refreshingSourceId, setRefreshingSourceId] = useState<string | null>(null);
   const [refreshOutcome, setRefreshOutcome] = useState<RefreshOutcome | null>(null);
+  const [taskRuns, setTaskRuns] = useState<Record<string, any[]>>({});
 
   useEffect(() => {
     postMessage({ type: 'webviewReady' });
@@ -358,6 +359,9 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
         case 'refreshPluginOutcome':
           setRefreshingSourceId(null);
           setRefreshOutcome(msg.outcome);
+          return;
+        case 'taskRunsLoaded':
+          setTaskRuns((prev) => ({ ...prev, [msg.taskId]: msg.runs }));
           return;
       }
     }
@@ -444,6 +448,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
           refreshingSourceId={refreshingSourceId}
           refreshOutcome={refreshOutcome}
           setRefreshOutcome={setRefreshOutcome}
+          taskRuns={taskRuns}
           onClose={() => setActiveScreen('chat')}
         />
       </div>
