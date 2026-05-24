@@ -438,6 +438,23 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
                   value={telegramAllowedChats}
                   onChange={(e) => setTelegramAllowedChats(e.target.value)}
                 />
+                {telegramAllowedChats.trim() === '' && (
+                  <div style={{
+                    background: 'rgba(220, 150, 50, 0.10)',
+                    border: '1px solid rgba(220, 150, 50, 0.35)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '8px 10px',
+                    fontSize: '11px',
+                    marginTop: '6px',
+                    lineHeight: '1.4',
+                    color: 'var(--vscode-notificationsWarningIcon-foreground, #d49a32)',
+                  }}>
+                    ⚠️ <strong>Security:</strong> with no whitelist, anyone who sends a message
+                    to this bot can execute every tool this agent has enabled — including shell
+                    commands and filesystem writes. Tool calls run with auto-approval; the
+                    chat ID whitelist is the only access boundary.
+                  </div>
+                )}
               </div>
 
               <div className="glass-form__help-card" style={{
