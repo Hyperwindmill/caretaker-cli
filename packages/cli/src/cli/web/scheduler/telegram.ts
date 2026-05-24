@@ -372,7 +372,7 @@ async function executeTelegramPoller(task: ScheduledTaskConfig): Promise<void> {
     );
 
     const offset = await loadTelegramOffset(task.id);
-    const updates = await tgGetUpdates(token, offset);
+    const updates = await tgGetUpdates(token, offset !== undefined ? offset + 1 : undefined);
     if (updates.length === 0) return;
 
     for (const update of updates) {
