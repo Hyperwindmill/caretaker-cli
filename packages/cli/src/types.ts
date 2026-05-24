@@ -4,9 +4,18 @@ export type ProviderConfig = {
   apiKey?: string;
 };
 
+export type HeartbeatSchedulerConfig = {
+  enabled: boolean;
+  agentId: string;
+  workingDir?: string;
+  prompt: string;
+  cron: string;
+};
+
 export type CaretakerConfig = {
   port: number;
   providers: ProviderConfig[];
+  scheduler?: HeartbeatSchedulerConfig;
 };
 
 export type PluginManifestKind = 'cc-marketplace' | 'cc-plugin' | 'skill-glob';

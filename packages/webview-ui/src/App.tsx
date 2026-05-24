@@ -435,6 +435,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
   if (activeScreen === 'settings') {
     return (
       <SettingsPanel
+        layout={layout}
         postMessage={postMessage}
         settingsData={settingsData}
         modelsResult={modelsResult}
