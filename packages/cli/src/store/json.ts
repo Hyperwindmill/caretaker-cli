@@ -1,6 +1,6 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { mkdir, readFile, writeFile, chmod } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, chmod, rename } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import type { AgentConfig, CaretakerConfig, McpServersFile, PluginsFile } from '../types.js';
 import { encrypt, isEncrypted } from '../lib/encryption.js';
@@ -42,14 +42,29 @@ async function ensureDataDir(): Promise<void> {
 
 async function readJsonOrDefault<T>(path: string, fallback: T): Promise<T> {
   if (!existsSync(path)) return fallback;
-  const raw = await readFile(path, 'utf8');
-  return JSON.parse(raw) as T;
+  try {
+    const raw = await readFile(path, 'utf8');
+    if (!raw.trim()) return fallback;
+    return JSON.parse(raw) as T;
+  } catch (err) {
+    console.warn(`[store/json] failed to read or parse ${path}:`, err);
+    return fallback;
+  }
 }
 
 async function writeJson(path: string, data: unknown): Promise<void> {
   await ensureDataDir();
-  await writeFile(path, JSON.stringify(data, null, 2), 'utf8');
-  await chmod(path, 0o600);
+  const tmpPath = `${path}.tmp.${process.pid}.${Date.now()}`;
+  try {
+    await writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf8');
+    await chmod(tmpPath, 0o600);
+    await rename(tmpPath, path);
+  } catch (err) {
+    console.error(`[store/json] atomic write failed for ${path}:`, err);
+    // Fallback to direct write if rename fails (e.g. cross-device link issues)
+    await writeFile(path, JSON.stringify(data, null, 2), 'utf8');
+    await chmod(path, 0o600);
+  }
 }
 
 export async function loadConfig(): Promise<CaretakerConfig> {
