@@ -8,13 +8,16 @@ Yet another agent harness. Yes — but built the way I want one to be.
 
 A terminal-native home for your agents that you can also drive from a browser or from a VSCode sidebar. You create _named agents_, each with its own identity, its own tools, its own working directory, and its own conversations. You bring your keys. They do the work. All on-disk state lives under `~/.caretaker/` as plain JSON and JSONL.
 
-## Three surfaces, one harness
+## Surfaces
 
-The same in-process harness, agents store, plugins, MCP servers, skills, and confirm gate are shared across every entry point:
+The harness, agents store, plugins, MCP servers, skills, slash commands and confirm gate are shared by every entry point. **The web server is the superset** — some features only ship there.
 
-- **TUI** — `pnpm -F caretaker-cli dev` launches the Ink terminal app.
-- **Web GUI** — `pnpm -F caretaker-cli dev web` (or `caretaker-cli web --port 3000`) starts a local Hono server that serves the webview as a desktop-grade two-column web app.
-- **VSCode sidebar** — `packages/vscode-extension/` embeds the harness as an ESM library (no subprocess). Same `~/.caretaker/` state, same agents, same conversations. See [packages/vscode-extension/README.md](packages/vscode-extension/README.md) for the F5 / dev loop.
+- **Web server (`caretaker-cli web`)** — `pnpm -F caretaker-cli dev web` (or `caretaker-cli web --port 3000`) starts a local Hono + WebSocket server that serves the webview as a desktop-grade two-column web app. **Web-only** features:
+  - the in-process **scheduler** (both heartbeat and Telegram strategies — see below) — the daemon only boots inside the web server, so scheduled tasks need the web process up to fire.
+  - the **Execution Console** that renders past scheduler runs.
+  - the **Scheduler / Settings / MCP / Plugins** premium panels (the webview UI is shared with the VSCode extension, but the routes and persistence are only mounted under the web server).
+- **TUI** — `pnpm -F caretaker-cli dev` launches the Ink terminal app. Use it to manage providers, agents, plugins, MCP servers, and to chat. It does **not** run the scheduler and does not expose the scheduler UI.
+- **VSCode sidebar** — `packages/vscode-extension/` embeds the harness as an ESM library (no subprocess). Same `~/.caretaker/` state, same agents, same conversations. Chat-focused; does not boot the scheduler. See [packages/vscode-extension/README.md](packages/vscode-extension/README.md) for the F5 / dev loop.
 - **Headless** — `caretaker-cli run [prompt...] --agent <name>` does one-shot dispatches for scripts and CI; `--output json` for a structured blob.
 
 ## What makes it caretaker
@@ -70,11 +73,16 @@ Refresh failures preserve the previous good state, so an outage doesn't strip pl
 
 ### Sub-agent dispatch
 
-When more than one agent exists, every agent gets `list_agents` and `invoke_agent({name, task})` auto-injected. The child inherits provider/model/tools/plugins/mcpServers/workingDir from the caller when its own fields are empty, but **never** `systemPrompt` or `maxTurns`. Recursion is capped at depth 5; self-invocation is rejected. The confirm gate is plumbed all the way through, so the user still gates child tool calls.
+`list_agents` and `invoke_agent` are always-on. Two modes:
 
-### Scheduler
+- **Named** — `invoke_agent({name, task})` dispatches a configured agent. The child inherits provider/model/tools/plugins/mcpServers/workingDir from the caller when its own fields are empty, but **never** `systemPrompt` or `maxTurns`. Self-invocation is rejected.
+- **Anonymous** — `invoke_agent({task})` (no `name`) spins up an ephemeral generic agent that inherits everything from the caller and has no `systemPrompt` of its own; the task IS the prompt. Useful for delegating speculative subtasks without polluting the parent's history or dragging the parent's identity along. Works fine when only one agent is configured — that's the whole point of anonymous dispatch.
 
-An in-process background scheduler runs as long as the TUI / web server is up. Two strategies ship today, both per-agent and configurable from the **Scheduler** settings panel:
+Recursion is capped at depth 5. The confirm gate is plumbed all the way through, so the user still gates child tool calls.
+
+### Scheduler (web-only)
+
+The web server boots an in-process background scheduler — neither the TUI nor the VSCode extension does. As a consequence, scheduled tasks only fire while `caretaker-cli web` is up. Two strategies ship today, both per-agent and configurable from the web GUI's **Scheduler** settings panel:
 
 - **Heartbeat** — standard cron expression (`* * * * *`, lists, ranges, step patterns) fires a one-shot run of the agent with a fixed prompt. Tool calls auto-approve (it's unattended).
 - **Telegram poller** — polls Telegram `getUpdates` and routes incoming messages to the agent as an interactive conversation. The bot token is encrypted at rest; the offset is committed atomically before processing to prevent duplicate runs; messages from the same chat are serialised so a rapid second message never gets dropped. The Allowed Chat IDs whitelist is the only access boundary — without it, anyone who knows the token can execute every tool the agent has enabled, which the UI calls out explicitly.
@@ -107,12 +115,11 @@ Filesystem (sandboxed to the agent's working directory): `read_file`, `write`, `
 
 Network: `fetch`. Shell: `bash`.
 
-Auto-injected by the resolver when their preconditions hold (so the agent's opt-in surface isn't polluted by them):
+Auto-injected by the resolver (so the agent's opt-in surface isn't polluted by them):
 
+- `get_agent_context`, `list_agents`, `invoke_agent` — **always on**. `invoke_agent` is useful even with a single agent thanks to its anonymous mode (see _Sub-agent dispatch_), so the tools are always discoverable.
 - `list_skills`, `read_skill` — when the agent has at least one active plugin.
 - `list_commands`, `invoke_command` — same gating as skills.
-- `list_agents`, `invoke_agent` — when there is more than one agent configured.
-- `get_agent_context` — always present, so the agent can introspect "how much context am I using".
 
 ## Layout
 
