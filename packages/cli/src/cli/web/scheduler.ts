@@ -169,8 +169,11 @@ export async function executeTaskRun(task: ScheduledTaskConfig): Promise<void> {
     const tools = await harness.resolveAgentTools(agent, harness.tools);
     const workingDir = task.workingDir || agent.workingDir || process.cwd();
 
+    const unattendedNotice = `[UNATTENDED RUN] Note: You are running as an unattended scheduled task. No human is supervising this execution. Act autonomously, execute required tools, and complete the task to the best of your ability.`;
+    const effectivePrompt = `${unattendedNotice}\n\n${task.prompt}`;
+
     // Track the initial user prompt inside run history
-    const startMsg = userMessage(task.prompt);
+    const startMsg = userMessage(effectivePrompt);
     runMessages.push(startMsg);
 
     // Invoke headless loop run
@@ -179,7 +182,7 @@ export async function executeTaskRun(task: ScheduledTaskConfig): Promise<void> {
         agent,
         provider,
         tools,
-        prompt: task.prompt,
+        prompt: effectivePrompt,
         history: [],
         workingDir,
       },
@@ -227,7 +230,7 @@ export async function executeTaskRun(task: ScheduledTaskConfig): Promise<void> {
       chatMessages.push({
         id: randomUUID(),
         role: 'user',
-        content: task.prompt,
+        content: effectivePrompt,
         createdAt: new Date().toISOString(),
       });
     }
