@@ -29,12 +29,14 @@ describe('plugin skill loader (per-file granularity)', () => {
     await rm(store.pluginsPath(), { force: true });
   });
 
-  function pluginRecord(over: Partial<PluginRecord> & {
-    sourceUrl: string;
-    name: string;
-    relPath?: string;
-    skills?: Record<string, SkillSpec>;
-  }): { plugin: PluginRecord; sourceId: string } {
+  function pluginRecord(
+    over: Partial<PluginRecord> & {
+      sourceUrl: string;
+      name: string;
+      relPath?: string;
+      skills?: Record<string, SkillSpec>;
+    },
+  ): { plugin: PluginRecord; sourceId: string } {
     const sourceId = randomUUID();
     const plugin: PluginRecord = {
       id: randomUUID(),
@@ -72,7 +74,11 @@ describe('plugin skill loader (per-file granularity)', () => {
     it('returns empty when no plugin matches', async () => {
       const dir = mkdtempSync(path.join(tmpdir(), 'plug-loader-'));
       try {
-        await seedPath({ sourceUrl: dir, name: 'real', skills: { x: { name: 'x', relPath: 'SKILL.md' } } });
+        await seedPath({
+          sourceUrl: dir,
+          name: 'real',
+          skills: { x: { name: 'x', relPath: 'SKILL.md' } },
+        });
         assert.deepEqual(await loader.listActiveSkills(['nonexistent']), []);
       } finally {
         rmSync(dir, { recursive: true, force: true });
@@ -87,7 +93,11 @@ describe('plugin skill loader (per-file granularity)', () => {
           name: 'superpowers',
           manifestKind: 'cc-plugin',
           skills: {
-            brainstorming: { name: 'brainstorming', description: 'b', relPath: 'skills/brainstorming/SKILL.md' },
+            brainstorming: {
+              name: 'brainstorming',
+              description: 'b',
+              relPath: 'skills/brainstorming/SKILL.md',
+            },
             'requesting-code-review': {
               name: 'requesting-code-review',
               description: 'rcr',

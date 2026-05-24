@@ -5,7 +5,13 @@
 
 import { randomUUID } from 'node:crypto';
 import { encrypt, isEncrypted } from '../lib/encryption.js';
-import { loadAgents, loadMcpServers, loadPlugins, saveAgents, saveMcpServers } from '../store/json.js';
+import {
+  loadAgents,
+  loadMcpServers,
+  loadPlugins,
+  saveAgents,
+  saveMcpServers,
+} from '../store/json.js';
 import { closeClient } from './client.js';
 import type { McpServerConfig, McpServerSpec, McpTransport, PluginRecord } from '../types.js';
 

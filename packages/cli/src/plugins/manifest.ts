@@ -370,7 +370,9 @@ export async function discoverPluginSkills(
 ): Promise<Record<string, SkillSpec> | undefined> {
   const relPaths: string[] =
     manifestKind === 'skill-glob'
-      ? (await fileExists(path.join(pluginRoot, 'SKILL.md'))) ? ['SKILL.md'] : []
+      ? (await fileExists(path.join(pluginRoot, 'SKILL.md')))
+        ? ['SKILL.md']
+        : []
       : await fg('**/SKILL.md', {
           cwd: pluginRoot,
           ignore: ['node_modules/**', '.git/**'],

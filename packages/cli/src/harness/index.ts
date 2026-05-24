@@ -6,12 +6,7 @@
 export { run } from './loop.js';
 export type { RunOptions, RunCallbacks, RunResult, ConfirmDecision } from './loop.js';
 
-export {
-  resolveAgentTools,
-  ToolRegistry,
-  registerBuiltins,
-  toOpenAiTool,
-} from './tools/index.js';
+export { resolveAgentTools, ToolRegistry, registerBuiltins, toOpenAiTool } from './tools/index.js';
 export type {
   Tool,
   ToolContext,
@@ -24,4 +19,3 @@ export { tools } from './tools/instance.js';
 
 export { fetchOpenAiStyleModels } from './models.js';
 export type { ModelsResult } from './models.js';
-

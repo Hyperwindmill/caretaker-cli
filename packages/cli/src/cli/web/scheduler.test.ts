@@ -47,7 +47,7 @@ test('scheduler: matchesCron evaluates ranges', () => {
 test('scheduler: matchesCron evaluates day of week ranges', () => {
   const sunday = new Date('2026-05-24T12:00:00'); // 2026-05-24 is Sunday (0)
   const monday = new Date('2026-05-25T12:00:00'); // Monday (1)
-  
+
   // 1-5 is Monday-Friday
   assert.equal(matchesCron('* * * * 1-5', sunday), false);
   assert.equal(matchesCron('* * * * 1-5', monday), true);

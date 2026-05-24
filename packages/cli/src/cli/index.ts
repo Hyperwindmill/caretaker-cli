@@ -29,10 +29,7 @@ export async function runCli(argv: string[]): Promise<void> {
     .command('run [prompt...]')
     .description('Run an agent headlessly with a one-shot prompt.')
     .option('-a, --agent <name>', 'agent to run (auto-picks when exactly one exists)')
-    .option(
-      '-t, --tools <list>',
-      "comma-separated tool names, overriding the agent's allowedTools",
-    )
+    .option('-t, --tools <list>', "comma-separated tool names, overriding the agent's allowedTools")
     .option(
       '-o, --output <format>',
       'output format: plain (streaming text) or json (final blob)',

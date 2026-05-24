@@ -178,7 +178,7 @@ export async function executeTaskRun(task: ScheduledTaskConfig): Promise<void> {
           runMessages.push(msg);
         },
         confirmTool: async () => 'once', // Headless cron triggers auto-approve all tools
-      }
+      },
     );
 
     // Map captured MessageRecords to webview ChatMessage schema
@@ -258,7 +258,9 @@ export async function runSchedulerTick(): Promise<void> {
 
     for (const task of enabledTasks) {
       if (matchesCron(task.cron, now)) {
-        console.log(`[scheduler] Task "${task.name}" matches cron expression "${task.cron}". Launching run...`);
+        console.log(
+          `[scheduler] Task "${task.name}" matches cron expression "${task.cron}". Launching run...`,
+        );
         void executeTaskRun(task).catch((err) => {
           console.error(`[scheduler] Background task run failed to execute:`, err);
         });
@@ -276,7 +278,7 @@ let schedulerIntervalRef: NodeJS.Timeout | null = null;
  */
 export function startBackgroundScheduler(): void {
   if (schedulerIntervalRef) return;
-  
+
   console.log('[scheduler] Starting in-process background scheduler daemon...');
   // Check matching jobs every 15 seconds to ensure exact minute matching
   schedulerIntervalRef = setInterval(() => {
