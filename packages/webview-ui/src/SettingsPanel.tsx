@@ -6,8 +6,10 @@ import { ProvidersTab } from './ProvidersTab.js';
 import { AgentsTab } from './AgentsTab.js';
 import { PluginsTab } from './PluginsTab.js';
 import { McpTab } from './McpTab.js';
+import { SchedulerTab } from './SchedulerTab.js';
 
 interface SettingsPanelProps {
+  layout?: 'compact' | 'sidebar';
   postMessage: (msg: ViewToHost) => void;
   settingsData: {
     config: CaretakerConfig;
@@ -24,9 +26,10 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
-type TabId = 'providers' | 'agents' | 'plugins' | 'mcp';
+type TabId = 'providers' | 'agents' | 'plugins' | 'mcp' | 'scheduler';
 
 export function SettingsPanel({
+  layout = 'compact',
   postMessage,
   settingsData,
   modelsResult,
@@ -94,6 +97,14 @@ export function SettingsPanel({
             postMessage={postMessage}
           />
         );
+      case 'scheduler':
+        return (
+          <SchedulerTab
+            config={config}
+            agents={agents}
+            postMessage={postMessage}
+          />
+        );
     }
   };
 
@@ -131,6 +142,14 @@ export function SettingsPanel({
         >
           MCP
         </button>
+        {layout === 'sidebar' && (
+          <button
+            className={`settings-panel__tab-btn ${activeTab === 'scheduler' ? 'settings-panel__tab-btn--active' : ''}`}
+            onClick={() => setActiveTab('scheduler')}
+          >
+            Scheduler
+          </button>
+        )}
       </nav>
 
       <main className="settings-panel__content">
