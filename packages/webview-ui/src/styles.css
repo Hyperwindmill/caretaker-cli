@@ -374,25 +374,24 @@ body {
 
 /* Premium gradient pulsing visual element for empty state */
 .app__empty-state::before {
-  content: "✦";
-  font-size: 32px;
+  content: "";
+  width: 48px;
+  height: 48px;
   margin-bottom: var(--spacing-md);
-  background: linear-gradient(135deg, var(--primary-blue), var(--accent-cyan));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  background: url('./caretaker_cli.png') no-repeat center/contain;
   animation: pulseLight 3s ease-in-out infinite;
 }
 
 @keyframes pulseLight {
   0%, 100% {
-    opacity: 0.6;
+    opacity: 0.7;
     transform: scale(1);
-    filter: drop-shadow(0 0 2px oklch(0.78 0.16 200 / 0.1));
+    filter: drop-shadow(0 0 4px var(--primary-blue)) drop-shadow(0 0 8px var(--accent-cyan));
   }
   50% {
     opacity: 1;
-    transform: scale(1.15);
-    filter: drop-shadow(0 0 10px oklch(0.78 0.16 200 / 0.5));
+    transform: scale(1.1);
+    filter: drop-shadow(0 0 12px var(--primary-blue)) drop-shadow(0 0 20px var(--accent-cyan));
   }
 }
 
