@@ -31,6 +31,7 @@ import { MessageList } from './MessageList.js';
 import { Composer } from './Composer.js';
 import { ConfirmCard } from './ConfirmCard.js';
 import { SettingsPanel } from './SettingsPanel.js';
+import { ProjectsTab } from './ProjectsTab.js';
 import logo from './caretaker_cli.png';
 
 export interface UserItem {
@@ -279,7 +280,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
   const [showSessions, setShowSessions] = useState(false);
   const [showAllAgents, setShowAllAgents] = useState(false);
 
-  const [activeScreen, setActiveScreen] = useState<'chat' | 'settings'>('chat');
+  const [activeScreen, setActiveScreen] = useState<'chat' | 'settings' | 'projects'>('chat');
   const [settingsData, setSettingsData] = useState<{
     config: CaretakerConfig;
     agents: AgentConfig[];
@@ -436,6 +437,39 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
   const selectedAgentName = agents.find((a) => a.id === selectedAgentId)?.name;
   const activeAgent = agents.find((a) => a.id === selectedAgentId);
 
+  if (activeScreen === 'projects') {
+    return (
+      <div className="app" style={{ height: '100%' }}>
+        <header className="app__header">
+          <div className="app__header-row">
+            <div className="app__logo-title-wrapper" onClick={() => setActiveScreen('chat')} style={{ cursor: 'pointer' }}>
+              <img src={logo} alt="Caretaker" className="app__logo" />
+              <span>Caretaker</span>
+            </div>
+            <div className="app__controls">
+              <button className="app__sessions-btn" onClick={() => setActiveScreen('chat')}>
+                💬 Chat
+              </button>
+              <button
+                className="app__settings-btn"
+                onClick={() => {
+                  setActiveScreen('settings');
+                  postMessage({ type: 'getSettingsData' });
+                }}
+                title="Caretaker Settings"
+              >
+                ⚙️ Settings
+              </button>
+            </div>
+          </div>
+        </header>
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <ProjectsTab agents={agents} />
+        </div>
+      </div>
+    );
+  }
+
   if (activeScreen === 'settings') {
     return (
       <div className={`app ${layout === 'sidebar' ? 'app--settings-centered' : ''}`}>
@@ -549,7 +583,16 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
             )}
           </div>
 
-          <div className="app__sidebar-footer">
+          <div className="app__sidebar-footer" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <button
+              className="app__sidebar-settings-btn"
+              onClick={() => {
+                setActiveScreen('projects');
+              }}
+              title="Projects & Autonomous Tasks"
+            >
+              <span>📁 Projects</span>
+            </button>
             <button
               className="app__sidebar-settings-btn"
               onClick={() => {
@@ -628,6 +671,15 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
                 ))}
               </select>
             </div>
+            <button
+              className="app__sessions-btn"
+              onClick={() => {
+                setActiveScreen('projects');
+              }}
+              title="Projects & Autonomous Tasks"
+            >
+              📁 Projects
+            </button>
             <button
               className="app__sessions-btn"
               onClick={onToggleSessions}
