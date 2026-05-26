@@ -55,15 +55,14 @@ TITLE: ${taskTitle}`;
 
 export async function runTaskHeartbeatTick(now: Date): Promise<void> {
   // 1. Pick one active, unlocked task (oldest updatedAt first)
-  const taskRows = (await runQuery(`SELECT * FROM tasks WHERE status = 'active'`)) as Task[];
-  const activeAndUnlocked = taskRows.filter((t) => !t.lockedAt);
-  if (activeAndUnlocked.length === 0) {
+  const taskRows = (await runQuery(`SELECT * FROM tasks WHERE status = 'active' AND lockedAt IS NULL`)) as Task[];
+  if (taskRows.length === 0) {
     return;
   }
 
   // Sort by updatedAt asc to find the oldest
-  activeAndUnlocked.sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime());
-  const task = activeAndUnlocked[0]!;
+  taskRows.sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime());
+  const task = taskRows[0]!;
 
   const lockKey = `task_db_${task.id}`;
   if (runningTasks.has(lockKey)) {
