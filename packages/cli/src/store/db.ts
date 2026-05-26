@@ -132,7 +132,12 @@ export async function updateTaskMessageContent(
   content: string,
   type?: TaskMessage['messageType']
 ): Promise<void> {
-  const cleaned = content.replace(/'/g, "''").slice(0, 50000);
+  const cleaned = content
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "''")
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n')
+    .slice(0, 50000);
   if (type) {
     await runQuery(`UPDATE task_messages SET content = '${cleaned}', messageType = '${type}' WHERE id = ${id}`);
   } else {
