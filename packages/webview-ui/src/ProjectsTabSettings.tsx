@@ -1,0 +1,241 @@
+import { useState } from 'react';
+import type { CaretakerConfig, AgentConfig, ProjectConfig } from 'caretaker-cli/types';
+import type { ViewToHost } from './bridge.js';
+
+interface ProjectsTabSettingsProps {
+  config: CaretakerConfig;
+  agents: AgentConfig[];
+  postMessage: (msg: ViewToHost) => void;
+}
+
+export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTabSettingsProps) {
+  const [editingProject, setEditingProject] = useState<ProjectConfig | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+
+  // Form states
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [workingDir, setWorkingDir] = useState('');
+  const [agentId, setAgentId] = useState('');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const projects = config.projects || [];
+
+  const startEdit = (proj: ProjectConfig) => {
+    setEditingProject(proj);
+    setIsCreating(false);
+    setName(proj.name);
+    setDescription(proj.description || '');
+    setWorkingDir(proj.workingDir);
+    setAgentId(proj.agentId);
+    setErrorMsg(null);
+  };
+
+  const startCreate = () => {
+    setIsCreating(true);
+    setEditingProject(null);
+    setName('');
+    setDescription('');
+    setWorkingDir('');
+    setAgentId(agents[0]?.id || '');
+    setErrorMsg(null);
+  };
+
+  const cancelForm = () => {
+    setIsCreating(false);
+    setEditingProject(null);
+    setErrorMsg(null);
+  };
+
+  const validateAndSave = () => {
+    const trimmedName = name.trim();
+    const trimmedDesc = description.trim();
+    const trimmedDir = workingDir.trim();
+
+    if (!trimmedName) {
+      setErrorMsg('Project Name is required.');
+      return;
+    }
+    if (!trimmedDir) {
+      setErrorMsg('Local Working Directory Path is required.');
+      return;
+    }
+    if (!agentId) {
+      setErrorMsg('An Agent must be assigned.');
+      return;
+    }
+
+    const updatedProjects = [...projects];
+
+    if (isCreating) {
+      const nextId = projects.length > 0 ? Math.max(...projects.map((p) => p.id)) + 1 : 1;
+      const newProj: ProjectConfig = {
+        id: nextId,
+        name: trimmedName,
+        description: trimmedDesc,
+        workingDir: trimmedDir,
+        agentId,
+        active: true,
+      };
+      updatedProjects.push(newProj);
+    } else if (editingProject) {
+      const idx = updatedProjects.findIndex((p) => p.id === editingProject.id);
+      if (idx !== -1) {
+        updatedProjects[idx] = {
+          ...editingProject,
+          name: trimmedName,
+          description: trimmedDesc,
+          workingDir: trimmedDir,
+          agentId,
+        };
+      }
+    }
+
+    postMessage({
+      type: 'saveConfig',
+      config: {
+        ...config,
+        projects: updatedProjects,
+      },
+    });
+
+    setIsCreating(false);
+    setEditingProject(null);
+    setErrorMsg(null);
+  };
+
+  const deleteProject = (id: number) => {
+    if (!confirm('Are you sure you want to delete this project? All associated tasks will be permanently removed from disk.')) return;
+    
+    const updatedProjects = projects.filter((p) => p.id !== id);
+    postMessage({
+      type: 'saveConfig',
+      config: {
+        ...config,
+        projects: updatedProjects,
+      },
+    });
+
+    // Fire API call to let server clean up tasks from db
+    fetch(`/api/projects/${id}`, { method: 'DELETE' }).catch((err) => {
+      console.error('Failed to trigger database tasks cleanup on project deletion:', err);
+    });
+  };
+
+  const showForm = isCreating || editingProject !== null;
+
+  return (
+    <div className="tab-pane projects-tab-settings">
+      <div className="tab-pane__header">
+        <h3>Registered Projects</h3>
+        {!showForm && (
+          <button className="btn btn--primary btn--xs" onClick={startCreate}>
+            + Register Project
+          </button>
+        )}
+      </div>
+
+      {errorMsg && <div className="validation-error">⚠ {errorMsg}</div>}
+
+      {showForm ? (
+        <div className="glass-form">
+          <h4>{isCreating ? 'Register New Project' : `Edit Project: ${editingProject?.name}`}</h4>
+          
+          <div className="form-group">
+            <label htmlFor="project-name">Project Name</label>
+            <input
+              id="project-name"
+              type="text"
+              placeholder="e.g. My Caretaker Agent Repo"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="project-description">Description</label>
+            <textarea
+              id="project-description"
+              placeholder="What tasks will this agent perform on this repository?"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              style={{ minHeight: '60px', resize: 'vertical' }}
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="project-dir">Local Directory Path (Absolute)</label>
+            <input
+              id="project-dir"
+              type="text"
+              placeholder="e.g. /home/user/workspace/caretaker-cli"
+              value={workingDir}
+              onChange={(e) => setWorkingDir(e.target.value)}
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="project-agent">Assigned Agent</label>
+            <select
+              id="project-agent"
+              value={agentId}
+              onChange={(e) => setAgentId(e.target.value)}
+            >
+              <option value="" disabled>-- Select Agent --</option>
+              {agents.map((agent) => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-actions">
+            <button className="btn btn--secondary" onClick={cancelForm}>
+              Cancel
+            </button>
+            <button className="btn btn--primary" onClick={validateAndSave}>
+              Save
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="settings-list">
+          {projects.length === 0 ? (
+            <p className="empty-message">No projects registered in settings. Add one to start organizing your autonomous tasks.</p>
+          ) : (
+            projects.map((proj) => {
+              const assignedAgent = agents.find((a) => a.id === proj.agentId)?.name || 'Unknown Agent';
+              return (
+                <div key={proj.id} className="settings-card">
+                  <div className="settings-card__body">
+                    <div className="settings-card__title">📁 {proj.name}</div>
+                    {proj.description && <div className="settings-card__subtitle" style={{ fontSize: '11px', opacity: 0.8, marginBottom: '4px' }}>{proj.description}</div>}
+                    <div className="settings-card__subtitle" style={{ fontFamily: 'var(--font-mono)', fontSize: '10px' }}>{proj.workingDir}</div>
+                    <div className="settings-card__badge" style={{ marginTop: '6px' }}>Agent: {assignedAgent}</div>
+                  </div>
+                  <div className="settings-card__actions">
+                    <button
+                      className="icon-btn"
+                      onClick={() => startEdit(proj)}
+                      title="Edit project"
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      className="icon-btn icon-btn--danger"
+                      onClick={() => deleteProject(proj.id)}
+                      title="Delete project"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

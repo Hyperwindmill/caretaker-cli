@@ -3,6 +3,7 @@ import type { ViewToHost, ModelsResult, RefreshOutcome } from './bridge.js';
 import type { CaretakerConfig, AgentConfig, PluginsFile, McpServerConfig } from 'caretaker-cli/types';
 
 import { ProvidersTab } from './ProvidersTab.js';
+import { ProjectsTabSettings } from './ProjectsTabSettings.js';
 import { AgentsTab } from './AgentsTab.js';
 import { PluginsTab } from './PluginsTab.js';
 import { McpTab } from './McpTab.js';
@@ -27,7 +28,7 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
-type TabId = 'providers' | 'agents' | 'plugins' | 'mcp' | 'scheduler';
+type TabId = 'providers' | 'projects' | 'agents' | 'plugins' | 'mcp' | 'scheduler';
 
 export function SettingsPanel({
   layout = 'compact',
@@ -64,6 +65,14 @@ export function SettingsPanel({
       case 'providers':
         return (
           <ProvidersTab
+            config={config}
+            agents={agents}
+            postMessage={postMessage}
+          />
+        );
+      case 'projects':
+        return (
+          <ProjectsTabSettings
             config={config}
             agents={agents}
             postMessage={postMessage}
@@ -126,6 +135,12 @@ export function SettingsPanel({
           onClick={() => setActiveTab('providers')}
         >
           Providers
+        </button>
+        <button
+          className={`settings-panel__tab-btn ${activeTab === 'projects' ? 'settings-panel__tab-btn--active' : ''}`}
+          onClick={() => setActiveTab('projects')}
+        >
+          Projects
         </button>
         <button
           className={`settings-panel__tab-btn ${activeTab === 'agents' ? 'settings-panel__tab-btn--active' : ''}`}

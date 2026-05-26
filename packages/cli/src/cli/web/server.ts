@@ -2,11 +2,13 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
 import { watch, existsSync, mkdirSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import { WebSocketServer, WebSocket } from 'ws';
 
 import * as harness from '../../harness/index.js';
+import { getDb, Task, getTaskById, saveTask, createTask, addTaskMessage } from '../../store/db.js';
 import {
   loadAgents,
   loadConfig,
@@ -187,6 +189,167 @@ export async function startServer(port: number, host: string): Promise<void> {
     const file = fs.readFileSync(path.join(webviewDistPath, 'standalone.css.map'));
     c.header('Content-Type', 'application/json');
     return c.body(file);
+  });
+
+  const db = getDb();
+
+  // Projects REST endpoints
+  app.get('/api/projects', async (c) => {
+    try {
+      const config = await loadConfig();
+      return c.json(config.projects || []);
+    } catch (err) {
+      return c.json([], 200);
+    }
+  });
+
+  app.post('/api/projects', async (c) => {
+    try {
+      const body = await c.req.json();
+      const { name, description, workingDir, agentId } = body;
+      const config = await loadConfig();
+      if (!config.projects) {
+        config.projects = [];
+      }
+      const nextId = config.projects.length > 0 ? Math.max(...config.projects.map((p) => p.id)) + 1 : 1;
+      const project = {
+        id: nextId,
+        name,
+        description: description || '',
+        workingDir,
+        agentId,
+        active: true,
+      };
+      config.projects.push(project);
+      await saveConfig(config);
+      return c.json({ ok: true });
+    } catch (err) {
+      return c.json({ error: String(err) }, 500);
+    }
+  });
+
+  app.delete('/api/projects/:id', async (c) => {
+    try {
+      const id = Number(c.req.param('id'));
+      const config = await loadConfig();
+      if (config.projects) {
+        config.projects = config.projects.filter((p) => p.id !== id);
+        await saveConfig(config);
+      }
+      await db.query(`DELETE FROM tasks WHERE projectId = ${id}`);
+      return c.json({ ok: true });
+    } catch (err) {
+      return c.json({ error: String(err) }, 500);
+    }
+  });
+
+  // Tasks REST endpoints
+  app.get('/api/projects/:id/tasks', async (c) => {
+    const id = Number(c.req.param('id'));
+    try {
+      const rows = await db.query(`SELECT * FROM tasks WHERE projectId = ${id}`);
+      return c.json(rows);
+    } catch (err) {
+      return c.json([], 200);
+    }
+  });
+
+  app.post('/api/projects/:id/tasks', async (c) => {
+    const projectId = Number(c.req.param('id'));
+    const body = await c.req.json();
+    const { title, objective, checklist, startActive } = body;
+
+    const checklistItems = (checklist || []).map((item: any, idx: number) => ({
+      id: randomUUID(),
+      text: item.text,
+      status: 'pending',
+      order: idx,
+    }));
+
+    await createTask({
+      projectId,
+      title,
+      objective,
+      checklist: checklistItems,
+      status: startActive ? 'active' : 'draft',
+      blockedReason: null,
+      noProgressCount: 0,
+      maxNoProgress: 5,
+      lockedAt: null,
+    });
+    return c.json({ ok: true });
+  });
+
+  app.get('/api/tasks/:id/messages', async (c) => {
+    const taskId = Number(c.req.param('id'));
+    try {
+      const rows = (await db.query(`SELECT * FROM task_messages WHERE taskId = ${taskId}`)) as any[];
+      rows.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      return c.json(rows);
+    } catch (err) {
+      return c.json([], 200);
+    }
+  });
+
+  app.post('/api/tasks/:id/messages', async (c) => {
+    const taskId = Number(c.req.param('id'));
+    const body = await c.req.json();
+    const { content } = body;
+
+    await addTaskMessage({
+      taskId,
+      role: 'user',
+      messageType: 'chat',
+      content,
+    });
+
+    // Wake up/unpause/unblock the task so it runs on next scheduler tick
+    const task = await getTaskById(taskId);
+    if (task) {
+      task.status = 'active';
+      task.blockedReason = null;
+      task.noProgressCount = 0;
+      task.updatedAt = new Date().toISOString();
+      await saveTask(task);
+    }
+
+    return c.json({ ok: true });
+  });
+
+  app.post('/api/tasks/:id/status', async (c) => {
+    const taskId = Number(c.req.param('id'));
+    const body = await c.req.json();
+    const { status } = body;
+
+    const task = await getTaskById(taskId);
+    if (task) {
+      task.status = status;
+      if (status === 'active') {
+        task.noProgressCount = 0;
+        task.blockedReason = null;
+      }
+      task.updatedAt = new Date().toISOString();
+      await saveTask(task);
+    }
+
+    return c.json({ ok: true });
+  });
+
+  app.post('/api/tasks/:id/checklist-item', async (c) => {
+    const taskId = Number(c.req.param('id'));
+    const body = await c.req.json();
+    const { itemId, status } = body;
+
+    const task = await getTaskById(taskId);
+    if (task) {
+      task.checklist = (task.checklist || []).map((item) =>
+        item.id === itemId ? { ...item, status } : item,
+      );
+      task.updatedAt = new Date().toISOString();
+      await saveTask(task);
+    }
+
+    return c.json({ ok: true });
   });
 
   const nodeServer = serve({

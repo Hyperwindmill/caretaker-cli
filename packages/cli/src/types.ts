@@ -17,12 +17,22 @@ export type ScheduledTaskConfig = {
   telegramAllowedChats?: string;
 };
 
+export type ProjectConfig = {
+  id: number;
+  name: string;
+  description: string;
+  workingDir: string;
+  agentId: string;
+  active: boolean;
+};
+
 export type CaretakerConfig = {
   port: number;
   providers: ProviderConfig[];
   scheduler?: {
     tasks: ScheduledTaskConfig[];
   };
+  projects?: ProjectConfig[];
 };
 
 export type PluginManifestKind = 'cc-marketplace' | 'cc-plugin' | 'skill-glob';
