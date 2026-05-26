@@ -8,7 +8,7 @@ import { serve } from '@hono/node-server';
 import { WebSocketServer, WebSocket } from 'ws';
 
 import * as harness from '../../harness/index.js';
-import { getDb, Task, getTaskById, saveTask, createTask, addTaskMessage } from '../../store/db.js';
+import { getDb, Task, getTaskById, saveTask, createTask, addTaskMessage, runQuery } from '../../store/db.js';
 import {
   loadAgents,
   loadConfig,
@@ -236,7 +236,7 @@ export async function startServer(port: number, host: string): Promise<void> {
         config.projects = config.projects.filter((p) => p.id !== id);
         await saveConfig(config);
       }
-      await db.query(`DELETE FROM tasks WHERE projectId = ${id}`);
+      await runQuery(`DELETE FROM tasks WHERE projectId = ${id}`);
       return c.json({ ok: true });
     } catch (err) {
       return c.json({ error: String(err) }, 500);
@@ -247,7 +247,7 @@ export async function startServer(port: number, host: string): Promise<void> {
   app.get('/api/projects/:id/tasks', async (c) => {
     const id = Number(c.req.param('id'));
     try {
-      const rows = await db.query(`SELECT * FROM tasks WHERE projectId = ${id}`);
+      const rows = await runQuery(`SELECT * FROM tasks WHERE projectId = ${id}`);
       return c.json(rows);
     } catch (err) {
       return c.json([], 200);
@@ -283,7 +283,7 @@ export async function startServer(port: number, host: string): Promise<void> {
   app.get('/api/tasks/:id/messages', async (c) => {
     const taskId = Number(c.req.param('id'));
     try {
-      const rows = (await db.query(`SELECT * FROM task_messages WHERE taskId = ${taskId}`)) as any[];
+      const rows = (await runQuery(`SELECT * FROM task_messages WHERE taskId = ${taskId}`)) as any[];
       rows.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
       return c.json(rows);
     } catch (err) {

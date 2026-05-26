@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import * as harness from '../../../harness/index.js';
 import { loadAgents, loadConfig } from '../../../store/json.js';
-import { getDb, Task, Project, TaskMessage, getTaskById, saveTask, addTaskMessage, updateTaskMessageContent } from '../../../store/db.js';
+import { getDb, Task, Project, TaskMessage, getTaskById, saveTask, addTaskMessage, updateTaskMessageContent, runQuery } from '../../../store/db.js';
 import { runningTasks } from './locks.js';
 
 function buildPrompt(
@@ -54,10 +54,8 @@ TITLE: ${taskTitle}`;
 }
 
 export async function runTaskHeartbeatTick(now: Date): Promise<void> {
-  const db = getDb();
-
   // 1. Pick one active, unlocked task (oldest updatedAt first)
-  const taskRows = (await db.query(`SELECT * FROM tasks WHERE status = 'active'`)) as Task[];
+  const taskRows = (await runQuery(`SELECT * FROM tasks WHERE status = 'active'`)) as Task[];
   const activeAndUnlocked = taskRows.filter((t) => !t.lockedAt);
   if (activeAndUnlocked.length === 0) {
     return;
@@ -146,7 +144,7 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
     };
 
     // Load full history for replay
-    const historyMessages = (await db.query(`SELECT * FROM task_messages WHERE taskId = ${task.id}`)) as TaskMessage[];
+    const historyMessages = (await runQuery(`SELECT * FROM task_messages WHERE taskId = ${task.id}`)) as TaskMessage[];
     historyMessages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
     // Map history to loop-compatible message records
