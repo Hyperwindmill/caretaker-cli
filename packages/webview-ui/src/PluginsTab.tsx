@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { PluginsFile, PluginSource, PluginRecord } from 'caretaker-types';
 import type { ViewToHost, RefreshOutcome } from './bridge.js';
+import FolderPicker from './FolderPicker.js';
 
 interface PluginsTabProps {
   pluginsFile: PluginsFile;
@@ -197,13 +198,22 @@ export function PluginsTab({
             <label htmlFor="source-url">
               {kind === 'git' ? 'Git Repository URL' : 'Absolute Filesystem Path'}
             </label>
-            <input
-              id="source-url"
-              type="text"
-              placeholder={kind === 'git' ? 'https://github.com/org/repo.git' : '/absolute/path/to/plugins'}
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-            />
+            {kind === 'git' ? (
+              <input
+                id="source-url"
+                type="text"
+                placeholder="https://github.com/org/repo.git"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+              />
+            ) : (
+              <FolderPicker
+                id="source-url"
+                placeholder="/absolute/path/to/plugins"
+                value={url}
+                onChange={setUrl}
+              />
+            )}
           </div>
 
           {kind === 'git' && (

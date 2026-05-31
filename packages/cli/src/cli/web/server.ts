@@ -40,6 +40,7 @@ import {
 import type { AgentConfig, ProviderConfig, PluginsFile, McpServerConfig } from '../../types.js';
 import type { ConfirmDecision, HostToView, ViewToHost } from 'webview-ui/bridge';
 import { startBackgroundScheduler, loadTaskRuns } from './scheduler.js';
+import { fsRouter } from './fs.js';
 
 // Resolve Webview static files path
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -153,6 +154,8 @@ export class WebSessionController {
 
 export async function startServer(port: number, host: string): Promise<void> {
   const app = new Hono();
+
+  app.route('/api/fs', fsRouter);
 
   // Pure-Node static serving with absolute path validation and fallback
   app.get('/', (c) => {

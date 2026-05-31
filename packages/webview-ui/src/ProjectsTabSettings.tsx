@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { CaretakerConfig, AgentConfig, ProjectConfig } from 'caretaker-types';
 import type { ViewToHost } from './bridge.js';
+import FolderPicker from './FolderPicker.js';
 
 interface ProjectsTabSettingsProps {
   config: CaretakerConfig;
@@ -165,12 +166,11 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
 
           <div className="form-group">
             <label htmlFor="project-dir">Local Directory Path (Absolute)</label>
-            <input
+            <FolderPicker
               id="project-dir"
-              type="text"
               placeholder="e.g. /home/user/workspace/caretaker-cli"
               value={workingDir}
-              onChange={(e) => setWorkingDir(e.target.value)}
+              onChange={setWorkingDir}
             />
           </div>
 
