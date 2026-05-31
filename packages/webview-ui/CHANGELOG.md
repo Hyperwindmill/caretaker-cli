@@ -1,5 +1,11 @@
 # webview-ui
 
+## 0.2.3
+
+### Patch Changes
+
+- 1a3ecbd: Integrate visual filesystem directory picking (FolderPicker component on frontend, /api/fs/ls Hono route on backend) for intuitive project and local plugin path selection.
+
 ## 0.2.2
 
 ### Patch Changes
