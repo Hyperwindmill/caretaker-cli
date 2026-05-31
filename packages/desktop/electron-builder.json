@@ -22,14 +22,16 @@
   ],
   "linux": {
     "target": ["AppImage", "deb"],
-    "icon": "caretaker.png"
+    "category": "Utility",
+    "icon": "build/icons"
   },
   "mac": {
     "target": ["dmg", "zip"],
-    "icon": "caretaker.png"
+    "category": "public.app-category.productivity",
+    "icon": "build/icons"
   },
   "win": {
     "target": ["nsis"],
-    "icon": "caretaker.png"
+    "icon": "build/icon.ico"
   }
 }
