@@ -1,5 +1,11 @@
 # webview-ui
 
+## 0.2.4
+
+### Patch Changes
+
+- 287021a: Improve FolderPicker UX: center and constrain max height to 50vh, increase z-index to 999999 for proper panel layering, and integrate FolderPicker on the Agent settings working directory input.
+
 ## 0.2.3
 
 ### Patch Changes
