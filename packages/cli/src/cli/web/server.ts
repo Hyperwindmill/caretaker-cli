@@ -534,7 +534,6 @@ export async function startServer(port: number, host: string): Promise<void> {
             await loadAgentsAndSend();
             return;
           case 'start': {
-            const workspaceFolder = process.cwd(); // Default local-first workspace folder!
             if (!currentAgent || !currentProvider || !currentTools) {
               post({
                 type: 'error',
@@ -542,6 +541,10 @@ export async function startServer(port: number, host: string): Promise<void> {
               });
               return;
             }
+
+            const workspaceFolder = (currentAgent.workingDir && currentAgent.workingDir.trim())
+              ? currentAgent.workingDir.trim()
+              : process.cwd();
 
             if (!controller) {
               controller = new WebSessionController({
