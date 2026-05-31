@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { CaretakerConfig, AgentConfig, PluginsFile, McpServerConfig } from 'caretaker-cli/types';
+import type { CaretakerConfig, AgentConfig, PluginsFile, McpServerConfig } from 'caretaker-types';
 import type { ViewToHost, ModelsResult } from './bridge.js';
 
 interface AgentsTabProps {
