@@ -85,7 +85,7 @@ export default function FolderPicker({ id, value, onChange, placeholder }: Folde
     backgroundColor: 'rgba(5, 5, 8, 0.7)',
     backdropFilter: 'blur(10px)',
     WebkitBackdropFilter: 'blur(10px)',
-    zIndex: 9999,
+    zIndex: 999999,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -101,7 +101,7 @@ export default function FolderPicker({ id, value, onChange, placeholder }: Folde
     boxShadow: '0 20px 50px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05)',
     display: 'flex',
     flexDirection: 'column',
-    maxHeight: '75vh',
+    maxHeight: '50vh',
     overflow: 'hidden',
     color: '#e4e4e7',
     fontFamily: 'system-ui, -apple-system, sans-serif',
@@ -171,7 +171,7 @@ export default function FolderPicker({ id, value, onChange, placeholder }: Folde
             </div>
 
             {/* List Body */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '12px', minHeight: 0 }}>
               {loading ? (
                 <div style={{ padding: '24px', textAlign: 'center', fontSize: '12px', color: '#a1a1aa' }}>
                   Loading directories...
