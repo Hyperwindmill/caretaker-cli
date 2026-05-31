@@ -1,0 +1,21 @@
+{
+  "name": "caretaker-desktop",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "electron .",
+    "dev": "pnpm run build && electron ."
+  },
+  "dependencies": {
+    "caretaker-cli": "workspace:*",
+    "webview-ui": "workspace:*"
+  },
+  "devDependencies": {
+    "electron": "^42.3.0",
+    "electron-builder": "^26.8.1",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "appId": "com.hyperwindmill.caretaker",
+  "productName": "CareTaker",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist-electron/**/*",
+    "caretaker.png",
+    {
+      "from": "../cli/dist",
+      "to": "packages/cli/dist"
+    },
+    {
+      "from": "../webview-ui/dist",
+      "to": "packages/webview-ui/dist"
+    }
+  ],
+  "linux": {
+    "target": ["AppImage", "deb"],
+    "icon": "caretaker.png"
+  }
+}
