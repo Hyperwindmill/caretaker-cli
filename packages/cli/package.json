@@ -80,6 +80,7 @@
     "react": "^19.2.6",
     "turndown": "^7.2.4",
     "webview-ui": "workspace:*",
+    "caretaker-types": "workspace:*",
     "ws": "^8.21.0",
     "yaml": "^2.8.4"
   }
