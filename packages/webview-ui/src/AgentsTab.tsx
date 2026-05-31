@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { CaretakerConfig, AgentConfig, PluginsFile, McpServerConfig } from 'caretaker-types';
 import type { ViewToHost, ModelsResult } from './bridge.js';
+import FolderPicker from './FolderPicker.js';
 
 interface AgentsTabProps {
   config: CaretakerConfig;
@@ -323,12 +324,11 @@ export function AgentsTab({
 
           <div className="form-group">
             <label htmlFor="agent-dir">Working Directory (Absolute Path - Optional)</label>
-            <input
+            <FolderPicker
               id="agent-dir"
-              type="text"
               placeholder="e.g. /home/user/my-project"
               value={workingDir}
-              onChange={(e) => setWorkingDir(e.target.value)}
+              onChange={setWorkingDir}
             />
           </div>
 
