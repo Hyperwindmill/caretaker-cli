@@ -1,5 +1,14 @@
 # caretaker-desktop
 
+## 0.2.2
+
+### Patch Changes
+
+- Fix Electron packaging for desktop: bundle CLI assets to prevent ENOENT crashes and load application icons compatibly from ASAR.
+- Updated dependencies [77d3d8a]
+  - webview-ui@0.2.2
+  - caretaker-cli@0.2.2
+
 ## 0.2.1
 
 ### Patch Changes
