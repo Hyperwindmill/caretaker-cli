@@ -19,5 +19,13 @@
   "linux": {
     "target": ["AppImage", "deb"],
     "icon": "caretaker.png"
+  },
+  "mac": {
+    "target": ["dmg", "zip"],
+    "icon": "caretaker.png"
+  },
+  "win": {
+    "target": ["nsis"],
+    "icon": "caretaker.png"
   }
 }

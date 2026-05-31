@@ -72,13 +72,14 @@ else {
     function startBackend() {
         ensureDataDir();
         // Augment PATH with common binary directories
+        const pathDelimiter = path.delimiter;
         const extraPaths = [
             path.join(os.homedir(), ".local", "bin"),
             path.join(os.homedir(), ".opencode", "bin"),
             path.join(os.homedir(), ".claude", "bin"),
-            "/usr/local/bin",
-        ].join(":");
-        const augmentedPath = `${extraPaths}:${process.env.PATH ?? ""}`;
+            ...(os.platform() !== "win32" ? ["/usr/local/bin"] : []),
+        ].join(pathDelimiter);
+        const augmentedPath = `${extraPaths}${pathDelimiter}${process.env.PATH ?? ""}`;
         console.log(`[desktop] Spawning Hono backend via utilityProcess from: ${cliEntry}`);
         backendProc = utilityProcess.fork(cliEntry, ["web", "--port", String(PORT), "--host", "127.0.0.1"], {
             env: {
@@ -168,44 +169,16 @@ else {
                 mainWindow = null;
             }
         });
+        // Register tray menu updates on window show/hide
+        mainWindow.on("show", updateTrayMenu);
+        mainWindow.on("hide", updateTrayMenu);
+        // Refresh tray menu now that window is created
+        updateTrayMenu();
     }
     function createTray() {
         tray = new Tray(createTrayIcon());
         tray.setToolTip("CareTaker");
-        const updateMenu = () => {
-            const visible = mainWindow?.isVisible() ?? false;
-            const menu = Menu.buildFromTemplate([
-                {
-                    label: visible ? "Hide" : "Show",
-                    click: () => {
-                        if (mainWindow) {
-                            if (mainWindow.isVisible()) {
-                                mainWindow.hide();
-                            }
-                            else {
-                                mainWindow.show();
-                                mainWindow.focus();
-                            }
-                        }
-                        updateMenu();
-                    },
-                },
-                { type: "separator" },
-                {
-                    label: "Quit",
-                    click: () => {
-                        isQuitting = true;
-                        app.quit();
-                    },
-                },
-            ]);
-            tray.setContextMenu(menu);
-        };
-        updateMenu();
-        if (mainWindow) {
-            mainWindow.on("show", updateMenu);
-            mainWindow.on("hide", updateMenu);
-        }
+        updateTrayMenu();
         // Toggle window visibility on click
         tray.on("click", () => {
             if (mainWindow) {
@@ -218,6 +191,37 @@ else {
                 }
             }
         });
+    }
+    function updateTrayMenu() {
+        if (!tray)
+            return;
+        const visible = mainWindow?.isVisible() ?? false;
+        const menu = Menu.buildFromTemplate([
+            {
+                label: visible ? "Hide" : "Show",
+                click: () => {
+                    if (mainWindow) {
+                        if (mainWindow.isVisible()) {
+                            mainWindow.hide();
+                        }
+                        else {
+                            mainWindow.show();
+                            mainWindow.focus();
+                        }
+                    }
+                    updateTrayMenu();
+                },
+            },
+            { type: "separator" },
+            {
+                label: "Quit",
+                click: () => {
+                    isQuitting = true;
+                    app.quit();
+                },
+            },
+        ]);
+        tray.setContextMenu(menu);
     }
     const PORT_FILE = path.join(DATA_DIR, "port");
     app.on("second-instance", () => {
@@ -237,9 +241,12 @@ else {
         fs.writeFileSync(PORT_FILE, String(PORT), "utf-8");
         // Hide standard application menu for pure app experience
         Menu.setApplicationMenu(null);
-        await startBackend();
-        createWindow();
+        // 1. Create the tray icon immediately to secure DBus AppIndicator registration on Linux
         createTray();
+        // 2. Start the backend process
+        await startBackend();
+        // 3. Create the BrowserWindow
+        createWindow();
         app.on("activate", () => {
             if (mainWindow) {
                 mainWindow.show();
