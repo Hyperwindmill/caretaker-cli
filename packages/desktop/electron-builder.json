@@ -12,6 +12,10 @@
       "to": "packages/cli/dist"
     },
     {
+      "from": "../cli/assets",
+      "to": "packages/cli/assets"
+    },
+    {
       "from": "../webview-ui/dist",
       "to": "packages/webview-ui/dist"
     }
