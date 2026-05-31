@@ -1,0 +1,21 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+# Evitiamo il controllo se siamo sul branch principale (main/master), in HEAD staccato o durante il rilascio
+CURRENT_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
+if [ "$CURRENT_BRANCH" = "main" ] || [ "$CURRENT_BRANCH" = "master" ] || [ -z "$CURRENT_BRANCH" ]; then
+    exit 0
+fi
+
+# Controlliamo se ci sono file changeset (.changeset/*.md) aggiunti o modificati in questo commit
+# Ignoriamo il README.md dei changesets
+CHANGESET_STAGED=$(git diff --cached --name-only --diff-filter=ACM | grep -E "^\.changeset/[a-zA-Z0-9_-]+\.md$" | grep -v "README.md")
+
+if [ -z "$CHANGESET_STAGED" ]; then
+    echo -e "\n\033[31m[ERROR] Nessun changeset rilevato in staging!\033[0m"
+    echo -e "Poiché sei sul branch di feature '\033[36m$CURRENT_BRANCH\033[0m', devi registrare una changeset prima del commit."
+    echo -e "Per favore, crea una changeset eseguendo:"
+    echo -e "  \033[33mpnpm run changeset\033[0m"
+    echo -e "Quindi aggiungila allo staging prima di ripetere il commit.\n"
+    exit 1
+fi
