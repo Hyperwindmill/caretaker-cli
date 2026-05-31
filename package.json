@@ -11,6 +11,10 @@
     "lint": "pnpm -r lint",
     "format": "pnpm -r format",
     "format:check": "pnpm -r format:check",
-    "link:global": "pnpm -F caretaker-cli link:global"
+    "link:global": "pnpm -F caretaker-cli link:global",
+    "desktop:build": "pnpm -F caretaker-desktop build",
+    "desktop:dev": "pnpm build && pnpm -F caretaker-desktop dev",
+    "desktop:pack": "pnpm build && pnpm -F caretaker-desktop exec electron-builder --dir",
+    "desktop:dist": "pnpm build && pnpm -F caretaker-desktop exec electron-builder"
   }
 }
