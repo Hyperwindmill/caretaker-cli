@@ -55,14 +55,27 @@ if (!gotTheLock) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
 
-  function createTrayIcon(): Electron.NativeImage {
+  function loadAppIcon(): Electron.NativeImage | undefined {
     const iconPath = path.resolve(appRoot, "caretaker.png");
     try {
       if (fs.existsSync(iconPath)) {
-        const img = nativeImage.createFromPath(iconPath);
+        const buf = fs.readFileSync(iconPath);
+        const img = nativeImage.createFromBuffer(buf);
         if (!img.isEmpty()) {
-          return img.resize({ width: 32, height: 32 });
+          return img;
         }
+      }
+    } catch (err) {
+      console.error("[desktop] Failed to read/load app icon:", err);
+    }
+    return undefined;
+  }
+
+  function createTrayIcon(): Electron.NativeImage {
+    try {
+      const img = loadAppIcon();
+      if (img) {
+        return img.resize({ width: 32, height: 32 });
       }
     } catch {
       // Fall through to fallback
@@ -73,7 +86,8 @@ if (!gotTheLock) {
     const fallbackPath = path.join(DATA_DIR, "tray-icon.png");
     try {
       fs.writeFileSync(fallbackPath, Buffer.from(base64, "base64"));
-      return nativeImage.createFromPath(fallbackPath);
+      const fallbackImg = nativeImage.createFromBuffer(fs.readFileSync(fallbackPath));
+      return fallbackImg;
     } catch {
       return nativeImage.createEmpty();
     }
@@ -123,6 +137,10 @@ if (!gotTheLock) {
       };
 
       backendProc!.once("message", done);
+      backendProc!.once("exit", (code) => {
+        console.error(`[desktop] Backend process exited unexpectedly with code ${code}`);
+        done();
+      });
 
       const deadline = Date.now() + 20_000;
       const poll = () => {
@@ -152,15 +170,7 @@ if (!gotTheLock) {
   }
 
   function createWindow() {
-    const iconPath = path.resolve(appRoot, "caretaker.png");
-    let appIcon: Electron.NativeImage | undefined;
-    try {
-      if (fs.existsSync(iconPath)) {
-        appIcon = nativeImage.createFromPath(iconPath);
-      }
-    } catch {
-      appIcon = undefined;
-    }
+    const appIcon = loadAppIcon();
 
     mainWindow = new BrowserWindow({
       width: 1280,
