@@ -15,6 +15,13 @@
     "desktop:build": "pnpm -F caretaker-desktop build",
     "desktop:dev": "pnpm build && pnpm -F caretaker-desktop dev",
     "desktop:pack": "pnpm build && pnpm -F caretaker-desktop exec electron-builder --dir",
-    "desktop:dist": "pnpm build && pnpm -F caretaker-desktop exec electron-builder"
+    "desktop:dist": "pnpm build && pnpm -F caretaker-desktop exec electron-builder",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.31.0",
+    "husky": "^9.1.7"
   }
 }
