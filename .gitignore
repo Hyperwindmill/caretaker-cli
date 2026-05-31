@@ -4,3 +4,7 @@ dist
 .DS_Store
 *.vsix
 .atl
+
+# Electron build outputs
+dist-electron
+release
