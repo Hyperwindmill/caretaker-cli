@@ -1,5 +1,15 @@
 # caretaker-cli
 
+## 0.2.3
+
+### Patch Changes
+
+- 7f7b33e: Fix Hono web server to respect and apply the agent-specific working directory in chat sessions instead of falling back blindly to the server's launch folder.
+- 1a3ecbd: Integrate visual filesystem directory picking (FolderPicker component on frontend, /api/fs/ls Hono route on backend) for intuitive project and local plugin path selection.
+- Updated dependencies [1a3ecbd]
+  - webview-ui@0.2.3
+  - caretaker-types@0.2.3
+
 ## 0.2.2
 
 ### Patch Changes
