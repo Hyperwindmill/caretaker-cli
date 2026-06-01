@@ -416,6 +416,28 @@ export async function startServer(port: number, host: string): Promise<void> {
         // Select the first agent as default if none is active
         if (!currentAgent && agents.length > 0) {
           await selectAgentInternal(agents[0], providers);
+          return;
+        }
+
+        // If currentAgent is set, check if it was modified on disk and refresh in-place
+        if (currentAgent) {
+          const freshAgent = agents.find((a) => a.id === currentAgent!.id);
+          if (freshAgent) {
+            // Detect fields that affect runtime and update them in-place
+            const needsToolRefresh =
+              freshAgent.allowedTools.join('|') !== currentAgent.allowedTools.join('|') ||
+              (freshAgent.plugins ?? []).join('|') !== (currentAgent.plugins ?? []).join('|') ||
+              (freshAgent.mcpServers ?? []).join('|') !== (currentAgent.mcpServers ?? []).join('|');
+
+            // Update currentAgent fields that may have changed
+            currentAgent = { ...freshAgent };
+
+            if (needsToolRefresh && currentProvider) {
+              // Re-resolve tools if allowedTools/plugins/mcpServers changed
+              currentTools = await harness.resolveAgentTools(currentAgent, harness.tools);
+              post({ type: 'contextUsage', usage: controller?.getContextUsage() ?? null });
+            }
+          }
         }
       } catch (err) {
         post({

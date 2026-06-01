@@ -172,17 +172,40 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
       }));
       this.post(webview, { type: 'agentsLoaded', agents: agentSummaries });
 
-      // Select default agent
-      const requestedName = vscode.workspace
-        .getConfiguration('caretaker')
-        .get<string>('defaultAgent')
-        ?.trim();
-      const defaultAgent = requestedName
-        ? this.agents.find((a) => a.name === requestedName)
-        : this.agents[0];
+      // Select default agent if none is active
+      if (!this.currentAgent && this.agents.length > 0) {
+        const requestedName = vscode.workspace
+          .getConfiguration('caretaker')
+          .get<string>('defaultAgent')
+          ?.trim();
+        const defaultAgent = requestedName
+          ? this.agents.find((a) => a.name === requestedName)
+          : this.agents[0];
+        if (defaultAgent) {
+          await this.selectAgentInternal(webview, defaultAgent, providers);
+          return;
+        }
+      }
 
-      if (defaultAgent) {
-        await this.selectAgentInternal(webview, defaultAgent, providers);
+      // If currentAgent is set, check if it was modified on disk and refresh in-place
+      if (this.currentAgent) {
+        const freshAgent = this.agents.find((a) => a.id === this.currentAgent!.id);
+        if (freshAgent) {
+          // Detect fields that affect runtime and update them in-place
+          const needsToolRefresh =
+            freshAgent.allowedTools.join('|') !== this.currentAgent.allowedTools.join('|') ||
+            (freshAgent.plugins ?? []).join('|') !== (this.currentAgent.plugins ?? []).join('|') ||
+            (freshAgent.mcpServers ?? []).join('|') !== (this.currentAgent.mcpServers ?? []).join('|');
+
+          // Update currentAgent fields that may have changed
+          this.currentAgent = { ...freshAgent };
+
+          if (needsToolRefresh && this.currentProvider) {
+            // Re-resolve tools if allowedTools/plugins/mcpServers changed
+            this.currentTools = await harness.resolveAgentTools(this.currentAgent, harness.tools);
+            this.post(webview, { type: 'contextUsage', usage: this.controller?.getContextUsage() ?? null });
+          }
+        }
       }
     } catch (err) {
       this.post(webview, {

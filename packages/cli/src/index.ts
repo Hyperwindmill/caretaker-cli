@@ -6,6 +6,7 @@
 import { refreshSourcesOnStart } from './plugins/refresh_on_start.js';
 import { closeAll as closeAllMcp } from './mcp/client.js';
 import { initModelLimits } from './harness/model_limits.js';
+import { probeShellEnv } from './harness/tools/builtin/shell-env.js';
 import { runCli } from './cli/index.js';
 
 // Fire refresh-on-start in the background — startup must not block on a
@@ -13,6 +14,13 @@ import { runCli } from './cli/index.js';
 // up newly-discovered plugins automatically.
 void refreshSourcesOnStart().catch((err) => {
   console.error('[boot] refresh-on-start failed:', err);
+});
+
+// Probe the interactive shell environment on Linux to capture PATH and
+// version manager variables (NVM, volta, fnm, etc.) that .bashrc sets.
+// This runs in the background and the result is cached for bash tool use.
+void probeShellEnv().catch((err) => {
+  console.error('[boot] shell-env probe failed:', err);
 });
 
 // Populate the model-context registry from models.dev in the background.

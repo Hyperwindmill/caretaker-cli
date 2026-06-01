@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 import type { Tool } from '../types.js';
+import { mergeShellEnv } from './shell-env.js';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 /** Cap on stdout+stderr we echo back to the model. The harness applies a
@@ -20,6 +21,20 @@ function scrubbedEnv(): NodeJS.ProcessEnv {
     out[k] = v;
   }
   return out;
+}
+
+/**
+ * Build the environment for bash subprocesses.
+ * On Linux, merges the probed interactive shell environment to capture
+ * PATH and version manager variables (NVM, volta, fnm, etc.) that
+ * .bashrc sets but which are missing in non-interactive shells.
+ */
+function bashEnv(): NodeJS.ProcessEnv {
+  const base = scrubbedEnv();
+  if (process.platform === 'linux') {
+    return mergeShellEnv(base);
+  }
+  return base;
 }
 
 export const bashTool: Tool = {
@@ -52,14 +67,23 @@ export const bashTool: Tool = {
         : DEFAULT_TIMEOUT_MS;
 
     return await new Promise((resolve) => {
-      // shell:true uses the OS default shell — sh on POSIX, cmd.exe on Windows.
-      // We pass the raw command as the single argument so the shell does its own parsing.
-      const child = spawn(a.command as string, [], {
-        cwd: ctx.workingDir,
-        shell: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        env: scrubbedEnv(),
-      });
+      // On Linux, use bash -c with the probed interactive shell environment
+      // to capture PATH and version manager variables (NVM, volta, fnm, etc.).
+      // On Windows, fall back to cmd.exe via shell:true. On macOS, login
+      // shells source profiles correctly so we use the default env.
+      const isWindows = process.platform === 'win32';
+      const child = isWindows
+        ? spawn(a.command as string, [], {
+            cwd: ctx.workingDir,
+            shell: true,
+            stdio: ['ignore', 'pipe', 'pipe'],
+            env: bashEnv(),
+          })
+        : spawn('bash', ['-c', a.command as string], {
+            cwd: ctx.workingDir,
+            stdio: ['ignore', 'pipe', 'pipe'],
+            env: bashEnv(),
+          });
 
       const decoder = new StringDecoder('utf8');
       let out = '';
