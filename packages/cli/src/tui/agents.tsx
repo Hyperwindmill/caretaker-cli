@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { randomUUID } from 'node:crypto';
 import { isAbsolute } from 'node:path';
+import { watch, existsSync } from 'node:fs';
 import { Box, Text, useInput } from 'ink';
 import SelectInput from 'ink-select-input';
 import TextInput from 'ink-text-input';
-import { loadAgents, loadConfig, saveAgents } from '../store/json.js';
+import { loadAgents, loadConfig, saveAgents, dataDir } from '../store/json.js';
 import { fetchOpenAiStyleModels } from '../harness/models.js';
 import { tools as toolRegistry } from '../harness/tools/instance.js';
 import type { Tool } from '../harness/tools/index.js';
@@ -43,11 +44,44 @@ export default function Agents({ onBack }: { onBack: () => void }) {
   const [selectedSession, setSelectedSession] = useState<SessionMetaRecord | null>(null);
 
   useEffect(() => {
-    void Promise.all([loadAgents(), loadConfig()]).then(([a, c]) => {
+    let watcher: ReturnType<typeof watch> | null = null;
+
+    const loadInitial = async () => {
+      const [a, c] = await Promise.all([loadAgents(), loadConfig()]);
       setAgents(a);
       setProviders(c.providers);
       setLoaded(true);
-    });
+    };
+
+    void loadInitial();
+
+    // Set up file watcher to refresh agents when edited from another surface
+    const dir = dataDir();
+    if (existsSync(dir)) {
+      watcher = watch(dir, (eventType, filename) => {
+        if (filename === 'agents.json') {
+          void (async () => {
+            const [a, c] = await Promise.all([loadAgents(), loadConfig()]);
+            setAgents((prevAgents) => {
+              // If selected agent was modified, update it in-place
+              if (selected) {
+                const fresh = a.find((x) => x.id === selected.id);
+                if (fresh) {
+                  // Update selected with fresh data if workingDir or other runtime fields changed
+                  setSelected({ ...fresh });
+                }
+              }
+              return a;
+            });
+            setProviders(c.providers);
+          })();
+        }
+      });
+    }
+
+    return () => {
+      watcher?.close();
+    };
   }, []);
 
   // Refresh past-chats list whenever we enter or return to the agent detail.
