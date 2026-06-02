@@ -103,3 +103,13 @@ test('resolveAgentTools: get_agent_context is always-on (pure introspection)', a
   const tools = await resolveAgentTools(agent({ allowedTools: [] }), r);
   assert.deepEqual(tools.map((t) => t.name), ['get_agent_context']);
 });
+
+test('resolveAgentTools: mcp__task__* wildcard resolves all task tools', async () => {
+  const r = new ToolRegistry();
+  r.register(fakeTool('mcp__task__get_state'));
+  r.register(fakeTool('mcp__task__complete'));
+  r.register(fakeTool('other_tool'));
+
+  const tools = await resolveAgentTools(agent({ allowedTools: ['mcp__task__*'] }), r);
+  assert.deepEqual(tools.map((t) => t.name).sort(), ['mcp__task__complete', 'mcp__task__get_state']);
+});

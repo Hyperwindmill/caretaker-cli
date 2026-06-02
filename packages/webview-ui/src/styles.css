@@ -1740,18 +1740,36 @@ body.vscode-light .settings-panel__tab-btn--active {
   gap: var(--spacing-md);
   box-shadow: var(--glow-shadow);
   animation: slideFormUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  max-height: 85vh;
 }
 
-.glass-form--scrollable {
-  max-height: 480px;
+.glass-form__body {
+  flex: 1;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding-right: 6px;
 }
 
-.glass-form--scrollable::-webkit-scrollbar {
+.chips-header-row .chip-col-check {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.chips-header-row .chip-col-check input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--primary-blue);
+  cursor: pointer;
+}
+
+.glass-form__body::-webkit-scrollbar {
   width: 4px;
 }
 
-.glass-form--scrollable::-webkit-scrollbar-thumb {
+.glass-form__body::-webkit-scrollbar-thumb {
   background: oklch(1 0 0 / 0.1);
   border-radius: 4px;
 }
