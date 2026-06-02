@@ -510,7 +510,10 @@ export async function startServer(port: number, host: string): Promise<void> {
           loadPlugins(),
           loadMcpServers(),
         ]);
-        const availableTools = harness.tools.list().map((t) => t.name);
+        const availableTools = harness.tools.list()
+          .map((t) => t.name)
+          .filter((name) => !name.startsWith('mcp__task__'));
+        availableTools.push('mcp__task__*');
         post({
           type: 'settingsDataLoaded',
           config,

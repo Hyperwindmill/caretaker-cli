@@ -434,8 +434,16 @@ function AgentForm({
   const [provider, setProvider] = useState(initial?.provider ?? '');
   const [model, setModel] = useState(initial?.model ?? '');
   const [systemPrompt, setSystemPrompt] = useState(initial?.systemPrompt ?? '');
-  const [allowedTools, setAllowedTools] = useState<string[]>(initial?.allowedTools ?? []);
-  const [confirmTools, setConfirmTools] = useState<string[]>(initial?.confirmTools ?? []);
+  const normalizeTools = (tools: string[]): string[] => {
+    const hasTaskTools = tools.some((t) => t.startsWith('mcp__task__'));
+    if (hasTaskTools) {
+      return [...tools.filter((t) => !t.startsWith('mcp__task__')), 'mcp__task__*'];
+    }
+    return tools;
+  };
+
+  const [allowedTools, setAllowedTools] = useState<string[]>(normalizeTools(initial?.allowedTools ?? []));
+  const [confirmTools, setConfirmTools] = useState<string[]>(normalizeTools(initial?.confirmTools ?? []));
   const [activePlugins, setActivePlugins] = useState<string[]>(initial?.plugins ?? []);
   const [discoveredPlugins, setDiscoveredPlugins] = useState<PluginRecord[]>([]);
   const [activeMcp, setActiveMcp] = useState<string[]>(initial?.mcpServers ?? []);
@@ -598,7 +606,15 @@ function AgentForm({
         <Text>tools:</Text>
         {step === 'tools' ? (
           <ToolPicker
-            tools={toolRegistry.list()}
+            tools={[
+              ...toolRegistry.list().filter((t) => !t.name.startsWith('mcp__task__')),
+              {
+                name: 'mcp__task__*',
+                description: 'Manage autonomous tasks & checklists (enables all mcp__task__* tools)',
+                parameters: { type: 'object', properties: {} },
+                execute: async () => ({ content: '' }),
+              },
+            ]}
             allowed={allowedTools}
             confirm={confirmTools}
             onChange={(a, c) => {
