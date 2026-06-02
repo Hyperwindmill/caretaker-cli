@@ -73,7 +73,9 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
   const [composerText, setComposerText] = useState('');
   const [isSending, setIsSending] = useState(false);
 
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const prevMessagesLengthRef = useRef(0);
   const threadIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -96,6 +98,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
     if (selectedTaskId !== null) {
       fetchTaskMessages(selectedTaskId);
       startThreadPolling(selectedTaskId);
+      prevMessagesLengthRef.current = 0;
     } else {
       stopThreadPolling();
     }
@@ -160,7 +163,18 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
   };
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const isNewMessage = taskMessages.length > prevMessagesLengthRef.current;
+    prevMessagesLengthRef.current = taskMessages.length;
+
+    const threshold = 100;
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight <= threshold;
+
+    if (isNewMessage || isNearBottom) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   };
 
   const handleCreateProject = async (e: React.FormEvent) => {
@@ -574,7 +588,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
                     </div>
                   </header>
 
-                  <div className="messages" style={{ flex: 1, padding: '16px', overflowY: 'auto' }}>
+                  <div ref={messagesContainerRef} className="messages" style={{ flex: 1, padding: '16px', overflowY: 'auto' }}>
                     {taskMessages.length === 0 ? (
                       <div className="messages--empty">No messages in this execution yet. Agent will start on next tick.</div>
                     ) : (
