@@ -12,9 +12,27 @@ export interface MessageListProps {
 }
 
 export function MessageList({ items, trailing, isStreaming, agentName }: MessageListProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const prevItemsLengthRef = useRef(items.length);
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+    const container = containerRef.current;
+    if (!container) return;
+
+    const isNewMessage = items.length > prevItemsLengthRef.current;
+    prevItemsLengthRef.current = items.length;
+
+    // Check if the user is close to the bottom (within 100px)
+    const threshold = 100;
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight <= threshold;
+
+    if (isNewMessage || isNearBottom) {
+      // Use 'smooth' scroll when a new distinct message is added and we are not in streaming mode.
+      // Use 'auto' scroll during high-frequency streaming to prevent animation lag.
+      const behavior = isNewMessage && !isStreaming ? 'smooth' : 'auto';
+      bottomRef.current?.scrollIntoView({ behavior, block: 'end' });
+    }
   }, [items, trailing, isStreaming]);
 
   if (items.length === 0 && !trailing && !isStreaming) {
@@ -26,7 +44,7 @@ export function MessageList({ items, trailing, isStreaming, agentName }: Message
   }
 
   return (
-    <div className="messages">
+    <div ref={containerRef} className="messages">
       {items.map((item, i) => (
         <Item key={i} item={item} />
       ))}
