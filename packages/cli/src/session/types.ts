@@ -33,6 +33,11 @@ export interface SessionMetaRecord {
 
 export type Role = 'user' | 'assistant' | 'tool';
 
+export interface ToolAttachmentRecord {
+  mime: string;
+  id: string;
+}
+
 export interface MessageRecord {
   v: 1;
   type: 'message';
@@ -48,6 +53,7 @@ export interface MessageRecord {
   toolCallId?: string;
   /** Assistant only, openai-style only. */
   usage?: AssistantUsage;
+  attachments?: ToolAttachmentRecord[];
   createdAt: string;
 }
 

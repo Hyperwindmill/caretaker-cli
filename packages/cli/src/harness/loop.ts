@@ -12,8 +12,8 @@
 // and tool messages via `cb.onMessage` as they are produced.
 
 import type { AgentConfig, ProviderConfig } from '../types.js';
-import type { AssistantPart, MessageRecord } from '../session/types.js';
-import { assistantMessage, toolMessage } from '../session/store.js';
+import { assistantMessage, toolMessage, saveAttachment } from '../session/store.js';
+import type { AssistantPart, MessageRecord, ToolAttachmentRecord } from '../session/types.js';
 import { buildRequestBody, readStream, type AssistantUsage, type ChatMessage } from './provider.js';
 import { mapMessagesToChat } from './history.js';
 import {
@@ -83,6 +83,8 @@ export interface RunOptions {
    *  run leaves this undefined (treated as 0). Each dispatched child
    *  passes parent depth + 1. */
   dispatchDepth?: number;
+  /** The session ID of the current conversation run. */
+  sessionId?: string;
 }
 
 export interface RunResult {
@@ -116,6 +118,7 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
     callerAgent: agent,
     dispatchDepth: opts.dispatchDepth ?? 0,
     confirmTool: cb.confirmTool,
+    sessionId: opts.sessionId,
   };
 
   // System prompt assembly, applied unconditionally (the prelude and
@@ -153,7 +156,7 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
   const chat: ChatMessage[] = [];
   if (effectiveSystemPrompt) chat.push({ role: 'system', content: effectiveSystemPrompt });
   if (opts.history && opts.history.length > 0) {
-    for (const m of mapMessagesToChat(opts.history)) chat.push(m);
+    for (const m of mapMessagesToChat(opts.history, opts.sessionId)) chat.push(m);
   }
   chat.push({ role: 'user', content: prompt });
 
@@ -322,6 +325,8 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
       totalToolCalls++;
 
       let content = '';
+      let attRecords: ToolAttachmentRecord[] | undefined;
+      let attachmentsToPass: Array<{ mime: string; base64: string }> | undefined;
       const t = toolByName.get(tc.function.name);
       if (!t) {
         content = `Error: unknown tool "${tc.function.name}"`;
@@ -341,6 +346,16 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
           try {
             const result = await t.execute(parsedArgs, toolCtx);
             content = result.content;
+            if (result.attachments && result.attachments.length > 0) {
+              attRecords = [];
+              attachmentsToPass = [];
+              const sId = opts.sessionId || 'default';
+              for (const att of result.attachments) {
+                const id = await saveAttachment(sId, att.data);
+                attRecords.push({ mime: att.mime, id });
+                attachmentsToPass.push({ mime: att.mime, base64: att.data.toString('base64') });
+              }
+            }
           } catch (err) {
             content = `Error: ${err instanceof Error ? err.message : String(err)}`;
           }
@@ -352,10 +367,24 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
       }
 
       // Persist the tool turn.
-      const toolMsg = toolMessage(tc.id, content);
+      const toolMsg = toolMessage(tc.id, content, attRecords);
       await safeEmit(toolMsg);
 
       chat.push({ role: 'tool', tool_call_id: tc.id, content });
+
+      if (attachmentsToPass && attachmentsToPass.length > 0) {
+        const parts: any[] = [{ type: 'text', text: 'Attachment from tool:' }];
+        for (const att of attachmentsToPass) {
+          parts.push({
+            type: 'image_url',
+            image_url: {
+              url: `data:${att.mime};base64,${att.base64}`,
+            },
+          });
+        }
+        chat.push({ role: 'user', content: parts });
+      }
+
       cb.onToolResult?.(tc.id, content);
     }
   }

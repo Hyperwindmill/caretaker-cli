@@ -5,6 +5,7 @@
 import type { ToolRegistry } from '../registry.js';
 import { readFileTool } from './read_file.js';
 import { readDocumentTool } from './read_document.js';
+import { readImageTool } from './read_image.js';
 import { writeTool } from './write.js';
 import { editTool } from './edit.js';
 import { multieditTool } from './multiedit.js';
@@ -39,6 +40,7 @@ export function registerBuiltins(registry: ToolRegistry): void {
   // Filesystem (sandboxed to ctx.workingDir).
   registry.register(readFileTool);
   registry.register(readDocumentTool);
+  registry.register(readImageTool);
   registry.register(writeTool);
   registry.register(editTool);
   registry.register(multieditTool);
@@ -83,6 +85,7 @@ export function registerBuiltins(registry: ToolRegistry): void {
 export {
   readFileTool,
   readDocumentTool,
+  readImageTool,
   writeTool,
   editTool,
   multieditTool,

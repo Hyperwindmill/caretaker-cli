@@ -162,6 +162,7 @@ export default function ChatScreen({
           history: priorMessages,
           signal: ac.signal,
           workingDir: agent.workingDir,
+          sessionId: target.id,
         },
         {
           onChunk: (s) => setLiveText((prev) => prev + s),
@@ -387,7 +388,14 @@ function MessageView({ msg }: { msg: MessageRecord }) {
     );
   }
   // role === "tool"
-  return <Text dimColor>{`  ← ${msg.content.slice(0, 200)}`}</Text>;
+  return (
+    <Box flexDirection="column">
+      <Text dimColor>{`  ← ${msg.content.slice(0, 200)}`}</Text>
+      {msg.attachments && msg.attachments.map((att, i) => (
+        <Text key={i} color="yellow">{`    [allegato immagine: ${att.mime} (ID: ${att.id})]`}</Text>
+      ))}
+    </Box>
+  );
 }
 
 function PartView({ part }: { part: AssistantPart }) {

@@ -13,6 +13,8 @@ export {
   toolMessage,
   dataDir,
   sessionsRoot,
+  readAttachment,
+  attachmentsDir,
 } from './store.js';
 export { computeContextUsage } from './context_usage.js';
 export { initModelLimits } from '../harness/model_limits.js';
