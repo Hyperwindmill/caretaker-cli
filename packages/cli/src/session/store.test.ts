@@ -178,3 +178,27 @@ test('readSession throws when no meta is present', async () => {
 
   await assert.rejects(mod.readSession('agent-x', 'ghost'), /no meta record/);
 });
+
+test('saveAttachment + readAttachment + deleteSession cleanup', async () => {
+  const { mod } = await freshStore();
+  const meta = await mod.createSession({ agentId: 'agent-a', title: 'multimodal chat' });
+
+  const buf = Buffer.from('hello attachment binary');
+  const attId = await mod.saveAttachment(meta.id, buf);
+  
+  const readBuf = await mod.readAttachment(meta.id, attId);
+  assert.deepEqual(readBuf, buf);
+
+  const t = mod.toolMessage('tc1', 'loaded image', [{ mime: 'image/png', id: attId }]);
+  await mod.appendMessage(meta, t);
+
+  const fs = await import('node:fs');
+  const attFilePath = join(mod.attachmentsDir(meta.id), attId);
+  assert.ok(fs.existsSync(attFilePath));
+
+  await mod.deleteSession(meta.agentId, meta.id);
+  
+  assert.ok(!fs.existsSync(attFilePath));
+  assert.ok(!fs.existsSync(mod.attachmentsDir(meta.id)));
+});
+

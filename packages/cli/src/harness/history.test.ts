@@ -1,7 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import * as fs from 'node:fs';
 import { mapMessagesToChat } from './history.js';
 import type { MessageRecord } from '../session/types.js';
+import { attachmentsDir } from '../session/store.js';
 
 const baseTs = '2026-05-09T00:00:00.000Z';
 
@@ -120,3 +125,47 @@ test('end-to-end: user → assistant(tool_use) → tool → assistant(text)', ()
   // Final assistant turn has no tool_calls field.
   assert.equal((out[3]! as { tool_calls?: unknown[] }).tool_calls, undefined);
 });
+
+test('tool message with attachments maps to tool and subsequent user message', async () => {
+  const oldHome = process.env.CARETAKER_HOME;
+  const tempHome = await mkdtemp(join(tmpdir(), 'ct-hist-home-'));
+  process.env.CARETAKER_HOME = tempHome;
+
+  try {
+    const sessionId = 'session-123';
+    const attachmentId = 'att-uuid-1';
+    
+    const dir = attachmentsDir(sessionId);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(join(dir, attachmentId), Buffer.from('fake image content'));
+
+    const toolMsg: MessageRecord = {
+      v: 1,
+      type: 'message',
+      id: 't1',
+      role: 'tool',
+      toolCallId: 'tc1',
+      content: 'result content',
+      attachments: [{ mime: 'image/png', id: attachmentId }],
+      createdAt: baseTs,
+    };
+
+    const out = mapMessagesToChat([
+      assistantWithParts([{ type: 'tool_use', id: 'tc1', name: 'read_image', args: {} }]),
+      toolMsg,
+    ], sessionId);
+
+    assert.equal(out.length, 3);
+    assert.deepEqual(out[1], { role: 'tool', tool_call_id: 'tc1', content: 'result content' });
+    
+    const userImgMsg = out[2]! as { role: string; content: any[] };
+    assert.equal(userImgMsg.role, 'user');
+    assert.equal(userImgMsg.content[0].type, 'text');
+    assert.equal(userImgMsg.content[1].type, 'image_url');
+    assert.equal(userImgMsg.content[1].image_url.url, `data:image/png;base64,${Buffer.from('fake image content').toString('base64')}`);
+  } finally {
+    process.env.CARETAKER_HOME = oldHome;
+    await rm(tempHome, { recursive: true, force: true });
+  }
+});
+
