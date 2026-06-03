@@ -6,12 +6,13 @@ import logo from './caretaker_cli.png';
 
 export interface MessageListProps {
   items: ChatItem[];
+  sessionId?: string | null;
   trailing?: ReactNode;
   isStreaming?: boolean;
   agentName?: string;
 }
 
-export function MessageList({ items, trailing, isStreaming, agentName }: MessageListProps) {
+export function MessageList({ items, sessionId = null, trailing, isStreaming, agentName }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const prevItemsLengthRef = useRef(items.length);
@@ -46,7 +47,7 @@ export function MessageList({ items, trailing, isStreaming, agentName }: Message
   return (
     <div ref={containerRef} className="messages">
       {items.map((item, i) => (
-        <Item key={i} item={item} />
+        <Item key={i} item={item} sessionId={sessionId} />
       ))}
       {trailing}
       {isStreaming && (
@@ -60,7 +61,7 @@ export function MessageList({ items, trailing, isStreaming, agentName }: Message
   );
 }
 
-function Item({ item }: { item: ChatItem }) {
+function Item({ item, sessionId }: { item: ChatItem; sessionId: string | null }) {
   switch (item.kind) {
     case 'user':
       return (
@@ -68,6 +69,47 @@ function Item({ item }: { item: ChatItem }) {
           <div className="bubble__role">user</div>
           <div className="bubble__text">
             <MarkdownText content={item.text} />
+            {item.attachments && item.attachments.length > 0 && (
+              <div className="bubble__attachments">
+                {item.attachments.map((att, idx) => {
+                  const isImage = att.mime.startsWith('image/');
+                  const imgSrc = att.base64
+                    ? `data:${att.mime};base64,${att.base64}`
+                    : sessionId
+                    ? `/api/attachments/${sessionId}/${att.id}`
+                    : null;
+
+                  if (isImage && imgSrc) {
+                    return (
+                      <img
+                        key={idx}
+                        className="bubble__attachment-img"
+                        src={imgSrc}
+                        alt={att.name || 'image'}
+                      />
+                    );
+                  }
+
+                  const docHref = sessionId ? `/api/attachments/${sessionId}/${att.id}` : '#';
+                  return (
+                    <a
+                      key={idx}
+                      href={docHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="bubble__attachment"
+                      title={att.name || att.id}
+                      onClick={(e) => {
+                        if (!sessionId) e.preventDefault();
+                      }}
+                    >
+                      <span className="composer__attachment-icon">📄</span>
+                      <span className="composer__attachment-name">{att.name || att.id}</span>
+                    </a>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       );

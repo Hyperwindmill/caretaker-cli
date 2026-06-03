@@ -11,8 +11,10 @@
 // persisting the user prompt before calling run(); the loop emits assistant
 // and tool messages via `cb.onMessage` as they are produced.
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { AgentConfig, ProviderConfig } from '../types.js';
-import { assistantMessage, toolMessage, saveAttachment } from '../session/store.js';
+import { assistantMessage, toolMessage, saveAttachment, attachmentsDir } from '../session/store.js';
 import type { AssistantPart, MessageRecord, ToolAttachmentRecord } from '../session/types.js';
 import { buildRequestBody, readStream, type AssistantUsage, type ChatMessage } from './provider.js';
 import { mapMessagesToChat } from './history.js';
@@ -85,6 +87,8 @@ export interface RunOptions {
   dispatchDepth?: number;
   /** The session ID of the current conversation run. */
   sessionId?: string;
+  /** Attachments staged with the user's prompt. */
+  promptAttachments?: ToolAttachmentRecord[];
 }
 
 export interface RunResult {
@@ -158,7 +162,42 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
   if (opts.history && opts.history.length > 0) {
     for (const m of mapMessagesToChat(opts.history, opts.sessionId)) chat.push(m);
   }
-  chat.push({ role: 'user', content: prompt });
+  if (opts.promptAttachments && opts.promptAttachments.length > 0) {
+    let textContent = prompt;
+    const imageParts: any[] = [];
+    for (const att of opts.promptAttachments) {
+      const displayName = att.name || att.id;
+      textContent += `\n\n[Allegato: ${displayName} (ID: ${att.id})]`;
+      if (att.mime.startsWith('image/')) {
+        try {
+          const filePath = join(attachmentsDir(opts.sessionId || 'default'), att.id);
+          const data = readFileSync(filePath);
+          const base64 = data.toString('base64');
+          imageParts.push({
+            type: 'image_url',
+            image_url: {
+              url: `data:${att.mime};base64,${base64}`,
+            },
+          });
+        } catch (err) {
+          console.error(`[loop] failed to read prompt image attachment ${att.id}:`, err);
+        }
+      }
+    }
+    if (imageParts.length > 0) {
+      chat.push({
+        role: 'user',
+        content: [
+          { type: 'text', text: textContent },
+          ...imageParts,
+        ],
+      });
+    } else {
+      chat.push({ role: 'user', content: textContent });
+    }
+  } else {
+    chat.push({ role: 'user', content: prompt });
+  }
 
   let fullText = '';
   let totalToolCalls = 0;
@@ -351,7 +390,8 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
               attachmentsToPass = [];
               const sId = opts.sessionId || 'default';
               for (const att of result.attachments) {
-                const id = await saveAttachment(sId, att.data);
+                const ext = mimeToExt(att.mime);
+                const id = await saveAttachment(sId, att.data, ext);
                 attRecords.push({ mime: att.mime, id });
                 attachmentsToPass.push({ mime: att.mime, base64: att.data.toString('base64') });
               }
@@ -390,4 +430,21 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
   }
 
   return { text: fullText, toolCalls: totalToolCalls, usage: cumulative, stop: 'max_turns' };
+}
+
+function mimeToExt(mime: string): string {
+  const map: Record<string, string> = {
+    'image/png': '.png',
+    'image/jpeg': '.jpg',
+    'image/webp': '.webp',
+    'image/gif': '.gif',
+    'application/pdf': '.pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+    'application/vnd.ms-excel': '.xls',
+    'text/plain': '.txt',
+    'text/markdown': '.md',
+    'application/json': '.json',
+  };
+  return map[mime.toLowerCase()] || '';
 }

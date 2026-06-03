@@ -1,20 +1,78 @@
-import { useState, type KeyboardEvent } from 'react';
+import { useState, useRef, type KeyboardEvent, type ClipboardEvent, type DragEvent } from 'react';
 import type { ContextUsage } from './bridge.js';
 
 export interface ComposerProps {
   disabled: boolean;
   canAbort: boolean;
-  onSend: (text: string) => void;
+  onSend: (text: string, attachments?: Array<{ name: string; mime: string; base64: string }>) => void;
   onAbort: () => void;
   contextUsage: ContextUsage | null;
 }
 
 export function Composer({ disabled, canAbort, onSend, onAbort, contextUsage }: ComposerProps) {
   const [value, setValue] = useState('');
+  const [attachments, setAttachments] = useState<Array<{ name: string; mime: string; base64: string }>>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const send = (): void => {
-    onSend(value);
+    onSend(value, attachments.length > 0 ? attachments : undefined);
     setValue('');
+    setAttachments([]);
+  };
+
+  const removeAttachment = (idx: number): void => {
+    setAttachments((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleFiles = (files: FileList | null): void => {
+    if (!files) return;
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (!file) continue;
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const result = e.target?.result;
+        if (typeof result === 'string') {
+          const commaIdx = result.indexOf(',');
+          const base64 = result.slice(commaIdx + 1);
+          setAttachments((prev) => [
+            ...prev,
+            {
+              name: file.name,
+              mime: file.type || 'application/octet-stream',
+              base64,
+            },
+          ]);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handlePaste = (e: ClipboardEvent<HTMLTextAreaElement>): void => {
+    if (e.clipboardData.files && e.clipboardData.files.length > 0) {
+      handleFiles(e.clipboardData.files);
+    }
+  };
+
+  const onDragOver = (e: DragEvent<HTMLDivElement>): void => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const onDragLeave = (e: DragEvent<HTMLDivElement>): void => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const onDrop = (e: DragEvent<HTMLDivElement>): void => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFiles(e.dataTransfer.files);
+    }
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
@@ -25,17 +83,66 @@ export function Composer({ disabled, canAbort, onSend, onAbort, contextUsage }: 
   };
 
   return (
-    <div className="composer">
+    <div 
+      className={`composer ${isDragging ? 'composer--dragging' : ''}`}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
+      {attachments.length > 0 && (
+        <div className="composer__attachments">
+          {attachments.map((att, i) => (
+            <div key={i} className="composer__attachment">
+              {att.mime.startsWith('image/') ? (
+                <img 
+                  className="composer__attachment-thumb" 
+                  src={`data:${att.mime};base64,${att.base64}`} 
+                  alt={att.name} 
+                />
+              ) : (
+                <span className="composer__attachment-icon">📄</span>
+              )}
+              <span className="composer__attachment-name" title={att.name}>
+                {att.name}
+              </span>
+              <button 
+                type="button"
+                className="composer__attachment-remove" 
+                onClick={() => removeAttachment(i)}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <textarea
         className="composer__input"
         value={value}
-        placeholder="Message Caretaker..."
+        placeholder="Message Caretaker (Drop/paste files/images)..."
         rows={2}
         disabled={disabled}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={onKeyDown}
+        onPaste={handlePaste}
       />
       <div className="composer__controls">
+        <button 
+          type="button" 
+          className="composer__action-btn" 
+          title="Attach file or image" 
+          onClick={() => fileInputRef.current?.click()}
+          disabled={disabled}
+        >
+          📎
+        </button>
+        <input 
+          type="file" 
+          ref={fileInputRef} 
+          style={{ display: 'none' }} 
+          onChange={(e) => { handleFiles(e.target.files); e.target.value = ''; }}
+          multiple
+        />
         <div className="composer__usage">
           {contextUsage && (
             <>
@@ -68,7 +175,11 @@ export function Composer({ disabled, canAbort, onSend, onAbort, contextUsage }: 
             Stop
           </button>
         ) : (
-          <button className="composer__send" disabled={disabled || !value.trim()} onClick={send}>
+          <button 
+            className="composer__send" 
+            disabled={disabled || (!value.trim() && attachments.length === 0)} 
+            onClick={send}
+          >
             Send
           </button>
         )}

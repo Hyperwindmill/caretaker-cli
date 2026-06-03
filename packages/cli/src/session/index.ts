@@ -14,6 +14,7 @@ export {
   dataDir,
   sessionsRoot,
   readAttachment,
+  saveAttachment,
   attachmentsDir,
 } from './store.js';
 export { computeContextUsage } from './context_usage.js';
@@ -26,4 +27,5 @@ export type {
   MessageRecord,
   Session,
   SessionMetaRecord,
+  ToolAttachmentRecord,
 } from './types.js';

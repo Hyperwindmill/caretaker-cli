@@ -36,6 +36,7 @@ export type Role = 'user' | 'assistant' | 'tool';
 export interface ToolAttachmentRecord {
   mime: string;
   id: string;
+  name?: string;
 }
 
 export interface MessageRecord {

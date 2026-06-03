@@ -24,7 +24,8 @@ import type {
   CaretakerConfig, 
   AgentConfig, 
   PluginsFile, 
-  McpServerConfig 
+  McpServerConfig,
+  ToolAttachmentRecord
 } from './bridge.js';
 
 import { MessageList } from './MessageList.js';
@@ -37,6 +38,7 @@ import logo from './caretaker_cli.png';
 export interface UserItem {
   kind: 'user';
   text: string;
+  attachments?: ToolAttachmentRecord[];
 }
 export interface AssistantItem {
   kind: 'assistant';
@@ -82,7 +84,7 @@ interface AppState {
 }
 
 type Action =
-  | { kind: 'send-user'; text: string }
+  | { kind: 'send-user'; text: string; attachments?: ToolAttachmentRecord[] }
   | { kind: 'append-chunk'; text: string }
   | { kind: 'tool-call'; id: string; name: string; args: unknown }
   | { kind: 'tool-result'; id: string; content: string }
@@ -106,7 +108,7 @@ function reconstructChatItems(messages: ChatMessage[]): ChatItem[] {
   for (const msg of messages) {
     if (msg.role === 'user') {
       items = closeStreamingAssistant(items);
-      items.push({ kind: 'user', text: msg.content });
+      items.push({ kind: 'user', text: msg.content, attachments: msg.attachments });
     } else if (msg.role === 'assistant') {
       items = closeStreamingAssistant(items);
       
@@ -161,7 +163,7 @@ function reducer(state: State, action: Action): State {
         ...state,
         status: 'streaming',
         errorText: null,
-        items: [...state.items, { kind: 'user', text: action.text }],
+        items: [...state.items, { kind: 'user', text: action.text, attachments: action.attachments }],
       };
 
     case 'append-chunk': {
@@ -370,11 +372,23 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
     return () => window.removeEventListener('message', handle);
   }, [selectedAgentId]);
 
-  const onSend = (text: string): void => {
+  const onSend = (
+    text: string,
+    attachments?: Array<{ name: string; mime: string; base64: string }>,
+  ): void => {
     const trimmed = text.trim();
-    if (!trimmed || chatState.status === 'streaming') return;
-    dispatch({ kind: 'send-user', text: trimmed });
-    postMessage({ type: 'start', prompt: trimmed });
+    if (!trimmed && (!attachments || attachments.length === 0)) return;
+    if (chatState.status === 'streaming') return;
+
+    const localAttachments: ToolAttachmentRecord[] = (attachments || []).map((att) => ({
+      mime: att.mime,
+      id: att.name,
+      name: att.name,
+      base64: att.base64,
+    }));
+
+    dispatch({ kind: 'send-user', text: trimmed, attachments: localAttachments });
+    postMessage({ type: 'start', prompt: trimmed, attachments });
   };
 
   const onConfirm = (id: string, decision: ConfirmDecision): void => {
@@ -623,6 +637,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
               </header>
               <MessageList
                 items={chatState.items}
+                sessionId={selectedSessionId}
                 isStreaming={chatState.status === 'streaming'}
                 agentName={selectedAgentName}
                 trailing={chatState.pendingConfirms.map((p) => (
@@ -744,6 +759,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
 
       <MessageList
         items={chatState.items}
+        sessionId={selectedSessionId}
         isStreaming={chatState.status === 'streaming'}
         agentName={selectedAgentName}
         trailing={chatState.pendingConfirms.map((p) => (

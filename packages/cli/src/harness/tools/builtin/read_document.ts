@@ -7,7 +7,7 @@ import { extractText, getDocumentProxy } from 'unpdf';
 import mammoth from 'mammoth';
 import { read as readXlsx, utils as xlsxUtils } from 'xlsx/xlsx.mjs';
 
-const MAX_OUTPUT_CHARS = 150_000; // soft limit (~150 KB of text)
+export const MAX_OUTPUT_CHARS = 150_000; // soft limit (~150 KB of text)
 
 export interface DocumentParsers {
   extractPdf(buffer: Buffer): Promise<string>;
@@ -110,7 +110,7 @@ const realParsers: DocumentParsers = {
   },
 };
 
-let activeParsers: DocumentParsers = realParsers;
+export let activeParsers: DocumentParsers = realParsers;
 
 /** Testing seam: inject mock document parsers. Pass `null` to restore real implementations. */
 export function __setDocumentParsers(impl: DocumentParsers | null): void {

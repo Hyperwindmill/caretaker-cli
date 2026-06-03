@@ -2570,4 +2570,142 @@ body.vscode-light .settings-panel__tab-btn--active {
   background: oklch(0 0 0 / 0.05);
 }
 
+/* ==========================================================================
+   16. Attachment Upload & Previews
+   ========================================================================== */
+
+.composer--dragging {
+  border-color: var(--primary-blue) !important;
+  background: oklch(0.55 0.22 250 / 0.05) !important;
+  box-shadow: var(--blue-glow);
+}
+
+.composer__attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.composer__attachment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: oklch(1 0 0 / 0.05);
+  border: 1px solid oklch(1 0 0 / 0.08);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-size: 11px;
+  max-width: 180px;
+  position: relative;
+  animation: fadeInUp 0.2s ease forwards;
+}
+
+body.vscode-light .composer__attachment {
+  background: oklch(0 0 0 / 0.03);
+  border-color: oklch(0 0 0 / 0.06);
+}
+
+.composer__attachment-thumb {
+  width: 20px;
+  height: 20px;
+  object-fit: cover;
+  border-radius: 2px;
+}
+
+.composer__attachment-icon {
+  font-size: 14px;
+}
+
+.composer__attachment-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.composer__attachment-remove {
+  background: none;
+  border: none;
+  color: var(--vscode-descriptionForeground, #8c8c8c);
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color var(--transition-fast);
+}
+
+.composer__attachment-remove:hover {
+  color: var(--vscode-inputValidation-errorForeground, #ff6b6b);
+}
+
+.composer__action-btn {
+  background: none;
+  border: none;
+  color: var(--vscode-descriptionForeground, #8c8c8c);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.composer__action-btn:hover:not(:disabled) {
+  color: var(--vscode-foreground);
+  background: oklch(1 0 0 / 0.08);
+}
+
+/* User Attachment Preview in Chat Bubbles */
+.bubble__attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  border-top: 1px dashed oklch(1 0 0 / 0.08);
+  padding-top: 8px;
+  align-self: flex-start;
+  width: 100%;
+}
+
+.bubble__attachment {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: oklch(1 0 0 / 0.03);
+  border: 1px solid oklch(1 0 0 / 0.06);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 12px;
+  text-decoration: none;
+  color: inherit;
+  transition: all var(--transition-fast);
+  max-width: 100%;
+  width: fit-content;
+}
+
+.bubble__attachment:hover {
+  background: oklch(1 0 0 / 0.08);
+  border-color: var(--accent-cyan);
+}
+
+.bubble__attachment-img {
+  max-width: 240px;
+  max-height: 180px;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  border: 1px solid oklch(1 0 0 / 0.1);
+  box-shadow: 0 4px 12px oklch(0 0 0 / 0.15);
+  margin-top: 8px;
+  transition: transform var(--transition-smooth);
+}
+
+.bubble__attachment-img:hover {
+  transform: scale(1.02);
+}
+
 

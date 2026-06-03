@@ -265,7 +265,7 @@ export async function deleteSession(agentId: string, sessionId: string): Promise
 
 export function userMessage(
   content: string,
-  opts?: { id?: string; createdAt?: string },
+  opts?: { id?: string; createdAt?: string; attachments?: ToolAttachmentRecord[] },
 ): MessageRecord {
   return {
     v: 1,
@@ -273,6 +273,7 @@ export function userMessage(
     id: opts?.id ?? randomUUID(),
     role: 'user',
     content,
+    ...(opts?.attachments ? { attachments: opts.attachments } : {}),
     createdAt: opts?.createdAt ?? nowIso(),
   };
 }
@@ -299,8 +300,14 @@ export function attachmentsDir(sessionId: string): string {
   return join(dataDir(), 'attachments', sessionId);
 }
 
-export async function saveAttachment(sessionId: string, data: Buffer): Promise<string> {
-  const id = randomUUID();
+export async function saveAttachment(
+  sessionId: string,
+  data: Buffer,
+  extension: string,
+): Promise<string> {
+  const uuid = randomUUID();
+  const ext = extension.startsWith('.') ? extension : `.${extension}`;
+  const id = `${uuid}${ext}`;
   const dir = attachmentsDir(sessionId);
   await ensureDir(dir);
   await writeFile(join(dir, id), data);
