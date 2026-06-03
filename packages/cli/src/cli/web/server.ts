@@ -33,8 +33,11 @@ import {
   createSession,
   userMessage,
   appendMessage,
+  saveAttachment,
+  attachmentsDir,
   type MessageRecord,
   type SessionMetaRecord,
+  type ToolAttachmentRecord,
 } from '../../session/index.js';
 
 import type { AgentConfig, ProviderConfig, PluginsFile, McpServerConfig } from '../../types.js';
@@ -84,7 +87,11 @@ export class WebSessionController {
     return computeContextUsage(this.history, this.opts.agent.model);
   }
 
-  async start(prompt: string, cb: ChatCallbacks): Promise<void> {
+  async start(
+    prompt: string,
+    cb: ChatCallbacks,
+    rawAttachments?: Array<{ name: string; mime: string; base64: string }>,
+  ): Promise<void> {
     if (this.inflight) {
       cb.onError('A turn is already in progress.');
       return;
@@ -108,7 +115,20 @@ export class WebSessionController {
       }
 
       const meta = this.metaRecord!;
-      const userMsg = userMessage(prompt);
+
+      const attachmentRecords: ToolAttachmentRecord[] = [];
+      if (rawAttachments && rawAttachments.length > 0) {
+        for (const att of rawAttachments) {
+          const buf = Buffer.from(att.base64, 'base64');
+          const ext = path.extname(att.name) || '';
+          const id = await saveAttachment(meta.id, buf, ext);
+          attachmentRecords.push({ mime: att.mime, id, name: att.name });
+        }
+      }
+
+      const userMsg = userMessage(prompt, {
+        attachments: attachmentRecords.length > 0 ? attachmentRecords : undefined,
+      });
       await appendMessage(meta, userMsg);
       const priorHistory = [...this.history];
       this.history.push(userMsg);
@@ -122,6 +142,8 @@ export class WebSessionController {
           history: priorHistory,
           signal: ac.signal,
           workingDir: this.opts.workingDir,
+          sessionId: meta.id,
+          promptAttachments: attachmentRecords.length > 0 ? attachmentRecords : undefined,
         },
         {
           onChunk: cb.onChunk,
@@ -192,6 +214,34 @@ export async function startServer(port: number, host: string): Promise<void> {
     const file = fs.readFileSync(path.join(webviewDistPath, 'standalone.css.map'));
     c.header('Content-Type', 'application/json');
     return c.body(file);
+  });
+
+  // Attachments REST endpoint
+  app.get('/api/attachments/:sessionId/:id', async (c) => {
+    const sessionId = c.req.param('sessionId');
+    const id = c.req.param('id');
+    try {
+      const filePath = path.join(attachmentsDir(sessionId), id);
+      if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+        return c.text('Attachment not found', 404);
+      }
+      
+      const fileBuffer = fs.readFileSync(filePath);
+      const ext = path.extname(id).toLowerCase();
+      let contentType = 'application/octet-stream';
+      if (ext === '.png') contentType = 'image/png';
+      else if (ext === '.jpg' || ext === '.jpeg') contentType = 'image/jpeg';
+      else if (ext === '.webp') contentType = 'image/webp';
+      else if (ext === '.gif') contentType = 'image/gif';
+      else if (ext === '.pdf') contentType = 'application/pdf';
+      else if (ext === '.txt') contentType = 'text/plain; charset=utf-8';
+      else if (ext === '.json') contentType = 'application/json';
+      
+      c.header('Content-Type', contentType);
+      return c.body(fileBuffer);
+    } catch (err) {
+      return c.text(`Failed to serve attachment: ${err}`, 500);
+    }
   });
 
   const db = getDb();
@@ -581,32 +631,36 @@ export async function startServer(port: number, host: string): Promise<void> {
               });
             }
 
-            await controller.start(msg.prompt, {
-              onChunk: (text) => post({ type: 'chunk', text }),
-              onToolCall: (id, name, args) => post({ type: 'tool_call', id, name, args }),
-              onToolResult: (id, content) => post({ type: 'tool_result', id, content }),
-              askConfirm: (id, toolName, args) =>
-                new Promise<ConfirmDecision>((resolve) => {
-                  pendingConfirms.set(id, resolve);
-                  post({ type: 'permission_request', id, toolName, args });
-                }),
-              onError: (message) => {
-                resolveAllPending('reject');
-                post({ type: 'error', message });
+            await controller.start(
+              msg.prompt,
+              {
+                onChunk: (text) => post({ type: 'chunk', text }),
+                onToolCall: (id, name, args) => post({ type: 'tool_call', id, name, args }),
+                onToolResult: (id, content) => post({ type: 'tool_result', id, content }),
+                askConfirm: (id, toolName, args) =>
+                  new Promise<ConfirmDecision>((resolve) => {
+                    pendingConfirms.set(id, resolve);
+                    post({ type: 'permission_request', id, toolName, args });
+                  }),
+                onError: (message) => {
+                  resolveAllPending('reject');
+                  post({ type: 'error', message });
+                },
+                onDone: () => {
+                  resolveAllPending('reject');
+                  post({ type: 'done' });
+                  if (controller) {
+                    const usage = controller.getContextUsage();
+                    post({ type: 'contextUsage', usage });
+                  }
+                },
+                onSessionCreated: (sessionId: string) => {
+                  currentSessionId = sessionId;
+                  void loadSessionsAndSend(currentAgent!.id);
+                },
               },
-              onDone: () => {
-                resolveAllPending('reject');
-                post({ type: 'done' });
-                if (controller) {
-                  const usage = controller.getContextUsage();
-                  post({ type: 'contextUsage', usage });
-                }
-              },
-              onSessionCreated: (sessionId: string) => {
-                currentSessionId = sessionId;
-                void loadSessionsAndSend(currentAgent!.id);
-              },
-            });
+              msg.attachments,
+            );
             return;
           }
           case 'abort':

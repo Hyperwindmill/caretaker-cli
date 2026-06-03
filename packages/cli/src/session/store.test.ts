@@ -184,7 +184,7 @@ test('saveAttachment + readAttachment + deleteSession cleanup', async () => {
   const meta = await mod.createSession({ agentId: 'agent-a', title: 'multimodal chat' });
 
   const buf = Buffer.from('hello attachment binary');
-  const attId = await mod.saveAttachment(meta.id, buf);
+  const attId = await mod.saveAttachment(meta.id, buf, '.png');
   
   const readBuf = await mod.readAttachment(meta.id, attId);
   assert.deepEqual(readBuf, buf);

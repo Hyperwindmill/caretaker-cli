@@ -29,7 +29,42 @@ export function mapMessagesToChat(messages: MessageRecord[], sessionId?: string)
 
   for (const m of messages) {
     if (m.role === 'user') {
-      out.push({ role: 'user', content: m.content });
+      if (m.attachments && m.attachments.length > 0) {
+        let textContent = m.content;
+        const imageParts: any[] = [];
+        for (const att of m.attachments) {
+          const displayName = att.name || att.id;
+          textContent += `\n\n[Allegato: ${displayName} (ID: ${att.id})]`;
+          if (att.mime.startsWith('image/')) {
+            try {
+              const filePath = join(attachmentsDir(sessionId || 'default'), att.id);
+              const data = readFileSync(filePath);
+              const base64 = data.toString('base64');
+              imageParts.push({
+                type: 'image_url',
+                image_url: {
+                  url: `data:${att.mime};base64,${base64}`,
+                },
+              });
+            } catch (err) {
+              console.error(`[history] failed to read user image attachment ${att.id}:`, err);
+            }
+          }
+        }
+        if (imageParts.length > 0) {
+          out.push({
+            role: 'user',
+            content: [
+              { type: 'text', text: textContent },
+              ...imageParts,
+            ],
+          });
+        } else {
+          out.push({ role: 'user', content: textContent });
+        }
+      } else {
+        out.push({ role: 'user', content: m.content });
+      }
       continue;
     }
     if (m.role === 'assistant') {

@@ -169,3 +169,54 @@ test('tool message with attachments maps to tool and subsequent user message', a
   }
 });
 
+test('user message with attachments maps correctly', async () => {
+  const oldHome = process.env.CARETAKER_HOME;
+  const tempHome = await mkdtemp(join(tmpdir(), 'ct-user-hist-home-'));
+  process.env.CARETAKER_HOME = tempHome;
+
+  try {
+    const sessionId = 'session-456';
+    const imageId = 'image-uuid.png';
+    const docId = 'doc-uuid.pdf';
+    
+    const dir = attachmentsDir(sessionId);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(join(dir, imageId), Buffer.from('fake image content'));
+    fs.writeFileSync(join(dir, docId), Buffer.from('fake pdf content'));
+
+    const userMsg: MessageRecord = {
+      v: 1,
+      type: 'message',
+      id: 'u1',
+      role: 'user',
+      content: 'Analyze these',
+      attachments: [
+        { mime: 'image/png', id: imageId, name: 'photo.png' },
+        { mime: 'application/pdf', id: docId, name: 'report.pdf' },
+      ],
+      createdAt: baseTs,
+    };
+
+    const out = mapMessagesToChat([userMsg], sessionId);
+
+    assert.equal(out.length, 1);
+    const mapped = out[0]! as { role: string; content: any[] | string };
+    assert.equal(mapped.role, 'user');
+    
+    assert.ok(Array.isArray(mapped.content));
+    const parts = mapped.content as any[];
+    assert.equal(parts.length, 2); // 1 text, 1 image
+    
+    assert.equal(parts[0].type, 'text');
+    assert.ok(parts[0].text.includes('Analyze these'));
+    assert.ok(parts[0].text.includes('[Allegato: photo.png (ID: image-uuid.png)]'));
+    assert.ok(parts[0].text.includes('[Allegato: report.pdf (ID: doc-uuid.pdf)]'));
+    
+    assert.equal(parts[1].type, 'image_url');
+    assert.equal(parts[1].image_url.url, `data:image/png;base64,${Buffer.from('fake image content').toString('base64')}`);
+  } finally {
+    process.env.CARETAKER_HOME = oldHome;
+    await rm(tempHome, { recursive: true, force: true });
+  }
+});
+

@@ -6,6 +6,7 @@ import type { ToolRegistry } from '../registry.js';
 import { readFileTool } from './read_file.js';
 import { readDocumentTool } from './read_document.js';
 import { readImageTool } from './read_image.js';
+import { readAttachmentTool } from './read_attachment.js';
 import { writeTool } from './write.js';
 import { editTool } from './edit.js';
 import { multieditTool } from './multiedit.js';
@@ -41,6 +42,7 @@ export function registerBuiltins(registry: ToolRegistry): void {
   registry.register(readFileTool);
   registry.register(readDocumentTool);
   registry.register(readImageTool);
+  registry.register(readAttachmentTool);
   registry.register(writeTool);
   registry.register(editTool);
   registry.register(multieditTool);
@@ -86,6 +88,7 @@ export {
   readFileTool,
   readDocumentTool,
   readImageTool,
+  readAttachmentTool,
   writeTool,
   editTool,
   multieditTool,
