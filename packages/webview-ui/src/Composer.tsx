@@ -89,6 +89,16 @@ export function Composer({ disabled, canAbort, onSend, onAbort, contextUsage }: 
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
+      {isDragging && (
+        <div 
+          className="composer__dropzone-overlay"
+          onDragOver={onDragOver}
+          onDragLeave={onDragLeave}
+          onDrop={onDrop}
+        >
+          Drop files or images here...
+        </div>
+      )}
       {attachments.length > 0 && (
         <div className="composer__attachments">
           {attachments.map((att, i) => (
