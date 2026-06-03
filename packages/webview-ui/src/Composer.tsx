@@ -14,6 +14,7 @@ export function Composer({ disabled, canAbort, onSend, onAbort, contextUsage }: 
   const [attachments, setAttachments] = useState<Array<{ name: string; mime: string; base64: string }>>([]);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragCounter = useRef(0);
 
   const send = (): void => {
     onSend(value, attachments.length > 0 ? attachments : undefined);
@@ -57,19 +58,27 @@ export function Composer({ disabled, canAbort, onSend, onAbort, contextUsage }: 
     }
   };
 
-  const onDragOver = (e: DragEvent<HTMLDivElement>): void => {
+  const onDragEnter = (e: DragEvent<HTMLDivElement>): void => {
     e.preventDefault();
-    setIsDragging(true);
+    dragCounter.current++;
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      setIsDragging(true);
+    }
   };
 
   const onDragLeave = (e: DragEvent<HTMLDivElement>): void => {
     e.preventDefault();
-    setIsDragging(false);
+    dragCounter.current--;
+    if (dragCounter.current <= 0) {
+      setIsDragging(false);
+      dragCounter.current = 0;
+    }
   };
 
   const onDrop = (e: DragEvent<HTMLDivElement>): void => {
     e.preventDefault();
     setIsDragging(false);
+    dragCounter.current = 0;
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       handleFiles(e.dataTransfer.files);
     }
@@ -85,20 +94,14 @@ export function Composer({ disabled, canAbort, onSend, onAbort, contextUsage }: 
   return (
     <div 
       className={`composer ${isDragging ? 'composer--dragging' : ''}`}
-      onDragOver={onDragOver}
+      onDragEnter={onDragEnter}
       onDragLeave={onDragLeave}
+      onDragOver={(e) => e.preventDefault()}
       onDrop={onDrop}
     >
-      {isDragging && (
-        <div 
-          className="composer__dropzone-overlay"
-          onDragOver={onDragOver}
-          onDragLeave={onDragLeave}
-          onDrop={onDrop}
-        >
-          Drop files or images here...
-        </div>
-      )}
+      <div className="composer__dropzone-overlay">
+        Drop files or images here...
+      </div>
       {attachments.length > 0 && (
         <div className="composer__attachments">
           {attachments.map((att, i) => (
