@@ -131,7 +131,11 @@ export function parseViewToHost(value: unknown): ViewToHost | null {
           attachments.push({ name: att.name, mime: att.mime, base64: att.base64 });
         }
       }
-      return { type, prompt: value.prompt, attachments };
+      const res: Extract<ViewToHost, { type: 'start' }> = { type, prompt: value.prompt };
+      if (attachments !== undefined) {
+        res.attachments = attachments;
+      }
+      return res;
     }
     case 'abort':
       return { type };
