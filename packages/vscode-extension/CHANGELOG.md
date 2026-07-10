@@ -1,5 +1,14 @@
 # caretaker-vscode
 
+## 0.3.1
+
+### Patch Changes
+
+- Harden the Windows git-plugin reclone fallback and the extension packaging. The reclone's cache removal now uses Node's built-in retry (maxRetries/retryDelay) to ride out transient Windows file locks (Defender/indexer/host handles), matching the store's atomic-write retry policy. The VSCode extension gains a `vscode:prepublish` script so `vsce package` always rebuilds first and can never ship a stale `dist/` bundle.
+- Updated dependencies
+  - caretaker-cli@0.3.1
+  - webview-ui@0.3.1
+
 ## 0.3.0
 
 ### Patch Changes
