@@ -125,7 +125,11 @@ export async function fetchGit(input: GitFetchInput, cacheDir: string): Promise<
       // Don't fight the dirty-detection: nuke the cache and reclone (shallow, so
       // cheap). Platform-agnostic, self-heals corrupted caches too. The reclone
       // path has no catch, so a genuine clone/network failure still propagates.
-      await rm(cacheDir, { recursive: true, force: true });
+      //
+      // maxRetries/retryDelay: on Windows, Defender/indexer/host handles briefly
+      // lock cache files; rm's built-in retry rides out the transient
+      // EPERM/EBUSY (same lock class the store's atomic-write retry handles).
+      await rm(cacheDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
       return fetchGit(input, cacheDir);
     }
   }
