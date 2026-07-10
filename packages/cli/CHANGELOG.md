@@ -1,5 +1,18 @@
 # caretaker-cli
 
+## 0.3.0
+
+### Minor Changes
+
+- a48123e: Implement user prompt attachments (images and documents) with drag-and-drop, paste, and upload support in webview-ui, extension preservation on disk, and the new native `read_attachment` tool.
+- f0273f4: Add native `read_document` tool to parse PDF, Word, and Excel files with pandoc fallback for unsupported formats. Add native `read_image` tool along with support for pointer-based tool attachments mapped directly to base64 user messages in LLM turns.
+
+### Patch Changes
+
+- 805e0ac: Fix git plugin refresh failing on Windows with a spurious "local changes" error. isomorphic-git's in-place fetch+checkout reports the working tree as dirty on Windows (filemode/stat mismatch or locked files) and throws even with `force: true`, where Linux succeeds. The updater now falls back to a fresh shallow reclone when the in-place update throws, self-healing the cache on any platform.
+  - webview-ui@0.3.0
+  - caretaker-types@0.3.0
+
 ## 0.2.5
 
 ### Patch Changes
