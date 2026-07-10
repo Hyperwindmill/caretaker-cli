@@ -1,6 +1,6 @@
 {
   "name": "caretaker-desktop",
-  "version": "0.2.5",
+  "version": "0.3.0",
   "description": "Caretaker Desktop - Electron wrapper for the Caretaker agent harness",
   "author": {
     "name": "Daniele Traverso",
