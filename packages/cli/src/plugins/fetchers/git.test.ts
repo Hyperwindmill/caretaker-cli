@@ -189,6 +189,28 @@ test('fetchGit propagates errors from clone', async () => {
   }
 });
 
+test('fetchGit reclones when in-place update fails (Windows self-heal)', async () => {
+  const cache = mkdtempSync(path.join(tmpdir(), 'plug-cache-'));
+  mkdirSync(path.join(cache, '.git'), { recursive: true });
+  try {
+    const { client, calls, sha } = makeMock({ fetchThrows: new Error('CheckoutConflictError') });
+    __setGitClient(client);
+
+    const result = await fetchGit(
+      { url: 'https://example.com/x.git', ref: null, authToken: null },
+      cache,
+    );
+
+    // fetch was attempted, threw, then the cache was reclone'd from scratch.
+    assert.ok(calls.some((c) => c.op === 'fetch'));
+    assert.ok(calls.some((c) => c.op === 'clone'));
+    assert.equal(result.sha, sha);
+    assert.equal(result.root, cache);
+  } finally {
+    rmSync(cache, { recursive: true, force: true });
+  }
+});
+
 test('fetchGit on existing cache with ref:null uses currentBranch for checkout', async () => {
   const cache = mkdtempSync(path.join(tmpdir(), 'plug-cache-'));
   mkdirSync(path.join(cache, '.git'), { recursive: true });

@@ -6,7 +6,7 @@
 // lib/encryption.ts; for legacy / unencrypted entries the value is used as-is.
 
 import * as fs from 'node:fs';
-import { mkdir, stat } from 'node:fs/promises';
+import { mkdir, rm, stat } from 'node:fs/promises';
 import * as path from 'node:path';
 import git from 'isomorphic-git';
 import http from 'isomorphic-git/http/node';
@@ -100,23 +100,34 @@ export async function fetchGit(input: GitFetchInput, cacheDir: string): Promise<
       onAuth,
     });
   } else {
-    // Pass URL explicitly so cache moves between hosts (e.g. URL change in
-    // plugins.json) work without us editing the repo's stored remote config.
-    await gitImpl.fetch({
-      fs,
-      http,
-      dir: cacheDir,
-      url: input.url,
-      ref: input.ref ?? undefined,
-      singleBranch: true,
-      depth: 1,
-      onAuth,
-    });
-    const target =
-      input.ref ??
-      ((await gitImpl.currentBranch({ fs, dir: cacheDir })) as string | undefined) ??
-      'HEAD';
-    await gitImpl.checkout({ fs, dir: cacheDir, ref: target, force: true });
+    try {
+      // Pass URL explicitly so cache moves between hosts (e.g. URL change in
+      // plugins.json) work without us editing the repo's stored remote config.
+      await gitImpl.fetch({
+        fs,
+        http,
+        dir: cacheDir,
+        url: input.url,
+        ref: input.ref ?? undefined,
+        singleBranch: true,
+        depth: 1,
+        onAuth,
+      });
+      const target =
+        input.ref ??
+        ((await gitImpl.currentBranch({ fs, dir: cacheDir })) as string | undefined) ??
+        'HEAD';
+      await gitImpl.checkout({ fs, dir: cacheDir, ref: target, force: true });
+    } catch {
+      // ponytail: iso-git's in-place update is unreliable on Windows — it reports
+      // the working tree as dirty (filemode/stat mismatch, or locked files) and
+      // throws CheckoutConflictError even with force:true, where Linux succeeds.
+      // Don't fight the dirty-detection: nuke the cache and reclone (shallow, so
+      // cheap). Platform-agnostic, self-heals corrupted caches too. The reclone
+      // path has no catch, so a genuine clone/network failure still propagates.
+      await rm(cacheDir, { recursive: true, force: true });
+      return fetchGit(input, cacheDir);
+    }
   }
 
   const sha = await gitImpl.resolveRef({ fs, dir: cacheDir, ref: 'HEAD' });
