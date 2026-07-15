@@ -1,5 +1,22 @@
 # caretaker-cli
 
+## 0.3.2
+
+### Patch Changes
+
+- e30955c: fix(plugins): materialize tracked symlinks as plain files during git checkout on Windows
+
+  Plugin "sync now" failed on Windows for any source repo that tracks a symlink
+  (e.g. `CLAUDE.md -> AGENTS.md`): isomorphic-git's checkout calls `fs.symlink`,
+  which throws `EPERM` without the `SeCreateSymbolicLinkPrivilege` (admin /
+  Developer Mode). The git fetcher now wraps the `fs` handed to isomorphic-git so
+  `symlink` falls back to writing a plain file containing the link target on
+  `EPERM`/`EACCES` — mirroring git's own `core.symlinks=false` behavior (the
+  Windows default). Real symlinks are still used everywhere the OS permits them.
+
+  - webview-ui@0.3.2
+  - caretaker-types@0.3.2
+
 ## 0.3.1
 
 ### Patch Changes
@@ -26,6 +43,7 @@
 ### Patch Changes
 
 - 7c65a7f: fix: refresh agent config live when edited from another surface
+
   - Web GUI (`caretaker-cli web`): `loadAgentsAndSend()` now updates `currentAgent` in-place when the file watcher detects changes to `agents.json`, instead of only refreshing the agent list. This means workingDir, allowedTools, plugins, and mcpServers changes are picked up immediately without restarting the server.
   - VSCode sidebar: same fix applied to `loadAgentsAndSend()` in `sidebar.ts`.
   - TUI: added a file watcher in `tui/agents.tsx` that refreshes the agent list and selected agent when `agents.json` changes, so edits from the web GUI or VSCode are visible immediately.
@@ -35,12 +53,14 @@
   On Linux, `.bashrc` typically exits early for non-interactive shells due to guards like `[ -z "$PS1" ] && return`. This means NVM, volta, fnm, and other version managers are NOT available even when spawning with `bash -l -c`.
 
   New module `harness/tools/builtin/shell-env.ts` (ported from caretaker-agents-platform):
+
   - At startup, probes the environment once using `bash -i -c 'env'` which DOES source `.bashrc`
   - Extracts relevant variables: `PATH`, `NVM_DIR`, `NVM_BIN`, `VOLTA_HOME`, `FNM_DIR`, `GOPATH`, `CARGO_HOME`, `PYENV_ROOT`, etc.
   - Caches the result and merges it into every bash subprocess environment
   - On Windows and macOS, returns early (those platforms handle login shells correctly)
 
   This ensures `pnpm`, `node`, and other version-managed tools are available in bash commands without requiring interactive shell spawning for every command.
+
   - webview-ui@0.2.5
   - caretaker-types@0.2.5
 
