@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
-import { fetchGit, __setGitClient, type GitClient } from './git.js';
+import { fetchGit, __setGitClient, symlinkFallbackFs, type GitClient } from './git.js';
 import { encrypt } from '../../lib/encryption.js';
 
 afterEach(() => __setGitClient(null));
@@ -209,6 +209,78 @@ test('fetchGit reclones when in-place update fails (Windows self-heal)', async (
   } finally {
     rmSync(cache, { recursive: true, force: true });
   }
+});
+
+test('symlinkFallbackFs writes a plain file when the OS refuses symlinks (Windows)', async () => {
+  const writes: Array<{ path: string; data: string }> = [];
+  let symlinkCalls = 0;
+  const fakeBase = {
+    promises: {
+      async symlink() {
+        symlinkCalls++;
+        const err = new Error('EPERM') as NodeJS.ErrnoException;
+        err.code = 'EPERM';
+        throw err;
+      },
+      async writeFile(p: unknown, data: unknown) {
+        writes.push({ path: String(p), data: String(data) });
+      },
+    },
+  } as unknown as typeof import('node:fs');
+
+  const wrapped = symlinkFallbackFs(fakeBase);
+  // isomorphic-git calls symlink(targetText, linkPath) with no type argument.
+  await wrapped.promises.symlink('AGENTS.md', '/repo/CLAUDE.md');
+
+  assert.equal(symlinkCalls, 1);
+  assert.deepEqual(writes, [{ path: '/repo/CLAUDE.md', data: 'AGENTS.md' }]);
+});
+
+test('symlinkFallbackFs prefers a real symlink where the OS permits it', async () => {
+  let symlinkCalls = 0;
+  let writeCalls = 0;
+  const fakeBase = {
+    promises: {
+      async symlink() {
+        symlinkCalls++;
+      },
+      async writeFile() {
+        writeCalls++;
+      },
+    },
+  } as unknown as typeof import('node:fs');
+
+  const wrapped = symlinkFallbackFs(fakeBase);
+  await wrapped.promises.symlink('AGENTS.md', '/repo/CLAUDE.md');
+
+  assert.equal(symlinkCalls, 1);
+  assert.equal(writeCalls, 0);
+});
+
+test('symlinkFallbackFs propagates non-permission symlink errors', async () => {
+  const fakeBase = {
+    promises: {
+      async symlink() {
+        const err = new Error('ENOSPC') as NodeJS.ErrnoException;
+        err.code = 'ENOSPC';
+        throw err;
+      },
+      async writeFile() {
+        throw new Error('writeFile should not be called on a non-permission error');
+      },
+    },
+  } as unknown as typeof import('node:fs');
+
+  const wrapped = symlinkFallbackFs(fakeBase);
+  await assert.rejects(wrapped.promises.symlink('AGENTS.md', '/repo/CLAUDE.md'), /ENOSPC/);
+});
+
+test('symlinkFallbackFs is enumerable-promises shaped for isomorphic-git', () => {
+  const wrapped = symlinkFallbackFs();
+  const desc = Object.getOwnPropertyDescriptor(wrapped, 'promises');
+  assert.ok(desc?.enumerable, 'isomorphic-git binds fs.promises only when it is an enumerable own prop');
+  assert.equal(typeof wrapped.promises.symlink, 'function');
+  assert.equal(typeof wrapped.promises.writeFile, 'function');
 });
 
 test('fetchGit on existing cache with ref:null uses currentBranch for checkout', async () => {
