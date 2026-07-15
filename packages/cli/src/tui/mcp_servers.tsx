@@ -11,6 +11,8 @@ import {
   type PatchMcpServerInput,
 } from '../mcp/server_manager.js';
 import type { McpServerConfig, McpTransport } from '../types.js';
+import { authenticateMcpServer, revokeMcpAuth } from '../mcp/oauth.js';
+
 
 type Mode = 'list' | 'detail' | 'create' | 'edit' | 'delete';
 
@@ -19,6 +21,12 @@ export default function McpServers({ onBack }: { onBack: () => void }) {
   const [loaded, setLoaded] = useState(false);
   const [mode, setMode] = useState<Mode>('list');
   const [selected, setSelected] = useState<McpServerConfig | null>(null);
+  const [authStatus, setAuthStatus] = useState<string>('');
+
+  useEffect(() => {
+    setAuthStatus('');
+  }, [selected, mode]);
+
 
   const reload = async (): Promise<McpServerConfig[]> => {
     const s = await listMcpServers();
@@ -38,6 +46,36 @@ export default function McpServers({ onBack }: { onBack: () => void }) {
     else if (mode === 'edit' && selected?.pluginId) setMode('detail');
     // create/non-managed edit: handled by ServerForm.
   });
+
+  useInput(async (input) => {
+    if (mode !== 'detail' || !selected || selected.transport !== 'http') return;
+    if (input === 'a') {
+      setAuthStatus('Opening browser…');
+      try {
+        await authenticateMcpServer(selected.id);
+        setAuthStatus('Authenticated.');
+        await reload().then((fresh) => {
+          const updated = fresh.find((s) => s.id === selected.id);
+          if (updated) setSelected(updated);
+        });
+      } catch (err) {
+        setAuthStatus(`Failed: ${String(err)}`);
+      }
+    } else if (input === 'x' && selected.oauthState) {
+      setAuthStatus('Signing out…');
+      try {
+        await revokeMcpAuth(selected.id);
+        setAuthStatus('Signed out.');
+        await reload().then((fresh) => {
+          const updated = fresh.find((s) => s.id === selected.id);
+          if (updated) setSelected(updated);
+        });
+      } catch (err) {
+        setAuthStatus(`Failed: ${String(err)}`);
+      }
+    }
+  });
+
 
   if (!loaded) return <Text dimColor>loading…</Text>;
 
@@ -154,8 +192,14 @@ export default function McpServers({ onBack }: { onBack: () => void }) {
           <>
             <Text>url: {selected.url ?? '(none)'}</Text>
             <Text>headers: {headerCount > 0 ? `${headerCount} (encrypted)` : '(none)'}</Text>
+            <Text dimColor>
+              auth: {selected.oauthState ? 'authenticated' : 'not authenticated'} — press [a] to authenticate
+              {selected.oauthState ? ', [x] to sign out' : ''}
+            </Text>
+            {authStatus && <Text color="cyan">{authStatus}</Text>}
           </>
         )}
+
         <Text>lastConnected: {selected.lastConnectedAt ?? '(never)'}</Text>
         {selected.lastConnectError && (
           <Text color="red">lastError: {selected.lastConnectError.slice(0, 200)}</Text>
