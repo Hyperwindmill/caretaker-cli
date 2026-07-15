@@ -8,4 +8,3 @@ Add OAuth authentication for http MCP servers. An explicit per-server
 PKCE) via an ephemeral loopback callback, and tokens are stored AES-256-GCM
 encrypted in `mcp.json`. Passive connects use the saved tokens and refresh them
 automatically; unattended runs never open a browser.
-
