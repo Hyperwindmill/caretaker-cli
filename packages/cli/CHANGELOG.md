@@ -1,5 +1,17 @@
 # caretaker-cli
 
+## 0.3.6
+
+### Patch Changes
+
+- 08126cf: Fix: model "thinking"/reasoning blocks now appear live during streaming, not only after reloading a past conversation. The harness loop already emitted `onThinking` and persisted the parts, but the surfaces (web server, VSCode sidebar) never forwarded the event and the bridge contract had no `thinking` message, so live turns silently dropped it. Added a `thinking` event to the `HostToView` contract and wired it through both surfaces and the webview reducer.
+- Updated dependencies [219ade5]
+- Updated dependencies [59d3703]
+- Updated dependencies [08126cf]
+- Updated dependencies [cf07a9d]
+  - webview-ui@0.3.6
+  - caretaker-types@0.3.6
+
 ## 0.3.5
 
 ### Patch Changes
