@@ -3,6 +3,13 @@
   "version": "0.3.2",
   "private": true,
   "type": "module",
+  "license": "SEE LICENSE IN LICENSE",
+  "author": "Hyperwindmill <hyperwindmill@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Hyperwindmill/caretaker-cli.git",
+    "directory": "packages/webview-ui"
+  },
   "main": "./src/App.tsx",
   "exports": {
     ".": "./src/App.tsx",

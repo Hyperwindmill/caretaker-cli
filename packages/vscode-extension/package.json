@@ -5,7 +5,8 @@
   "version": "0.3.2",
   "private": true,
   "publisher": "Hyperwindmill",
-  "license": "MIT",
+  "author": "Hyperwindmill <hyperwindmill@gmail.com>",
+  "license": "SEE LICENSE IN LICENSE",
   "icon": "icon.png",
   "repository": {
     "type": "git",

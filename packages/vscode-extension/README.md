@@ -2,7 +2,7 @@
 
 VSCode chat sidebar that drives the [caretaker-cli](../cli/) harness in-process. Same agents, same plugins, same skills, same `~/.caretaker/` state as the TUI — different surface.
 
-> Status: MVP. Chat-only sidebar with confirm gate and tool rendering. Agent / plugin / MCP CRUD stays in the TUI for this iteration. See [`docs/superpowers/specs/2026-05-13-vscode-extension-design.md`](../../docs/superpowers/specs/2026-05-13-vscode-extension-design.md) for the scoped design.
+> Chat sidebar with confirm gate, tool rendering, and a session browser, **plus** full Providers / Agents / Plugins / MCP configuration in the Settings panel. The only harness surface not exposed here is the scheduler — its daemon is booted only by the web server. See [`docs/superpowers/specs/2026-05-13-vscode-extension-design.md`](../../docs/superpowers/specs/2026-05-13-vscode-extension-design.md) for the original scoped design.
 
 ## Running it from source
 
@@ -48,8 +48,8 @@ The extension embeds `caretaker-cli` as an ESM library (no subprocess). Concrete
 ## What it does differently
 
 - `workingDir` for the agent is always the open VSCode workspace folder, regardless of what's saved on the agent. `@file` refs in the system prompt resolve from there.
-- No agent / plugin / MCP CRUD. Use the TUI to create or edit those.
-- No session browser yet (chat history per webview, not persisted across reloads in the UI — the JSONL files are written though).
+- No scheduler. The heartbeat/Telegram/task daemon is booted only by the web server, so scheduled work does not fire from the sidebar. Providers / Agents / Plugins / MCP configuration, on the other hand, is fully available in the Settings panel.
+- Sessions per agent are listed, switchable, and creatable from the UI (`sessionsLoaded` / `selectSession` / `createSession`), and persist as JSONL under `~/.caretaker/sessions/<agentId>/`.
 - Single-window safe; two VSCode windows on the same workspace + same agent will interleave JSONL appends. Documented limit, not a blocker for normal use.
 
 ## Settings
@@ -68,7 +68,7 @@ pnpm -F caretaker-vscode package
 Produces `caretaker-vscode-<version>.vsix` in the package root. Install with:
 
 ```bash
-code --install-extension packages/vscode-extension/caretaker-vscode-0.0.1.vsix
+code --install-extension packages/vscode-extension/caretaker-vscode-<version>.vsix
 ```
 
 `vsce` runs with `--no-dependencies` because all runtime code is already inlined in `dist/extension.js`; pnpm's symlinked `node_modules` is never walked.

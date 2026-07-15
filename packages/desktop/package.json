@@ -2,11 +2,14 @@
   "name": "caretaker-desktop",
   "version": "0.3.2",
   "description": "Caretaker Desktop - Electron wrapper for the Caretaker agent harness",
-  "author": {
-    "name": "Daniele Traverso",
-    "email": "hyperwindmill@gmail.com"
-  },
+  "author": "Hyperwindmill <hyperwindmill@gmail.com>",
+  "license": "SEE LICENSE IN LICENSE",
   "homepage": "https://github.com/Hyperwindmill/caretaker-cli",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Hyperwindmill/caretaker-cli.git",
+    "directory": "packages/desktop"
+  },
   "private": true,
   "type": "module",
   "main": "dist-electron/main.js",
