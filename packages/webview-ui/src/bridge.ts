@@ -1,8 +1,7 @@
 // Wire protocol between the extension host and the chat webview.
 // Both sides import these types so a change here forces both ends to
 // update. Event names mirror the sister repo's SSE protocol where the
-// concepts overlap, adapted to the in-process model (no `usage` until
-// the harness exposes it cleanly).
+// concepts overlap, adapted to the in-process model.
 //
 // The webview is hostile until proven otherwise: messages arriving on
 // the host side must be runtime-validated with `parseViewToHost`. The
