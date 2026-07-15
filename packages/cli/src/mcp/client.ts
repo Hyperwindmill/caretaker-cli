@@ -17,6 +17,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { decrypt, isEncrypted } from '../lib/encryption.js';
 import { loadMcpServers, saveMcpServers } from '../store/json.js';
 import { pluginAbsoluteRoot } from '../plugins/loader.js';
+import { buildAuthProvider } from './oauth.js';
 import type { McpServerConfig } from '../types.js';
 
 interface PoolEntry {
@@ -128,6 +129,7 @@ async function openClient(server: McpServerConfig): Promise<PoolEntry> {
     const headers = expandRecord(decrypted, pluginRoot) ?? {};
     const url = expandStrings(server.url, pluginRoot)!;
     const transport = new StreamableHTTPClientTransport(new URL(url), {
+      authProvider: buildAuthProvider(server),
       requestInit: { headers },
     });
     await client.connect(transport);
