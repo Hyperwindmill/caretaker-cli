@@ -4,7 +4,7 @@
 
 import { openUrl } from '../lib/open_url.js';
 import { loadMcpServers, saveMcpServers, withMcpServersLock } from '../store/json.js';
-import { readOAuthBlob, writeOAuthBlob, type OAuthBlob } from './oauth_store.js';
+import { readOAuthBlob, writeOAuthBlob, staleRegistrationReset, type OAuthBlob } from './oauth_store.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
@@ -129,14 +129,15 @@ export async function authenticateMcpServer(id: string): Promise<void> {
     const freshServer = freshFile.servers.find((s) => s.id === id);
     if (freshServer) {
       try {
-        const blob = readOAuthBlob(freshServer);
-        if (blob.clientInformation?.redirect_uris) {
-          const hasCurrentRedirect = blob.clientInformation.redirect_uris.includes(listener.redirectUrl);
-          if (!hasCurrentRedirect) {
-            delete blob.clientInformation;
-            freshServer.oauthState = writeOAuthBlob(blob);
-            await saveMcpServers(freshFile);
-          }
+        // R1: when the ephemeral redirect port no longer matches the stored
+        // DCR registration, clear BOTH clientInformation and tokens — the
+        // tokens are bound to the old client_id and, if kept, would send the
+        // next connect down a refresh-with-wrong-client path (invalid_grant)
+        // instead of opening the browser.
+        const reset = staleRegistrationReset(readOAuthBlob(freshServer), listener.redirectUrl);
+        if (reset) {
+          freshServer.oauthState = writeOAuthBlob(reset);
+          await saveMcpServers(freshFile);
         }
       } catch {
         // If decryption fails, clear all oauthState to heal
