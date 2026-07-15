@@ -702,15 +702,9 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
                 ))}
               </select>
             </div>
-            <button
-              className="app__sessions-btn"
-              onClick={() => {
-                setActiveScreen('projects');
-              }}
-              title="Projects & Autonomous Tasks"
-            >
-              📁 Projects
-            </button>
+            {/* Projects (autonomous tasks) is scheduler-driven, so it's exposed only
+                in the sidebar layout (web/desktop), never in the compact/VSCode surface
+                — same gating as the Scheduler settings tab. */}
             <button
               className="app__sessions-btn"
               onClick={onToggleSessions}
