@@ -26,6 +26,8 @@ import {
   refreshSource,
 } from '../../plugins/source_manager.js';
 import { createMcpServer, deleteMcpServer, patchMcpServer } from '../../mcp/server_manager.js';
+import { authenticateMcpServer, revokeMcpAuth } from '../../mcp/oauth.js';
+
 import {
   listForAgent,
   readSession,
@@ -810,7 +812,26 @@ export async function startServer(port: number, host: string): Promise<void> {
               post({ type: 'error', message: `Failed to delete MCP server: ${err}` });
             }
             return;
+          case 'authenticateMcpServer':
+            try {
+              await authenticateMcpServer(msg.serverId);
+              void sendSettingsData();
+              post({ type: 'mcpAuthOutcome', serverId: msg.serverId, ok: true });
+            } catch (err) {
+              post({ type: 'mcpAuthOutcome', serverId: msg.serverId, ok: false, error: String(err) });
+            }
+            return;
+          case 'revokeMcpAuth':
+            try {
+              await revokeMcpAuth(msg.serverId);
+              void sendSettingsData();
+              post({ type: 'mcpAuthOutcome', serverId: msg.serverId, ok: true });
+            } catch (err) {
+              post({ type: 'mcpAuthOutcome', serverId: msg.serverId, ok: false, error: String(err) });
+            }
+            return;
           case 'fetchModels':
+
             try {
               const result = await harness.fetchOpenAiStyleModels(msg.endpoint, msg.apiKey ?? null);
               post({ type: 'modelsFetched', result });

@@ -87,7 +87,8 @@ export type HostToView =
   | { type: 'modelsFetched'; result: ModelsResult }
   | { type: 'refreshingPlugin'; sourceId: string }
   | { type: 'refreshPluginOutcome'; outcome: RefreshOutcome }
-  | { type: 'taskRunsLoaded'; taskId: string; runs: any[] };
+  | { type: 'taskRunsLoaded'; taskId: string; runs: any[] }
+  | { type: 'mcpAuthOutcome'; serverId: string; ok: boolean; error?: string };
 
 export type ViewToHost =
   | { type: 'start'; prompt: string; attachments?: Array<{ name: string; mime: string; base64: string }> }
@@ -107,7 +108,9 @@ export type ViewToHost =
   | { type: 'saveMcpServer'; server: any }
   | { type: 'deleteMcpServer'; serverId: string }
   | { type: 'fetchModels'; endpoint: string; apiKey?: string }
-  | { type: 'getTaskRuns'; taskId: string };
+  | { type: 'getTaskRuns'; taskId: string }
+  | { type: 'authenticateMcpServer'; serverId: string }
+  | { type: 'revokeMcpAuth'; serverId: string };
 
 /** Runtime validator for messages coming from the webview. Returns
  * the typed message on success, or null on any structural mismatch.
@@ -177,6 +180,11 @@ export function parseViewToHost(value: unknown): ViewToHost | null {
         : null;
     case 'getTaskRuns':
       return typeof value.taskId === 'string' ? { type, taskId: value.taskId } : null;
+    case 'authenticateMcpServer':
+      return typeof value.serverId === 'string' ? { type, serverId: value.serverId } : null;
+    case 'revokeMcpAuth':
+      return typeof value.serverId === 'string' ? { type, serverId: value.serverId } : null;
+
     default:
       return null;
   }
