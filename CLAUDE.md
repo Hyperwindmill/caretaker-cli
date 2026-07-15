@@ -4,11 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repo layout
 
-pnpm workspaces monorepo, three packages:
+pnpm workspaces monorepo, five packages (all `private: true`, versioned together as one Changesets fixed group):
 
-- `packages/cli/` — the Caretaker CLI/TUI (published as `caretaker-cli`). Authoritative source of the harness, store, plugins, MCP, commands, sub-agent dispatch, scheduler, and tool registry. Also ships a Hono-based local web server (`caretaker-cli web`).
+- `packages/cli/` — the Caretaker CLI/TUI (`caretaker-cli`). Authoritative source of the harness, store, plugins, MCP, commands, sub-agent dispatch, scheduler, and tool registry. Also ships a Hono-based local web server (`caretaker-cli web`).
 - `packages/webview-ui/` — shared React UI bundled by esbuild. Consumed by both `cli/web/` (served by `caretaker-cli web`) and `vscode-extension/` (loaded into the sidebar webview). Public exports: `./` (App) and `./bridge` (host↔view message contract).
 - `packages/vscode-extension/` — VSCode chat sidebar (`caretaker-vscode`). Embeds `caretaker-cli` as an ESM library via the public `./harness`, `./store`, `./session`, `./plugins`, `./mcp`, `./types` exports. Does not subprocess the CLI. See [packages/vscode-extension/README.md](packages/vscode-extension/README.md) for the F5 / dev loop.
+- `packages/desktop/` — Electron desktop wrapper (`caretaker-desktop`). **Not** a separate GUI: the main process picks a free port, forks the CLI web server (`caretaker-cli web`) as an Electron `utilityProcess`, and frames `http://127.0.0.1:<port>` in a `BrowserWindow` with a system tray and single-instance lock. Because it runs the full web server, the scheduler runs under it too. Packaged with electron-builder (win/mac/linux).
+- `packages/types/` — shared TypeScript definitions (`caretaker-types`): `AgentConfig`, `ProviderConfig`, `PluginSource`, `ScheduledTaskConfig`, etc. Consumed as a workspace dependency by cli and webview-ui.
 
 All commands below run from the repo root unless noted.
 
@@ -25,6 +27,8 @@ pnpm -F caretaker-cli test              # tsx --test "packages/cli/src/**/*.test
 pnpm -F webview-ui build                # esbuild → packages/webview-ui/dist/
 pnpm -F webview-ui dev                  # esbuild --watch
 pnpm -F caretaker-vscode build          # build extension host + webview bundles
+pnpm desktop:dev                        # build all + launch the Electron desktop app
+pnpm desktop:dist                       # package desktop installers (electron-builder)
 pnpm build                              # build every package (pnpm -r build)
 pnpm test                               # test every package (pnpm -r test)
 ```
@@ -38,16 +42,17 @@ Package manager: **pnpm** (≥10). The root has `pnpm-workspace.yaml`; `package-
 
 ## Architecture
 
-The codebase is a multi-surface agent harness (TUI, web GUI, VSCode sidebar, headless `run`). All surfaces drive the same in-process harness against the same `~/.caretaker/` state. **The web server is the functional superset** — the scheduler and the scheduler UI live only there. Five layers worth understanding before touching anything:
+The codebase is a multi-surface agent harness (TUI, web GUI, Electron desktop, VSCode sidebar, headless `run`). All surfaces drive the same in-process harness against the same `~/.caretaker/` state. **The web server is the functional superset** — the scheduler and the scheduler UI live only there (and, transitively, in the desktop app, which forks the web server). Five layers worth understanding before touching anything:
 
 ### 1. Surfaces are thin; harness is shared; the web server is the superset
 
 - TUI: `packages/cli/src/tui/` (Ink). Default when `caretaker-cli` is invoked with no subcommand. No scheduler boot, no scheduler UI.
 - Headless: `packages/cli/src/cli/run.ts`. `caretaker-cli run [prompt] --agent <name> [--tools …] [--output plain|json]`.
-- Local web GUI: `packages/cli/src/cli/web/server.ts` — Hono HTTP + WebSocket bridge that serves the `webview-ui` bundle and proxies chat / settings / scheduler actions into the same harness functions the TUI uses. **Only this surface calls `startBackgroundScheduler()`** (see layer 5), so any scheduled work needs the web server up.
+- Local web GUI: `packages/cli/src/cli/web/server.ts` — Hono HTTP + WebSocket bridge that serves the `webview-ui` bundle and proxies chat / settings / scheduler actions into the same harness functions the TUI uses. **Only this surface calls `startBackgroundScheduler()`** (see layer 5), so any scheduled work needs a web-server process up.
+- Electron desktop: `packages/desktop/` — the main process forks `caretaker-cli web` as a child `utilityProcess` and frames it in a `BrowserWindow`. It runs no harness logic itself; everything happens in the forked web server. Consequence: the scheduler **does** run under the desktop app (it's a web server), unlike the bare TUI/VSCode.
 - VSCode sidebar: `packages/vscode-extension/` imports `caretaker-cli` directly through its public exports. No subprocess; same harness, same store; does not boot the scheduler.
 
-Subcommand routing lives in `packages/cli/src/cli/index.ts` (commander). Adding a new surface should reuse the harness/store/session modules — never re-implement the loop. If the new surface needs scheduled work, it must `startBackgroundScheduler()` explicitly (today only `cli/web/server.ts` does).
+Subcommand routing lives in `packages/cli/src/cli/index.ts` (commander). Adding a new surface should reuse the harness/store/session modules — never re-implement the loop. If the new surface needs scheduled work, it must `startBackgroundScheduler()` explicitly (today only `cli/web/server.ts` does, and the desktop app inherits it by forking that server).
 
 ### 2. Agent execution = harness loop + resolved surface
 
@@ -80,18 +85,25 @@ Caps: 100 KB per file, 250 KB total. Order is stable across turns by design — 
 
 MCP servers are pooled by `mcp/client.ts` (both stdio and HTTP/SSE); their tools/prompts/resources flow into the same registry as native builtins via `mcp/adapter.ts`. Managed agents and managed MCP servers follow a cascading-delete model tied to their source plugin. Sub-agent dispatch (`invoke_agent`, in `packages/cli/src/agents/dispatch.ts`) inherits empty runtime fields from the caller (provider/model/tools/plugins/mcpServers/workingDir) but **never** `systemPrompt` or `maxTurns`. Recursion is capped at depth 5; self-invocation is rejected.
 
-### 5. Scheduler (web-only)
+### 5. Scheduler (web-server-only: `caretaker-cli web` or the desktop app)
 
-`packages/cli/src/cli/web/scheduler.ts` exposes `startBackgroundScheduler()` / `stopBackgroundScheduler()`. The only caller today is `cli/web/server.ts` — neither the TUI nor the VSCode extension boots it. Scheduled tasks therefore only fire while the web process is up; document this clearly when wiring new surfaces. The daemon ticks every 15 s. Two strategies ship — both per-agent, configured from the Scheduler settings panel:
+`packages/cli/src/cli/web/scheduler.ts` exposes `startBackgroundScheduler()` / `stopBackgroundScheduler()`. The only caller today is `cli/web/server.ts` — neither the TUI nor the VSCode extension boots it (the desktop app does, transitively, by forking the web server). Scheduled work therefore only fires while a web-server process is up; document this clearly when wiring new surfaces. The daemon ticks every 15 s and runs **three** loops:
 
-- **Heartbeat** (`scheduler/heartbeat.ts`): standard 5-field cron with wildcards, lists, ranges, and step patterns. Fires `executeTaskRun(task)`, which auto-approves all tool calls (the run is unattended).
-- **Telegram** (`scheduler/telegram.ts`): polls `getUpdates` against the Telegram API and routes messages into `executeTelegramTaskRun` as an interactive conversation. Encryption applied on save; the update offset is committed atomically *before* processing to make duplicate runs impossible across concurrent ticks; messages from the same `chat.id` are grouped and processed sequentially (different chats progress in parallel) so a rapid second message from the same user can't be silently dropped.
+- **Cron heartbeat** (`scheduler/heartbeat.ts`): a per-agent scheduled task with a standard 5-field cron (wildcards, lists, ranges, step patterns). Fires `executeTaskRun(task)`, which auto-approves all tool calls (the run is unattended).
+- **Telegram** (`scheduler/telegram.ts`): a per-agent scheduled task that polls `getUpdates` and routes messages into `executeTelegramTaskRun` as an interactive conversation. Encryption applied on save; the update offset is committed atomically *before* processing to make duplicate runs impossible across concurrent ticks; messages from the same `chat.id` are grouped and processed sequentially (different chats progress in parallel) so a rapid second message from the same user can't be silently dropped.
+- **Autonomous task heartbeat** (`scheduler/task_strategy.ts`): `runTaskHeartbeatTick(now)` runs unconditionally every tick, independent of any configured scheduled task. It advances the autonomous task/project system (see State on disk) one step per invocation, under per-invocation time and turn budgets.
 
-Cross-strategy shared state lives in `scheduler/locks.ts` (`runningTasks` Set) and `scheduler/logs.ts` (log dir + JSONL append/read). Strategies depend on sibling modules, never on the parent `scheduler.ts`.
+The first two are per-agent strategies keyed by `task.type` and configured from the Scheduler settings panel; the task heartbeat is always-on. Cross-strategy shared state lives in `scheduler/locks.ts` (`runningTasks` Set) and `scheduler/logs.ts` (log dir + JSONL append/read). Strategies depend on sibling modules, never on the parent `scheduler.ts`.
 
 ### State on disk
 
-JSON for config (`providers.json`, `agents.json`, plugin records, MCP), JSONL for chat sessions and scheduler logs, all under `CARETAKER_HOME`. `packages/cli/src/store/json.ts` writes via tmp + atomic rename, with a Windows-safe retry loop on `EACCES`/`EPERM`/`EBUSY` (Defender, OneDrive, indexer locks rename targets briefly — retry 5× with exponential backoff before propagating, never fall back to a non-atomic direct write). The same pattern is mirrored in `scheduler/telegram.ts:saveTelegramOffset`. Secrets at rest (plugin auth tokens, MCP credentials, Telegram bot tokens) are AES-256-GCM encrypted via `packages/cli/src/lib/encryption.ts`; the key is persisted on disk with mode 0600.
+Three stores under `CARETAKER_HOME`:
+
+1. **JSON** for config (`caretaker.json`, `agents.json`, `plugins.json`, `mcp.json`), written by `packages/cli/src/store/json.ts` via tmp + atomic rename, with a Windows-safe retry loop on `EACCES`/`EPERM`/`EBUSY` (Defender, OneDrive, indexer locks rename targets briefly — retry 5× with exponential backoff before propagating, never fall back to a non-atomic direct write). The same pattern is mirrored in `scheduler/telegram.ts:saveTelegramOffset`.
+2. **JSONL** for chat sessions (one file per session under `sessions/<agentId>/`) and scheduler logs (`scheduler-logs/`).
+3. **`@morphql/store` folder DB** under `store/` (`packages/cli/src/store/db.ts`) backing the autonomous task/project system: **Projects**, **Tasks** (draft/active/paused/blocked/done, with checklist items and no-progress guards), and **TaskMessages**. Agents drive it through the built-in `mcp__task__*` tools (`task_create`, `task_get_state`, `task_update_checklist_item`, `task_add_message`, `task_complete`, `task_block`, `task_unblock`, `task_yield`, `task_activate`, `task_unpause`, `task_search`, `project_list`), one step per invocation; the always-on task heartbeat (layer 5) advances active tasks.
+
+Secrets at rest (plugin auth tokens, MCP credentials, Telegram bot tokens) are AES-256-GCM encrypted via `packages/cli/src/lib/encryption.ts`; the key is persisted on disk with mode 0600.
 
 ### Tool sandbox
 
