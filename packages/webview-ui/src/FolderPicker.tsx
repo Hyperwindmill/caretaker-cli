@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { CloseIcon, UpIcon, WarningIcon, FolderIcon } from './icons.js';
 
 interface FolderPickerProps {
   id?: string;
@@ -133,11 +134,12 @@ export default function FolderPicker({ id, value, onChange, placeholder }: Folde
             {/* Header */}
             <div style={{ padding: '16px', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontWeight: 600, fontSize: '14px', letterSpacing: '0.02em' }}>Select Folder</span>
-              <button 
-                onClick={handleClose} 
+              <button
+                onClick={handleClose}
+                aria-label="Close"
                 style={{ background: 'transparent', border: 'none', color: '#a1a1aa', cursor: 'pointer', fontSize: '16px', display: 'flex', alignItems: 'center' }}
               >
-                ✕
+                <CloseIcon size={16} />
               </button>
             </div>
 
@@ -147,9 +149,9 @@ export default function FolderPicker({ id, value, onChange, placeholder }: Folde
                 type="button"
                 onClick={traverseUp}
                 className="btn btn--secondary btn--xs"
-                style={{ padding: '4px 10px', fontSize: '10px' }}
+                style={{ padding: '4px 10px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
               >
-                ↑ Up
+                <UpIcon size={12} /> Up
               </button>
               <div 
                 style={{ 
@@ -177,8 +179,8 @@ export default function FolderPicker({ id, value, onChange, placeholder }: Folde
                   Loading directories...
                 </div>
               ) : error ? (
-                <div style={{ padding: '24px', textAlign: 'center', fontSize: '12px', color: '#ef4444' }}>
-                  ⚠ {error}
+                <div style={{ padding: '24px', textAlign: 'center', fontSize: '12px', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                  <WarningIcon size={14} /> {error}
                 </div>
               ) : directories.length === 0 ? (
                 <div style={{ padding: '24px', textAlign: 'center', fontSize: '12px', color: '#71717a', fontStyle: 'italic' }}>
@@ -209,7 +211,7 @@ export default function FolderPicker({ id, value, onChange, placeholder }: Folde
                       onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(56, 189, 248, 0.08)'}
                       onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                     >
-                      <span style={{ fontSize: '14px' }}>📁</span>
+                      <span style={{ fontSize: '14px', display: 'inline-flex' }}><FolderIcon size={14} /></span>
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {dir.name}
                       </span>

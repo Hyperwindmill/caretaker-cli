@@ -33,6 +33,7 @@ import { Composer } from './Composer.js';
 import { ConfirmCard } from './ConfirmCard.js';
 import { SettingsPanel } from './SettingsPanel.js';
 import { ProjectsTab } from './ProjectsTab.js';
+import { ChatIcon, SettingsIcon, ChevronDownIcon, ChevronUpIcon, ProjectsIcon, WarningIcon } from './icons.js';
 import logo from './caretaker_cli.png';
 
 export interface UserItem {
@@ -478,7 +479,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
             </div>
             <div className="app__controls">
               <button className="app__sessions-btn" onClick={() => setActiveScreen('chat')}>
-                💬 Chat
+                <ChatIcon size={13} /> Chat
               </button>
               <button
                 className="app__settings-btn"
@@ -488,7 +489,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
                 }}
                 title="Caretaker Settings"
               >
-                ⚙️ Settings
+                <SettingsIcon size={13} /> Settings
               </button>
             </div>
           </div>
@@ -542,9 +543,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
                   >
                     <span className="agent-status-dot agent-status-dot--active" />
                     <span className="app__sidebar-agent-name">{activeAgent?.name || selectedAgentId}</span>
-                    <svg className="app__sidebar-chevron" width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
-                      <path d="M1 3.5 L5 7.5 L9 3.5 Z" />
-                    </svg>
+                    <ChevronDownIcon className="app__sidebar-chevron" size={10} />
                   </button>
                 ) : (
                   <div className={`app__sidebar-agents-list-expanded ${selectedAgentId ? 'app__sidebar-agents-list-expanded--has-active' : ''}`}>
@@ -568,9 +567,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
                             <span className={`agent-status-dot ${isSelected ? 'agent-status-dot--active' : ''}`} />
                             <span className="app__sidebar-agent-name">{agent.name}</span>
                             {isSelected && (
-                              <svg className="app__sidebar-chevron app__sidebar-chevron--up" width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
-                                <path d="M1 6.5 L5 2.5 L9 6.5 Z" />
-                              </svg>
+                              <ChevronUpIcon className="app__sidebar-chevron app__sidebar-chevron--up" size={10} />
                             )}
                           </button>
                         );
@@ -603,7 +600,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
                         className={`app__sidebar-session-item ${selectedSessionId === session.id ? 'app__sidebar-session-item--active' : ''}`}
                         onClick={() => onSelectSession(session.id)}
                       >
-                        <span className="app__sidebar-session-icon">💬</span>
+                        <span className="app__sidebar-session-icon"><ChatIcon size={13} /></span>
                         <span className="app__sidebar-session-title" title={session.title}>{session.title}</span>
                       </button>
                     ))
@@ -621,7 +618,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
               }}
               title="Projects & Autonomous Tasks"
             >
-              <span>📁 Projects</span>
+              <span><ProjectsIcon size={13} /> Projects</span>
             </button>
             <button
               className="app__sidebar-settings-btn"
@@ -631,9 +628,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
               }}
               title="Caretaker Settings"
             >
-              <svg className="app__settings-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
-                <path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.17.311c.58.988.004 2.257-.872 2.105l-.34-.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.699 1.283.705 2.686 1.987 1.987l.311-.17a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.699 2.686-.705 1.987-1.987l-.17-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.699-1.283-.705-2.686-1.987-1.987l-.311.17a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"/>
-              </svg>
+              <SettingsIcon className="app__settings-icon" size={14} />
               <span>Settings</span>
             </button>
           </div>
@@ -660,7 +655,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
                   <ConfirmCard key={p.id} pending={p} onDecide={onConfirm} />
                 ))}
               />
-              {chatState.errorText && <div className="app__error">⚠ {chatState.errorText}</div>}
+              {chatState.errorText && <div className="app__error"><WarningIcon size={14} /> {chatState.errorText}</div>}
               <Composer
                 disabled={composerDisabled}
                 onSend={onSend}
@@ -711,7 +706,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
               disabled={!selectedAgentId}
               title="View conversations"
             >
-              💬 {sessions.length}
+              <ChatIcon size={13} /> {sessions.length}
             </button>
             <button
               className="app__new-chat-btn"
@@ -729,9 +724,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
               }}
               title="Caretaker Settings"
             >
-              <svg className="app__settings-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
-                <path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.17.311c.58.988.004 2.257-.872 2.105l-.34-.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.699 1.283.705 2.686 1.987 1.987l.311-.17a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.699 2.686-.705 1.987-1.987l-.17-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.699-1.283-.705-2.686-1.987-1.987l-.311.17a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"/>
-              </svg>
+              <SettingsIcon className="app__settings-icon" size={14} />
             </button>
           </div>
         </div>
@@ -776,7 +769,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
           <ConfirmCard key={p.id} pending={p} onDecide={onConfirm} />
         ))}
       />
-      {chatState.errorText && <div className="app__error">⚠ {chatState.errorText}</div>}
+      {chatState.errorText && <div className="app__error"><WarningIcon size={14} /> {chatState.errorText}</div>}
       <Composer
         disabled={composerDisabled}
         onSend={onSend}

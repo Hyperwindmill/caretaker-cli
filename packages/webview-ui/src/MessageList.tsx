@@ -3,6 +3,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import type { ChatItem } from './App.js';
 import { MarkdownText } from './MarkdownText.js';
 import { prettyArgs, resultMetric, toolSummary } from './toolFormat.js';
+import { DocIcon, ThinkingIcon, ToolIcon, SpinnerIcon, ResultArrowIcon } from './icons.js';
 import logo from './caretaker_cli.png';
 
 export interface MessageListProps {
@@ -104,7 +105,7 @@ function Item({ item, sessionId }: { item: ChatItem; sessionId: string | null })
                         if (!sessionId) e.preventDefault();
                       }}
                     >
-                      <span className="composer__attachment-icon">📄</span>
+                      <span className="composer__attachment-icon"><DocIcon size={13} /></span>
                       <span className="composer__attachment-name">{att.name || att.id}</span>
                     </a>
                   );
@@ -128,7 +129,7 @@ function Item({ item, sessionId }: { item: ChatItem; sessionId: string | null })
       return (
         <details className="thinking" open>
           <summary className="thinking__header">
-            <span className="thinking__icon">🧠</span>
+            <span className="thinking__icon"><ThinkingIcon size={14} /></span>
             <span className="thinking__title">Thinking Process</span>
             <span className="thinking__chevron"></span>
           </summary>
@@ -143,12 +144,12 @@ function Item({ item, sessionId }: { item: ChatItem; sessionId: string | null })
       return (
         <details className="tool">
           <summary className="tool__header">
-            <span className="tool__icon">⚒</span>
+            <span className="tool__icon"><ToolIcon size={14} /></span>
             <span className="tool__name">{item.name}</span>
             {summary && <span className="tool__args">{summary}</span>}
             <span className="tool__status">
               {item.result === null ? (
-                <span className="tool__spinner">⟳</span>
+                <SpinnerIcon className="tool__spinner" size={14} />
               ) : (
                 resultMetric(item.result)
               )}
@@ -159,7 +160,7 @@ function Item({ item, sessionId }: { item: ChatItem; sessionId: string | null })
             {fullArgs && <pre className="tool__args-full">{fullArgs}</pre>}
             {item.result !== null && (
               <div className="tool__result">
-                <span className="tool__arrow">↳</span>
+                <span className="tool__arrow"><ResultArrowIcon size={13} /></span>
                 <div className="tool__result-content">
                   <MarkdownText content={item.result} />
                 </div>

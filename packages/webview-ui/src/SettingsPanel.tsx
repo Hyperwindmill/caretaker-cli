@@ -8,6 +8,7 @@ import { AgentsTab } from './AgentsTab.js';
 import { PluginsTab } from './PluginsTab.js';
 import { McpTab } from './McpTab.js';
 import { SchedulerTab } from './SchedulerTab.js';
+import { BackIcon } from './icons.js';
 
 interface SettingsPanelProps {
   layout?: 'compact' | 'sidebar';
@@ -48,7 +49,7 @@ export function SettingsPanel({
     return (
       <div className="settings-panel settings-panel--loading">
         <button className="settings-panel__back-btn" onClick={onClose}>
-          ← Back to Chat
+          <BackIcon size={14} /> Back to Chat
         </button>
         <div className="settings-panel__loading-spinner">
           <div className="spinner"></div>
@@ -124,7 +125,7 @@ export function SettingsPanel({
     <div className="settings-panel">
       <header className="settings-panel__header">
         <button className="settings-panel__back-btn" onClick={onClose} title="Go back to chat">
-          ← Chat
+          <BackIcon size={14} /> Chat
         </button>
         <h2 className="settings-panel__title">Caretaker Config</h2>
       </header>

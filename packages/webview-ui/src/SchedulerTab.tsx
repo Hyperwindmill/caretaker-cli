@@ -3,6 +3,7 @@ import type { CaretakerConfig, AgentConfig, ScheduledTaskConfig } from 'caretake
 import type { ViewToHost, ChatMessage } from './bridge.js';
 import type { ChatItem } from './App.js';
 import { MessageList } from './MessageList.js';
+import { WarningIcon, TipIcon, LogsIcon, EditIcon, DeleteIcon, CloseIcon, StatusIcon } from './icons.js';
 
 interface SchedulerTabProps {
   config: CaretakerConfig;
@@ -292,7 +293,7 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
         )}
       </div>
 
-      {errorMsg && <div className="validation-error">⚠ {errorMsg}</div>}
+      {errorMsg && <div className="validation-error"><WarningIcon size={14} /> {errorMsg}</div>}
 
       {showForm ? (
         <div className="glass-form">
@@ -449,7 +450,7 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
                     lineHeight: '1.4',
                     color: 'var(--vscode-notificationsWarningIcon-foreground, #d49a32)',
                   }}>
-                    ⚠️ <strong>Security:</strong> with no whitelist, anyone who sends a message
+                    <WarningIcon size={13} /> <strong>Security:</strong> with no whitelist, anyone who sends a message
                     to this bot can execute every tool this agent has enabled — including shell
                     commands and filesystem writes. Tool calls run with auto-approval; the
                     chat ID whitelist is the only access boundary.
@@ -467,7 +468,7 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
                 lineHeight: '1.4',
                 color: 'var(--vscode-descriptionForeground)'
               }}>
-                <strong>💡 Quick Setup Guide:</strong>
+                <strong><TipIcon size={14} /> Quick Setup Guide:</strong>
                 <ol style={{ margin: '6px 0 0 16px', padding: 0 }}>
                   <li>Create a new bot via Telegram's <strong>@BotFather</strong> to obtain your HTTP API token.</li>
                   <li>Obtain your chat ID by messaging <strong>@userinfobot</strong> on Telegram.</li>
@@ -511,11 +512,22 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
                           background: task.enabled ? 'oklch(0.72 0.18 140 / 0.12)' : 'oklch(1 0 0 / 0.08)',
                           color: task.enabled ? 'oklch(0.72 0.18 140)' : 'var(--vscode-descriptionForeground)',
                           border: `1px solid ${task.enabled ? 'oklch(0.72 0.18 140 / 0.3)' : 'oklch(1 0 0 / 0.08)'}`,
-                          userSelect: 'none'
+                          userSelect: 'none',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px'
                         }}
                         title="Toggle task active state"
                       >
-                        {task.enabled ? '● Active' : '○ Off'}
+                        {task.enabled ? (
+                          <>
+                            <StatusIcon size={9} fill="currentColor" /> Active
+                          </>
+                        ) : (
+                          <>
+                            <StatusIcon size={9} /> Off
+                          </>
+                        )}
                       </span>
                     </div>
                     {task.type === 'telegram' ? (
@@ -539,24 +551,27 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
                         className="icon-btn"
                         onClick={() => openLogViewer(task)}
                         title="View execution logs"
+                        aria-label="View execution logs"
                         style={{ fontSize: '12px', marginRight: '4px' }}
                       >
-                        📋
+                        <LogsIcon size={13} />
                       </button>
                     )}
                     <button
                       className="icon-btn"
                       onClick={() => startEdit(task)}
                       title="Edit task"
+                      aria-label="Edit task"
                     >
-                      ✏️
+                      <EditIcon size={14} />
                     </button>
                     <button
                       className="icon-btn icon-btn--danger"
                       onClick={() => deleteTask(task.id)}
                       title="Delete task"
+                      aria-label="Delete task"
                     >
-                      🗑️
+                      <DeleteIcon size={14} />
                     </button>
                   </div>
                 </div>
@@ -571,15 +586,16 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
         <div className="execution-console">
           <div className="execution-console__panel">
             <header className="execution-console__header">
-              <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 700 }}>
-                📋 Execution Logs: {viewingTaskLogs.name}
+              <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <LogsIcon size={14} /> Execution Logs: {viewingTaskLogs.name}
               </h3>
               <button 
                 className="execution-console__close-btn"
                 onClick={() => setViewingTaskLogs(null)}
                 title="Close console"
+                aria-label="Close console"
               >
-                ✕
+                <CloseIcon size={16} />
               </button>
             </header>
 

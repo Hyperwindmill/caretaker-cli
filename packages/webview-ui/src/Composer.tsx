@@ -1,5 +1,6 @@
 import { useState, useRef, type KeyboardEvent, type ClipboardEvent, type DragEvent } from 'react';
 import type { ContextUsage } from './bridge.js';
+import { DocIcon, CloseIcon, AttachIcon } from './icons.js';
 
 export interface ComposerProps {
   disabled: boolean;
@@ -113,17 +114,18 @@ export function Composer({ disabled, canAbort, onSend, onAbort, contextUsage }: 
                   alt={att.name} 
                 />
               ) : (
-                <span className="composer__attachment-icon">📄</span>
+                <span className="composer__attachment-icon"><DocIcon size={13} /></span>
               )}
               <span className="composer__attachment-name" title={att.name}>
                 {att.name}
               </span>
-              <button 
+              <button
                 type="button"
-                className="composer__attachment-remove" 
+                className="composer__attachment-remove"
+                aria-label="Remove attachment"
                 onClick={() => removeAttachment(i)}
               >
-                ×
+                <CloseIcon size={13} />
               </button>
             </div>
           ))}
@@ -142,12 +144,13 @@ export function Composer({ disabled, canAbort, onSend, onAbort, contextUsage }: 
       <div className="composer__controls">
         <button 
           type="button" 
-          className="composer__action-btn" 
-          title="Attach file or image" 
+          className="composer__action-btn"
+          title="Attach file or image"
+          aria-label="Attach file or image"
           onClick={() => fileInputRef.current?.click()}
           disabled={disabled}
         >
-          📎
+          <AttachIcon size={16} />
         </button>
         <input 
           type="file" 

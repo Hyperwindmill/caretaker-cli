@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { McpServersFile, McpServerConfig, McpTransport } from 'caretaker-types';
 import type { ViewToHost } from './bridge.js';
+import { WarningIcon, EditIcon, DeleteIcon } from './icons.js';
 
 interface McpTabProps {
   mcpServersFile: McpServersFile;
@@ -214,7 +215,7 @@ export function McpTab({ mcpServersFile, postMessage }: McpTabProps) {
         )}
       </div>
 
-      {errorMsg && <div className="validation-error">⚠ {errorMsg}</div>}
+      {errorMsg && <div className="validation-error"><WarningIcon size={13} /> {errorMsg}</div>}
 
       {showForm ? (
         <div className="glass-form">
@@ -377,7 +378,7 @@ export function McpTab({ mcpServersFile, postMessage }: McpTabProps) {
                   )}
                   {server.lastConnectError && (
                     <div className="settings-card__error-text text-ellipsis" title={server.lastConnectError}>
-                      ⚠ Connect Error: {server.lastConnectError}
+                      <WarningIcon size={13} /> Connect Error: {server.lastConnectError}
                     </div>
                   )}
                 </div>
@@ -388,15 +389,17 @@ export function McpTab({ mcpServersFile, postMessage }: McpTabProps) {
                       className="icon-btn"
                       onClick={() => startEdit(server)}
                       title="Edit server"
+                      aria-label="Edit server"
                     >
-                      ✏️
+                      <EditIcon size={13} />
                     </button>
                     <button
                       className="icon-btn icon-btn--danger"
                       onClick={() => deleteServer(server.id)}
                       title="Delete server"
+                      aria-label="Delete server"
                     >
-                      🗑️
+                      <DeleteIcon size={13} />
                     </button>
                   </div>
                 )}
