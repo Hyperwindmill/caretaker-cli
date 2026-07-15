@@ -61,12 +61,19 @@ export interface ToolContext {
    *  `get_agent_context` builtin reads this at exec time so it reflects
    *  the latest values (not a snapshot from when the run started). */
   liveUsage?: { lastTurn?: AssistantUsage; cumulative: AssistantUsage };
+  /** The session ID of the current conversation run. Useful for attachment directories. */
+  sessionId?: string;
+}
+
+export interface ToolAttachment {
+  mime: string;
+  data: Buffer;
 }
 
 export interface ToolResult {
   /** Textual content returned to the model as the tool result. */
   content: string;
-  // Future: attachments?: Array<{ mime: string; data: Buffer }> for image-returning tools.
+  attachments?: ToolAttachment[];
 }
 
 export interface Tool {

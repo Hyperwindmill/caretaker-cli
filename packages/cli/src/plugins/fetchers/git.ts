@@ -6,7 +6,7 @@
 // lib/encryption.ts; for legacy / unencrypted entries the value is used as-is.
 
 import * as fs from 'node:fs';
-import { mkdir, stat } from 'node:fs/promises';
+import { mkdir, rm, stat } from 'node:fs/promises';
 import * as path from 'node:path';
 import git from 'isomorphic-git';
 import http from 'isomorphic-git/http/node';
@@ -62,6 +62,39 @@ export function __setGitClient(impl: GitClient | null): void {
   gitImpl = impl ?? realIsomorphicGitClient;
 }
 
+/**
+ * isomorphic-git materializes a tracked symlink (git mode 120000) with
+ * `fs.symlink`. On Windows without SeCreateSymbolicLinkPrivilege (admin or
+ * Developer Mode) that throws EPERM, which aborts the whole clone/checkout for
+ * any repo that tracks a symlink — e.g. a plugin whose `CLAUDE.md` points at
+ * `AGENTS.md`. Git's own fallback when symlinks aren't supported
+ * (`core.symlinks=false`, the Windows default) writes the link as a plain file
+ * whose contents are the target path. Mirror that here: try a real symlink
+ * first, degrade to a plain file only when the OS refuses. Real symlinks still
+ * win everywhere they're permitted (Linux, macOS, Windows Dev Mode); the
+ * degraded file is harmless for our use — caretaker reads plugin manifests,
+ * SKILL.md, agents/ and commands/, never a plugin's root CLAUDE.md.
+ */
+export function symlinkFallbackFs(base: typeof fs = fs): typeof fs {
+  const symlink: (typeof fs)['promises']['symlink'] = async (target, linkPath, type) => {
+    try {
+      await base.promises.symlink(target, linkPath, type);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'EPERM' || code === 'EACCES') {
+        await base.promises.writeFile(linkPath, target.toString());
+        return;
+      }
+      throw err;
+    }
+  };
+  // isomorphic-git binds fs.promises only when `promises` is an enumerable own
+  // property; an object literal gives us exactly that.
+  return { ...base, promises: { ...base.promises, symlink } } as typeof fs;
+}
+
+const gitFs = symlinkFallbackFs();
+
 function plainToken(authToken: string): string {
   return isEncrypted(authToken) ? decrypt(authToken) : authToken;
 }
@@ -90,7 +123,7 @@ export async function fetchGit(input: GitFetchInput, cacheDir: string): Promise<
   if (!alreadyCloned) {
     await mkdir(cacheDir, { recursive: true });
     await gitImpl.clone({
-      fs,
+      fs: gitFs,
       http,
       dir: cacheDir,
       url: input.url,
@@ -100,25 +133,40 @@ export async function fetchGit(input: GitFetchInput, cacheDir: string): Promise<
       onAuth,
     });
   } else {
-    // Pass URL explicitly so cache moves between hosts (e.g. URL change in
-    // plugins.json) work without us editing the repo's stored remote config.
-    await gitImpl.fetch({
-      fs,
-      http,
-      dir: cacheDir,
-      url: input.url,
-      ref: input.ref ?? undefined,
-      singleBranch: true,
-      depth: 1,
-      onAuth,
-    });
-    const target =
-      input.ref ??
-      ((await gitImpl.currentBranch({ fs, dir: cacheDir })) as string | undefined) ??
-      'HEAD';
-    await gitImpl.checkout({ fs, dir: cacheDir, ref: target, force: true });
+    try {
+      // Pass URL explicitly so cache moves between hosts (e.g. URL change in
+      // plugins.json) work without us editing the repo's stored remote config.
+      await gitImpl.fetch({
+        fs: gitFs,
+        http,
+        dir: cacheDir,
+        url: input.url,
+        ref: input.ref ?? undefined,
+        singleBranch: true,
+        depth: 1,
+        onAuth,
+      });
+      const target =
+        input.ref ??
+        ((await gitImpl.currentBranch({ fs: gitFs, dir: cacheDir })) as string | undefined) ??
+        'HEAD';
+      await gitImpl.checkout({ fs: gitFs, dir: cacheDir, ref: target, force: true });
+    } catch {
+      // ponytail: iso-git's in-place update is unreliable on Windows — it reports
+      // the working tree as dirty (filemode/stat mismatch, or locked files) and
+      // throws CheckoutConflictError even with force:true, where Linux succeeds.
+      // Don't fight the dirty-detection: nuke the cache and reclone (shallow, so
+      // cheap). Platform-agnostic, self-heals corrupted caches too. The reclone
+      // path has no catch, so a genuine clone/network failure still propagates.
+      //
+      // maxRetries/retryDelay: on Windows, Defender/indexer/host handles briefly
+      // lock cache files; rm's built-in retry rides out the transient
+      // EPERM/EBUSY (same lock class the store's atomic-write retry handles).
+      await rm(cacheDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      return fetchGit(input, cacheDir);
+    }
   }
 
-  const sha = await gitImpl.resolveRef({ fs, dir: cacheDir, ref: 'HEAD' });
+  const sha = await gitImpl.resolveRef({ fs: gitFs, dir: cacheDir, ref: 'HEAD' });
   return { root: cacheDir, sha };
 }

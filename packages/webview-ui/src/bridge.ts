@@ -29,6 +29,13 @@ export interface SessionSummary {
   updatedAt: string;
 }
 
+export interface ToolAttachmentRecord {
+  mime: string;
+  id: string;
+  name?: string;
+  base64?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'tool';
@@ -39,6 +46,7 @@ export interface ChatMessage {
     | { type: 'tool_use'; id: string; name: string; args: unknown }
   >;
   toolCallId?: string;
+  attachments?: ToolAttachmentRecord[];
   createdAt: string;
 }
 
@@ -82,7 +90,7 @@ export type HostToView =
   | { type: 'taskRunsLoaded'; taskId: string; runs: any[] };
 
 export type ViewToHost =
-  | { type: 'start'; prompt: string }
+  | { type: 'start'; prompt: string; attachments?: Array<{ name: string; mime: string; base64: string }> }
   | { type: 'abort' }
   | { type: 'permission_response'; id: string; decision: ConfirmDecision }
   | { type: 'selectAgent'; agentId: string }
@@ -111,8 +119,24 @@ export function parseViewToHost(value: unknown): ViewToHost | null {
   const type = value.type;
 
   switch (type) {
-    case 'start':
-      return typeof value.prompt === 'string' ? { type, prompt: value.prompt } : null;
+    case 'start': {
+      if (typeof value.prompt !== 'string') return null;
+      let attachments: Array<{ name: string; mime: string; base64: string }> | undefined = undefined;
+      if ('attachments' in value) {
+        if (!Array.isArray(value.attachments)) return null;
+        attachments = [];
+        for (const att of value.attachments) {
+          if (typeof att !== 'object' || att === null) return null;
+          if (typeof att.name !== 'string' || typeof att.mime !== 'string' || typeof att.base64 !== 'string') return null;
+          attachments.push({ name: att.name, mime: att.mime, base64: att.base64 });
+        }
+      }
+      const res: Extract<ViewToHost, { type: 'start' }> = { type, prompt: value.prompt };
+      if (attachments !== undefined) {
+        res.attachments = attachments;
+      }
+      return res;
+    }
     case 'abort':
       return { type };
     case 'permission_response': {

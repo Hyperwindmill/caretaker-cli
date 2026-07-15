@@ -2,10 +2,11 @@
   "name": "caretaker-vscode",
   "displayName": "Caretaker",
   "description": "Caretaker agent harness — chat sidebar for VSCode.",
-  "version": "0.2.0",
+  "version": "0.3.5",
   "private": true,
   "publisher": "Hyperwindmill",
-  "license": "MIT",
+  "author": "Hyperwindmill <hyperwindmill@gmail.com>",
+  "license": "SEE LICENSE IN LICENSE",
   "icon": "icon.png",
   "repository": {
     "type": "git",
@@ -68,7 +69,8 @@
     "build": "node esbuild.config.mjs",
     "dev": "node esbuild.config.mjs --watch",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test \"src/**/*.test.ts\"",
+    "test": "tsc --noEmit false --declaration false && node --test \"dist/**/*.test.js\"",
+    "vscode:prepublish": "pnpm -w run build",
     "package": "vsce package --no-dependencies"
   },
   "dependencies": {

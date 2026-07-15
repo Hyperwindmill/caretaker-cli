@@ -1,0 +1,37 @@
+{
+  "appId": "com.hyperwindmill.caretaker",
+  "productName": "CareTaker",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist-electron/**/*",
+    "caretaker.png",
+    {
+      "from": "../cli/dist",
+      "to": "packages/cli/dist"
+    },
+    {
+      "from": "../cli/assets",
+      "to": "packages/cli/assets"
+    },
+    {
+      "from": "../webview-ui/dist",
+      "to": "packages/webview-ui/dist"
+    }
+  ],
+  "linux": {
+    "target": ["AppImage", "deb"],
+    "category": "Utility",
+    "icon": "build/icons"
+  },
+  "mac": {
+    "target": ["dmg", "zip"],
+    "category": "public.app-category.productivity",
+    "icon": "build/icons"
+  },
+  "win": {
+    "target": ["nsis"],
+    "icon": "build/icon.ico"
+  }
+}

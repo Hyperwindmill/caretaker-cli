@@ -1,6 +1,7 @@
 import { loadConfig } from '../../store/json.js';
 import { HeartbeatStrategy } from './scheduler/heartbeat.js';
 import { TelegramStrategy } from './scheduler/telegram.js';
+import { runTaskHeartbeatTick } from './scheduler/task_strategy.js';
 
 // Re-exported for backwards compatibility with existing consumers (server.ts, tests).
 export {
@@ -35,6 +36,11 @@ export async function runSchedulerTick(): Promise<void> {
         });
       }
     }
+
+    // Run the autonomous task heartbeat loop
+    await runTaskHeartbeatTick(now).catch((err) => {
+      console.error('[scheduler] Autonomous Task Heartbeat Tick failed:', err);
+    });
   } catch (err) {
     console.error('[scheduler] Error evaluating scheduler tasks tick:', err);
   }

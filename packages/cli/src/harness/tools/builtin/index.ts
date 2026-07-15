@@ -4,6 +4,9 @@
 
 import type { ToolRegistry } from '../registry.js';
 import { readFileTool } from './read_file.js';
+import { readDocumentTool } from './read_document.js';
+import { readImageTool } from './read_image.js';
+import { readAttachmentTool } from './read_attachment.js';
 import { writeTool } from './write.js';
 import { editTool } from './edit.js';
 import { multieditTool } from './multiedit.js';
@@ -18,10 +21,28 @@ import { invokeAgentTool } from './invoke_agent.js';
 import { listCommandsTool } from './list_commands.js';
 import { invokeCommandTool } from './invoke_command.js';
 import { getAgentContextTool } from './get_agent_context.js';
+import {
+  getTaskStateTool,
+  updateChecklistItemTool,
+  updateChecklistTool,
+  addMessageTool,
+  completeTaskTool,
+  blockTaskTool,
+  yieldTaskTool,
+  projectListTool,
+  taskCreateTool,
+  taskSearchTool,
+  taskUnblockTool,
+  taskActivateTool,
+  taskUnpauseTool,
+} from './task_tools.js';
 
 export function registerBuiltins(registry: ToolRegistry): void {
   // Filesystem (sandboxed to ctx.workingDir).
   registry.register(readFileTool);
+  registry.register(readDocumentTool);
+  registry.register(readImageTool);
+  registry.register(readAttachmentTool);
   registry.register(writeTool);
   registry.register(editTool);
   registry.register(multieditTool);
@@ -46,10 +67,28 @@ export function registerBuiltins(registry: ToolRegistry): void {
   // Self-introspection (always present — the agent should be able to ask
   // "how much context am I using" without prerequisites).
   registry.register(getAgentContextTool);
+
+  // Autonomous task tools.
+  registry.register(getTaskStateTool);
+  registry.register(updateChecklistItemTool);
+  registry.register(updateChecklistTool);
+  registry.register(addMessageTool);
+  registry.register(completeTaskTool);
+  registry.register(blockTaskTool);
+  registry.register(yieldTaskTool);
+  registry.register(projectListTool);
+  registry.register(taskCreateTool);
+  registry.register(taskSearchTool);
+  registry.register(taskUnblockTool);
+  registry.register(taskActivateTool);
+  registry.register(taskUnpauseTool);
 }
 
 export {
   readFileTool,
+  readDocumentTool,
+  readImageTool,
+  readAttachmentTool,
   writeTool,
   editTool,
   multieditTool,
@@ -64,4 +103,17 @@ export {
   listCommandsTool,
   invokeCommandTool,
   getAgentContextTool,
+  getTaskStateTool,
+  updateChecklistItemTool,
+  updateChecklistTool,
+  addMessageTool,
+  completeTaskTool,
+  blockTaskTool,
+  yieldTaskTool,
+  projectListTool,
+  taskCreateTool,
+  taskSearchTool,
+  taskUnblockTool,
+  taskActivateTool,
+  taskUnpauseTool,
 };

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { McpServersFile, McpServerConfig, McpTransport } from 'caretaker-cli/types';
+import type { McpServersFile, McpServerConfig, McpTransport } from 'caretaker-types';
 import type { ViewToHost } from './bridge.js';
 
 interface McpTabProps {
@@ -217,10 +217,11 @@ export function McpTab({ mcpServersFile, postMessage }: McpTabProps) {
       {errorMsg && <div className="validation-error">⚠ {errorMsg}</div>}
 
       {showForm ? (
-        <div className="glass-form glass-form--scrollable">
+        <div className="glass-form">
           <h4>{isCreating ? 'Register MCP Server' : `Edit MCP Server: ${editingServer?.name}`}</h4>
 
-          <div className="form-group">
+          <div className="glass-form__body">
+            <div className="form-group">
             <label htmlFor="mcp-name">Server Name</label>
             <input
               id="mcp-name"
@@ -326,6 +327,7 @@ export function McpTab({ mcpServersFile, postMessage }: McpTabProps) {
               </div>
             </>
           )}
+          </div>
 
           <div className="form-actions">
             <button className="btn btn--secondary" onClick={cancelForm}>
