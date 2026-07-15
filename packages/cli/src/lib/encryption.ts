@@ -12,6 +12,7 @@
 // dataDir() honors CARETAKER_HOME so tests can isolate the keystore.
 
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -21,7 +22,7 @@ import {
   renameSync,
   unlinkSync,
 } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, userInfo } from 'node:os';
 import { join } from 'node:path';
 
 const ALGORITHM = 'aes-256-gcm';
@@ -37,6 +38,37 @@ function dataDir(): string {
  *  and tests; runtime code should not need it. */
 export function encryptionKeyPath(): string {
   return join(dataDir(), 'encryption.key');
+}
+
+/**
+ * Build the `icacls` invocation that restricts a file to the current user
+ * only — the Windows equivalent of chmod 0600. `/inheritance:r` drops the
+ * ACEs inherited from the parent directory (which would otherwise let other
+ * principals read the key); `/grant:r <user>:F` replaces them with a single
+ * Full-control grant to the owner. Exported so the argument construction can
+ * be unit-tested on any platform.
+ */
+export function windowsLockCommand(path: string, username: string): { cmd: string; args: string[] } {
+  return { cmd: 'icacls', args: [path, '/inheritance:r', '/grant:r', `${username}:F`] };
+}
+
+/**
+ * Tighten on-disk permissions for the key file so only the current user can
+ * read it. On POSIX the 0600 applied at write time already does this; on
+ * Windows `chmod 0600` only toggles the read-only bit and leaves the ACL
+ * inherited (other local users can read it), so we apply an explicit ACL via
+ * `icacls`. Best-effort: a failed tightening must not break key creation — the
+ * file still lives under the per-user profile directory, which denies other
+ * standard users by default.
+ */
+function restrictToCurrentUser(path: string): void {
+  if (process.platform !== 'win32') return;
+  try {
+    const { cmd, args } = windowsLockCommand(path, userInfo().username);
+    execFileSync(cmd, args, { stdio: 'ignore' });
+  } catch {
+    /* best-effort — see doc comment */
+  }
 }
 
 function loadOrCreateOnDiskKey(): Buffer {
@@ -74,6 +106,10 @@ function loadOrCreateOnDiskKey(): Buffer {
       /* same caveat as the dir chmod */
     }
     renameSync(tmp, path);
+    // Windows: chmod 0600 above is a no-op for confidentiality; apply a real
+    // owner-only ACL. POSIX no-ops here. Creation-time only — never on the
+    // load path, which runs on every encrypt/decrypt.
+    restrictToCurrentUser(path);
   } catch (err) {
     try {
       unlinkSync(tmp);

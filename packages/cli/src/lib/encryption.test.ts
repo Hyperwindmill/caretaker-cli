@@ -5,7 +5,33 @@ import { existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
-import { encrypt, decrypt, isEncrypted, maskToken, encryptionKeyPath } from './encryption.js';
+import {
+  encrypt,
+  decrypt,
+  isEncrypted,
+  maskToken,
+  encryptionKeyPath,
+  windowsLockCommand,
+} from './encryption.js';
+
+describe('windowsLockCommand', () => {
+  it('builds an owner-only icacls invocation (chmod 0600 equivalent)', () => {
+    const { cmd, args } = windowsLockCommand('C:\\Users\\me\\.caretaker\\encryption.key', 'me');
+    assert.equal(cmd, 'icacls');
+    assert.deepEqual(args, [
+      'C:\\Users\\me\\.caretaker\\encryption.key',
+      '/inheritance:r',
+      '/grant:r',
+      'me:F',
+    ]);
+  });
+
+  it('passes the path as a single arg so spaces need no shell quoting', () => {
+    const { args } = windowsLockCommand('C:\\Users\\John Doe\\.caretaker\\encryption.key', 'John Doe');
+    assert.equal(args[0], 'C:\\Users\\John Doe\\.caretaker\\encryption.key');
+    assert.equal(args[3], 'John Doe:F');
+  });
+});
 
 describe('encryption (env key)', () => {
   let prevKey: string | undefined;
