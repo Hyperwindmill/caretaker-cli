@@ -2,6 +2,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 
 import type { ChatItem } from './App.js';
 import { MarkdownText } from './MarkdownText.js';
+import { prettyArgs, resultMetric, toolSummary } from './toolFormat.js';
 import logo from './caretaker_cli.png';
 
 export interface MessageListProps {
@@ -137,38 +138,36 @@ function Item({ item, sessionId }: { item: ChatItem; sessionId: string | null })
         </details>
       );
     case 'tool': {
-      const argsPreview = previewJson(item.args);
+      const summary = toolSummary(item.args);
+      const fullArgs = prettyArgs(item.args);
       return (
-        <div className="tool">
-          <div className="tool__header">
+        <details className="tool">
+          <summary className="tool__header">
             <span className="tool__icon">⚒</span>
             <span className="tool__name">{item.name}</span>
-            <span className="tool__args">{argsPreview}</span>
-          </div>
-          {item.result !== null && (
-            <div className="tool__result">
-              <span className="tool__arrow">↳</span>
-              <div className="tool__result-content">
-                <MarkdownText content={item.result} />
+            {summary && <span className="tool__args">{summary}</span>}
+            <span className="tool__status">
+              {item.result === null ? (
+                <span className="tool__spinner">⟳</span>
+              ) : (
+                resultMetric(item.result)
+              )}
+            </span>
+            <span className="tool__chevron"></span>
+          </summary>
+          <div className="tool__body">
+            {fullArgs && <pre className="tool__args-full">{fullArgs}</pre>}
+            {item.result !== null && (
+              <div className="tool__result">
+                <span className="tool__arrow">↳</span>
+                <div className="tool__result-content">
+                  <MarkdownText content={item.result} />
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        </details>
       );
     }
   }
-}
-
-function previewJson(value: unknown, max = 80): string {
-  try {
-    const s = JSON.stringify(value);
-    if (s === undefined) return '';
-    return truncate(s, max);
-  } catch {
-    return '';
-  }
-}
-
-function truncate(s: string, max: number): string {
-  return s.length > max ? `${s.slice(0, max)}…` : s;
 }
