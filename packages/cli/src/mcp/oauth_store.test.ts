@@ -3,7 +3,7 @@ process.env.CARETAKER_HOME = `/tmp/ct-oauth-store-${process.pid}`;
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { isEncrypted } from '../lib/encryption.js';
-import { readOAuthBlob, writeOAuthBlob } from './oauth_store.js';
+import { readOAuthBlob, readOAuthBlobSafe, writeOAuthBlob } from './oauth_store.js';
 import type { McpServerConfig } from '../types.js';
 
 const base: McpServerConfig = {
@@ -34,3 +34,10 @@ test('readOAuthBlob round-trips through oauthState', () => {
 test('readOAuthBlob returns {} when no oauthState', () => {
   assert.deepEqual(readOAuthBlob(base), {});
 });
+
+test('readOAuthBlob throws on decryption failure, but readOAuthBlobSafe catches it', () => {
+  const badState = 'abc:def:ghi'; // looks encrypted but invalid
+  assert.throws(() => readOAuthBlob({ ...base, oauthState: badState }));
+  assert.deepEqual(readOAuthBlobSafe({ ...base, oauthState: badState }), {});
+});
+

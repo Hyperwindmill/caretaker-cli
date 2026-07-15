@@ -15,9 +15,13 @@ export type OAuthBlob = {
 export function readOAuthBlob(server: McpServerConfig): OAuthBlob {
   const raw = server.oauthState;
   if (!raw) return {};
+  const json = isEncrypted(raw) ? decrypt(raw) : raw;
+  return JSON.parse(json) as OAuthBlob;
+}
+
+export function readOAuthBlobSafe(server: McpServerConfig): OAuthBlob {
   try {
-    const json = isEncrypted(raw) ? decrypt(raw) : raw;
-    return JSON.parse(json) as OAuthBlob;
+    return readOAuthBlob(server);
   } catch {
     return {};
   }

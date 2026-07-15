@@ -39,6 +39,7 @@ import {
   listMcpServers,
   authenticateMcpServer,
   revokeMcpAuth,
+  readOAuthBlob,
 } from 'caretaker-cli/mcp';
 
 import { listForAgent, readSession, computeContextUsage } from 'caretaker-cli/session';
@@ -148,12 +149,21 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
         loadMcpServers(),
       ]);
       const availableTools = harness.tools.list().map((t) => t.name);
+      const enrichedServers = mcpServersFile.servers.map((server) => {
+        let hasMcpTokens = false;
+        try {
+          hasMcpTokens = readOAuthBlob(server).tokens != null;
+        } catch {
+          // Decrypt failures treated as no tokens to prevent settings page crash
+        }
+        return { ...server, hasMcpTokens };
+      });
       this.post(webview, {
         type: 'settingsDataLoaded',
         config,
         agents,
         pluginsFile,
-        mcpServersFile,
+        mcpServersFile: { servers: enrichedServers },
         availableTools,
       });
     } catch (err) {

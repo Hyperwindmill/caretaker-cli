@@ -31,7 +31,7 @@ export async function startCallbackListener(
     const code = url.searchParams.get('code');
     res.writeHead(200, { 'content-type': 'text/html' });
     if (error) {
-      res.end(`<html><body>Authorization failed: ${error}. You can close this tab.</body></html>`);
+      res.end('<html><body>Authorization failed. You can close this tab.</body></html>');
       rejectCode(new Error(`OAuth authorization failed: ${error}`));
     } else if (code) {
       res.end('<html><body>Authorization complete. You can close this tab.</body></html>');
