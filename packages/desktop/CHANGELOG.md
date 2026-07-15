@@ -1,5 +1,13 @@
 # caretaker-desktop
 
+## 0.3.3
+
+### Patch Changes
+
+- Updated dependencies [254936d]
+  - caretaker-cli@0.3.3
+  - webview-ui@0.3.3
+
 ## 0.3.2
 
 ### Patch Changes
