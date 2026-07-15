@@ -6,12 +6,17 @@
 import { openUrl } from '../lib/open_url.js';
 import { loadMcpServers, saveMcpServers } from '../store/json.js';
 import { readOAuthBlob, writeOAuthBlob, type OAuthBlob } from './oauth_store.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
 import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
 import type {
   OAuthClientInformationFull,
   OAuthClientMetadata,
   OAuthTokens,
 } from '@modelcontextprotocol/sdk/shared/auth.js';
+import { startCallbackListener } from './oauth_callback.js';
+import { closeClient } from './client.js';
 
 export class StoredOAuthProvider implements OAuthClientProvider {
   private verifier?: string;
@@ -91,3 +96,50 @@ export function buildAuthProvider(server: { id: string }): StoredOAuthProvider {
   // the live loopback redirectUrl.
   return new StoredOAuthProvider(server.id, 'http://127.0.0.1/callback');
 }
+
+/** Interactive OAuth: open the browser, capture the code on a loopback
+ *  listener, exchange it, and persist tokens. Explicit user action only —
+ *  never called from the passive pool. */
+export async function authenticateMcpServer(id: string): Promise<void> {
+  const file = await loadMcpServers();
+  const server = file.servers.find((s) => s.id === id);
+  if (!server) throw new Error(`MCP server ${id} not found`);
+  if (server.transport !== 'http' || !server.url) {
+    throw new Error(`MCP server "${server.name}" is not an http server`);
+  }
+
+  const listener = await startCallbackListener();
+  const provider = new StoredOAuthProvider(id, listener.redirectUrl);
+  const client = new Client({ name: 'caretaker-cli', version: '1.0.0' }, { capabilities: {} });
+  const transport = new StreamableHTTPClientTransport(new URL(server.url), {
+    authProvider: provider,
+  });
+
+  try {
+    try {
+      await client.connect(transport);
+      return; // already authorized (saved tokens still valid)
+    } catch (err) {
+      if (!(err instanceof UnauthorizedError)) throw err;
+      // redirectToAuthorization already opened the browser via the provider.
+    }
+    const code = await listener.waitForCode();
+    await transport.finishAuth(code);
+    // Drop any stale pooled connection so the next getClient picks up tokens.
+    await closeClient(id);
+  } finally {
+    listener.close();
+    await client.close().catch(() => {});
+  }
+}
+
+/** Clear stored OAuth state (logout) and drop any pooled connection. */
+export async function revokeMcpAuth(id: string): Promise<void> {
+  const file = await loadMcpServers();
+  const server = file.servers.find((s) => s.id === id);
+  if (!server || !server.oauthState) return;
+  delete server.oauthState;
+  await saveMcpServers(file);
+  await closeClient(id);
+}
+
