@@ -1,5 +1,13 @@
 # caretaker-cli
 
+## 0.3.5
+
+### Patch Changes
+
+- f9d9e93: ci: stop adding `[skip ci]` to changesets version commits (`skipCI: "add"` in `.changeset/config.json`). The marker on RELEASING commits prevented tag-push-triggered workflows (the release pipeline) from ever running when the tag pointed at the version commit; it now remains only on `changeset add` commits.
+  - webview-ui@0.3.5
+  - caretaker-types@0.3.5
+
 ## 0.3.4
 
 ### Patch Changes
@@ -15,7 +23,6 @@
 - 254936d: chore: prepare the repository for public release
 
   Add package metadata for a public repo: `license` (FSL-1.1-MIT via `SEE LICENSE IN LICENSE`), `author`, `repository`, `homepage`, `bugs`, and `keywords` across the workspace packages, and broaden the root description to cover all surfaces. No runtime behavior changes.
-
   - webview-ui@0.3.3
   - caretaker-types@0.3.3
 
@@ -32,7 +39,6 @@
   `symlink` falls back to writing a plain file containing the link target on
   `EPERM`/`EACCES` — mirroring git's own `core.symlinks=false` behavior (the
   Windows default). Real symlinks are still used everywhere the OS permits them.
-
   - webview-ui@0.3.2
   - caretaker-types@0.3.2
 
@@ -62,7 +68,6 @@
 ### Patch Changes
 
 - 7c65a7f: fix: refresh agent config live when edited from another surface
-
   - Web GUI (`caretaker-cli web`): `loadAgentsAndSend()` now updates `currentAgent` in-place when the file watcher detects changes to `agents.json`, instead of only refreshing the agent list. This means workingDir, allowedTools, plugins, and mcpServers changes are picked up immediately without restarting the server.
   - VSCode sidebar: same fix applied to `loadAgentsAndSend()` in `sidebar.ts`.
   - TUI: added a file watcher in `tui/agents.tsx` that refreshes the agent list and selected agent when `agents.json` changes, so edits from the web GUI or VSCode are visible immediately.
@@ -72,14 +77,12 @@
   On Linux, `.bashrc` typically exits early for non-interactive shells due to guards like `[ -z "$PS1" ] && return`. This means NVM, volta, fnm, and other version managers are NOT available even when spawning with `bash -l -c`.
 
   New module `harness/tools/builtin/shell-env.ts` (ported from caretaker-agents-platform):
-
   - At startup, probes the environment once using `bash -i -c 'env'` which DOES source `.bashrc`
   - Extracts relevant variables: `PATH`, `NVM_DIR`, `NVM_BIN`, `VOLTA_HOME`, `FNM_DIR`, `GOPATH`, `CARGO_HOME`, `PYENV_ROOT`, etc.
   - Caches the result and merges it into every bash subprocess environment
   - On Windows and macOS, returns early (those platforms handle login shells correctly)
 
   This ensures `pnpm`, `node`, and other version-managed tools are available in bash commands without requiring interactive shell spawning for every command.
-
   - webview-ui@0.2.5
   - caretaker-types@0.2.5
 
