@@ -30,3 +30,20 @@ export function readOAuthBlobSafe(server: McpServerConfig): OAuthBlob {
 export function writeOAuthBlob(blob: OAuthBlob): string {
   return encrypt(JSON.stringify(blob));
 }
+
+/**
+ * Decide whether a stored DCR registration is stale for the current loopback
+ * redirect. The ephemeral callback port changes on every interactive attempt
+ * (`listen(0)`), so once the registered `redirect_uris` no longer include the
+ * current redirect, the client registration is unusable — and so are the
+ * tokens, which are bound to that same `client_id`. Returns the cleared blob
+ * to persist, or `null` when nothing is stale (no registration, or the current
+ * redirect still matches). Clearing tokens alongside clientInformation is what
+ * lets the next interactive connect reach the browser flow instead of failing
+ * a refresh against a freshly re-registered client_id.
+ */
+export function staleRegistrationReset(blob: OAuthBlob, currentRedirectUrl: string): OAuthBlob | null {
+  const uris = blob.clientInformation?.redirect_uris;
+  if (!uris || uris.includes(currentRedirectUrl)) return null;
+  return { ...blob, clientInformation: undefined, tokens: undefined };
+}
