@@ -229,14 +229,14 @@ export function McpTab({ mcpServersFile, mcpAuthOutcome, setMcpAuthOutcome, post
       {errorMsg && <div className="validation-error"><WarningIcon size={13} /> {errorMsg}</div>}
 
       {mcpAuthOutcome && (
-        <div className={`sync-banner ${mcpAuthOutcome.error ? 'sync-banner--error' : 'sync-banner--success'}`}>
+        <div className={`sync-banner ${!mcpAuthOutcome.ok ? 'sync-banner--error' : 'sync-banner--success'}`}>
           <div className="sync-banner__title">
-            {mcpAuthOutcome.error ? 'Authentication Failed' : 'Authentication Succeeded'}
+            {!mcpAuthOutcome.ok ? 'Authentication Failed' : 'Authentication Succeeded'}
             <button className="sync-banner__close" onClick={() => setMcpAuthOutcome(null)} aria-label="Dismiss"><CloseIcon size={13} /></button>
           </div>
           <div className="sync-banner__body">
-            {mcpAuthOutcome.error ? (
-              <span className="error-text">{mcpAuthOutcome.error}</span>
+            {!mcpAuthOutcome.ok ? (
+              <span className="error-text">{mcpAuthOutcome.error || 'Authentication failed.'}</span>
             ) : (
               <span>Successfully authenticated with server.</span>
             )}
@@ -412,7 +412,7 @@ export function McpTab({ mcpServersFile, mcpAuthOutcome, setMcpAuthOutcome, post
                   {server.transport === 'http' && (
                     <div className="settings-card__metadata">
                       Status:{' '}
-                      {server.oauthState ? (
+                      {server.hasMcpTokens ? (
                         <span className="success-text" style={{ fontWeight: '500' }}>authenticated</span>
                       ) : /(401|unauthorized)/i.test(server.lastConnectError ?? '') ? (
                         <span className="error-text" style={{ fontWeight: '500' }}>needs authentication</span>
@@ -433,7 +433,7 @@ export function McpTab({ mcpServersFile, mcpAuthOutcome, setMcpAuthOutcome, post
                         Authenticate
                       </button>
                     )}
-                    {server.transport === 'http' && server.oauthState && (
+                    {server.transport === 'http' && server.hasMcpTokens && (
                       <button
                         className="btn btn--secondary btn--xs"
                         onClick={() => postMessage({ type: 'revokeMcpAuth', serverId: server.id })}

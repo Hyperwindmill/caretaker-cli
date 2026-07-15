@@ -135,3 +135,19 @@ export async function loadMcpServers(): Promise<McpServersFile> {
 export async function saveMcpServers(file: McpServersFile): Promise<void> {
   await writeJson(mcpServersPath(), file);
 }
+
+let mcpPromiseChain = Promise.resolve();
+
+/**
+ * Execute a function within a non-reentrant serialization lock for mcp.json operations.
+ * Protects against lost updates when multiple async read-modify-write cycles overlap.
+ */
+export async function withMcpServersLock<T>(fn: () => Promise<T>): Promise<T> {
+  const resultPromise = mcpPromiseChain.then(() => fn());
+  mcpPromiseChain = resultPromise.then(
+    () => {},
+    () => {},
+  );
+  return resultPromise;
+}
+

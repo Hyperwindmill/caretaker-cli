@@ -186,6 +186,9 @@ export type McpServerConfig = {
    *  a single encrypted JSON blob of { clientInformation, tokens }. The PKCE
    *  code verifier is transient and never stored here. */
   oauthState?: string;
+  /** Transient property indicating if valid OAuth tokens are stored in the state.
+   *  Computed on the server side to avoid sending decryption keys/logic to client. */
+  hasMcpTokens?: boolean;
   /** ISO timestamp of the last successful or failed connect. */
   lastConnectedAt?: string | null;
   /** Last connect error message; null when the last connect succeeded. */

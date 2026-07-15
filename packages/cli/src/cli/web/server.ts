@@ -25,7 +25,7 @@ import {
   patchSource,
   refreshSource,
 } from '../../plugins/source_manager.js';
-import { createMcpServer, deleteMcpServer, patchMcpServer } from '../../mcp/server_manager.js';
+import { createMcpServer, deleteMcpServer, patchMcpServer, readOAuthBlob } from '../../mcp/server_manager.js';
 import { authenticateMcpServer, revokeMcpAuth } from '../../mcp/oauth.js';
 
 import {
@@ -568,12 +568,21 @@ export async function startServer(port: number, host: string): Promise<void> {
           .map((t) => t.name)
           .filter((name) => !name.startsWith('mcp__task__'));
         availableTools.push('mcp__task__*');
+        const enrichedServers = mcpServersFile.servers.map((server) => {
+          let hasMcpTokens = false;
+          try {
+            hasMcpTokens = readOAuthBlob(server).tokens != null;
+          } catch {
+            // Decrypt failures treated as no tokens to prevent settings page crash
+          }
+          return { ...server, hasMcpTokens };
+        });
         post({
           type: 'settingsDataLoaded',
           config,
           agents: agentsRes,
           pluginsFile,
-          mcpServersFile,
+          mcpServersFile: { servers: enrichedServers },
           availableTools,
         });
       } catch (err) {

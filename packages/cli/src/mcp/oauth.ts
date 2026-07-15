@@ -1,10 +1,9 @@
 // OAuthClientProvider backed by an mcp.json row's encrypted `oauthState`.
-// The interactive authenticateMcpServer flow lives in the same module
-// (added in Task 6). Client-info + tokens persist; the PKCE verifier is
-// in-memory only.
+// The interactive authenticateMcpServer flow lives in the same module.
+// Client-info + tokens persist; the PKCE verifier is in-memory only.
 
 import { openUrl } from '../lib/open_url.js';
-import { loadMcpServers, saveMcpServers } from '../store/json.js';
+import { loadMcpServers, saveMcpServers, withMcpServersLock } from '../store/json.js';
 import { readOAuthBlob, writeOAuthBlob, type OAuthBlob } from './oauth_store.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -24,6 +23,7 @@ export class StoredOAuthProvider implements OAuthClientProvider {
   constructor(
     private readonly serverId: string,
     private readonly _redirectUrl: string,
+    private readonly interactive: boolean = false,
   ) {}
 
   get redirectUrl(): string {
@@ -46,22 +46,28 @@ export class StoredOAuthProvider implements OAuthClientProvider {
     return row ? readOAuthBlob(row) : {};
   }
 
-  // Merge one field into the row's blob and persist atomically. Best-effort:
-  // a failed write must not throw mid-flow.
+  // Merge one field into the row's blob and persist atomically.
+  // Uses withMcpServersLock to prevent race conditions during RMW.
   private async mergeBlob(patch: Partial<OAuthBlob>): Promise<void> {
-    try {
-      const file = await loadMcpServers();
-      const row = file.servers.find((s) => s.id === this.serverId);
-      if (!row) return;
-      row.oauthState = writeOAuthBlob({ ...readOAuthBlob(row), ...patch });
-      await saveMcpServers(file);
-    } catch (err) {
-      console.error(`[mcp oauth] failed to persist state for ${this.serverId}:`, err);
-    }
+    await withMcpServersLock(async () => {
+      try {
+        const file = await loadMcpServers();
+        const row = file.servers.find((s) => s.id === this.serverId);
+        if (!row) return;
+        row.oauthState = writeOAuthBlob({ ...readOAuthBlob(row), ...patch });
+        await saveMcpServers(file);
+      } catch (err) {
+        console.error(`[mcp oauth] failed to persist state for ${this.serverId}:`, err);
+      }
+    });
   }
 
   async clientInformation(): Promise<OAuthClientInformationFull | undefined> {
-    return (await this.readBlob()).clientInformation;
+    try {
+      return (await this.readBlob()).clientInformation;
+    } catch {
+      return undefined;
+    }
   }
 
   async saveClientInformation(info: OAuthClientInformationFull): Promise<void> {
@@ -69,7 +75,11 @@ export class StoredOAuthProvider implements OAuthClientProvider {
   }
 
   async tokens(): Promise<OAuthTokens | undefined> {
-    return (await this.readBlob()).tokens;
+    try {
+      return (await this.readBlob()).tokens;
+    } catch {
+      return undefined;
+    }
   }
 
   async saveTokens(tokens: OAuthTokens): Promise<void> {
@@ -86,15 +96,17 @@ export class StoredOAuthProvider implements OAuthClientProvider {
   }
 
   redirectToAuthorization(authorizationUrl: URL): void {
+    if (!this.interactive) {
+      throw new Error("Interactive OAuth authentication is not allowed on passive connections");
+    }
     openUrl(authorizationUrl.toString());
   }
 }
 
 export function buildAuthProvider(server: { id: string }): StoredOAuthProvider {
-  // Passive/pool path never redirects; a placeholder redirectUrl satisfies
-  // the interface. The interactive flow (Task 6) builds its own provider with
-  // the live loopback redirectUrl.
-  return new StoredOAuthProvider(server.id, 'http://127.0.0.1/callback');
+  // Passive/pool path never redirects; a placeholder redirectUrl satisfies the SDK interface.
+  // Passing interactive = false will prevent DCR/Browser spawn and raise UnauthorizedError.
+  return new StoredOAuthProvider(server.id, 'http://127.0.0.1/callback', false);
 }
 
 /** Interactive OAuth: open the browser, capture the code on a loopback
@@ -109,7 +121,32 @@ export async function authenticateMcpServer(id: string): Promise<void> {
   }
 
   const listener = await startCallbackListener();
-  const provider = new StoredOAuthProvider(id, listener.redirectUrl);
+
+  // M1 fix: If clientInformation redirect_uris do not contain the current port,
+  // clear clientInformation to force a DCR fresh registration.
+  await withMcpServersLock(async () => {
+    const freshFile = await loadMcpServers();
+    const freshServer = freshFile.servers.find((s) => s.id === id);
+    if (freshServer) {
+      try {
+        const blob = readOAuthBlob(freshServer);
+        if (blob.clientInformation?.redirect_uris) {
+          const hasCurrentRedirect = blob.clientInformation.redirect_uris.includes(listener.redirectUrl);
+          if (!hasCurrentRedirect) {
+            delete blob.clientInformation;
+            freshServer.oauthState = writeOAuthBlob(blob);
+            await saveMcpServers(freshFile);
+          }
+        }
+      } catch {
+        // If decryption fails, clear all oauthState to heal
+        delete freshServer.oauthState;
+        await saveMcpServers(freshFile);
+      }
+    }
+  });
+
+  const provider = new StoredOAuthProvider(id, listener.redirectUrl, true);
   const client = new Client({ name: 'caretaker-cli', version: '1.0.0' }, { capabilities: {} });
   const transport = new StreamableHTTPClientTransport(new URL(server.url), {
     authProvider: provider,
@@ -135,11 +172,12 @@ export async function authenticateMcpServer(id: string): Promise<void> {
 
 /** Clear stored OAuth state (logout) and drop any pooled connection. */
 export async function revokeMcpAuth(id: string): Promise<void> {
-  const file = await loadMcpServers();
-  const server = file.servers.find((s) => s.id === id);
-  if (!server || !server.oauthState) return;
-  delete server.oauthState;
-  await saveMcpServers(file);
   await closeClient(id);
+  await withMcpServersLock(async () => {
+    const file = await loadMcpServers();
+    const server = file.servers.find((s) => s.id === id);
+    if (!server || !server.oauthState) return;
+    delete server.oauthState;
+    await saveMcpServers(file);
+  });
 }
-

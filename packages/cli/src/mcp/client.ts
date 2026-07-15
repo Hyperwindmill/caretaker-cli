@@ -15,9 +15,10 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { decrypt, isEncrypted } from '../lib/encryption.js';
-import { loadMcpServers, saveMcpServers } from '../store/json.js';
+import { loadMcpServers, saveMcpServers, withMcpServersLock } from '../store/json.js';
 import { pluginAbsoluteRoot } from '../plugins/loader.js';
 import { buildAuthProvider } from './oauth.js';
+import { readOAuthBlob } from './oauth_store.js';
 import type { McpServerConfig } from '../types.js';
 
 interface PoolEntry {
@@ -84,12 +85,14 @@ async function recordConnectResult(id: string, error: string | null): Promise<vo
   // pool level, and a failed mcp.json write should not turn a working
   // connection into a broken one.
   try {
-    const file = await loadMcpServers();
-    const srv = file.servers.find((s) => s.id === id);
-    if (!srv) return;
-    srv.lastConnectedAt = new Date().toISOString();
-    srv.lastConnectError = error;
-    await saveMcpServers(file);
+    await withMcpServersLock(async () => {
+      const file = await loadMcpServers();
+      const srv = file.servers.find((s) => s.id === id);
+      if (!srv) return;
+      srv.lastConnectedAt = new Date().toISOString();
+      srv.lastConnectError = error;
+      await saveMcpServers(file);
+    });
   } catch (err) {
     console.error(`[mcp pool] failed to persist connect result for ${id}:`, err);
   }
@@ -128,8 +131,16 @@ async function openClient(server: McpServerConfig): Promise<PoolEntry> {
     const decrypted = decryptHeaders(server.headers);
     const headers = expandRecord(decrypted, pluginRoot) ?? {};
     const url = expandStrings(server.url, pluginRoot)!;
+
+    let hasTokens = false;
+    try {
+      hasTokens = readOAuthBlob(server).tokens != null;
+    } catch {
+      // Treat decryption failure as no tokens
+    }
+
     const transport = new StreamableHTTPClientTransport(new URL(url), {
-      authProvider: buildAuthProvider(server),
+      authProvider: hasTokens ? buildAuthProvider(server) : undefined,
       requestInit: { headers },
     });
     await client.connect(transport);

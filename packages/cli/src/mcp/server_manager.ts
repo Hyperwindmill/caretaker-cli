@@ -11,9 +11,19 @@ import {
   loadPlugins,
   saveAgents,
   saveMcpServers,
+  withMcpServersLock,
 } from '../store/json.js';
 import { closeClient } from './client.js';
+import { readOAuthBlobSafe } from './oauth_store.js';
 import type { McpServerConfig, McpServerSpec, McpTransport, PluginRecord } from '../types.js';
+
+function enrichServerConfig(server: McpServerConfig): McpServerConfig {
+  const hasMcpTokens = readOAuthBlobSafe(server).tokens != null;
+  return {
+    ...server,
+    hasMcpTokens,
+  };
+}
 
 /**
  * Prune the given MCP server ids from every agent's `mcpServers` array.
@@ -102,7 +112,6 @@ export async function createMcpServer(input: CreateMcpServerInput): Promise<McpS
     throw new Error('http MCP server requires a url');
   }
 
-  const file = await loadMcpServers();
   const server: McpServerConfig = {
     id: randomUUID(),
     name: input.name.trim(),
@@ -116,74 +125,84 @@ export async function createMcpServer(input: CreateMcpServerInput): Promise<McpS
     lastConnectedAt: null,
     lastConnectError: null,
   };
-  file.servers.push(server);
-  await saveMcpServers(file);
-  return server;
+
+  return withMcpServersLock(async () => {
+    const file = await loadMcpServers();
+    file.servers.push(server);
+    await saveMcpServers(file);
+    return enrichServerConfig(server);
+  });
 }
 
 export async function deleteMcpServer(id: string): Promise<boolean> {
-  const file = await loadMcpServers();
-  const idx = file.servers.findIndex((s) => s.id === id);
-  if (idx === -1) return false;
-  file.servers.splice(idx, 1);
-  await saveMcpServers(file);
-  // Drop any pooled connection for this server so subsequent runs don't keep
-  // talking to a config that no longer exists.
+  // closeClient first before write lock to prevent race conditions (M3)
   await closeClient(id);
-  // Strip the id from any agent that referenced it — otherwise the mcp
-  // adapter keeps logging "skipping server <id>: not found" forever.
-  await pruneAgentMcpRefs([id]);
-  return true;
+  const deleted = await withMcpServersLock(async () => {
+    const file = await loadMcpServers();
+    const idx = file.servers.findIndex((s) => s.id === id);
+    if (idx === -1) return false;
+    file.servers.splice(idx, 1);
+    await saveMcpServers(file);
+    return true;
+  });
+
+  if (deleted) {
+    await pruneAgentMcpRefs([id]);
+  }
+  return deleted;
 }
 
 export async function listMcpServers(): Promise<McpServerConfig[]> {
   const file = await loadMcpServers();
-  return file.servers;
+  return file.servers.map(enrichServerConfig);
 }
 
 export async function getMcpServer(id: string): Promise<McpServerConfig | null> {
   const file = await loadMcpServers();
-  return file.servers.find((s) => s.id === id) ?? null;
+  const found = file.servers.find((s) => s.id === id) ?? null;
+  return found ? enrichServerConfig(found) : null;
 }
 
 export async function patchMcpServer(
   id: string,
   input: PatchMcpServerInput,
 ): Promise<McpServerConfig | null> {
-  const file = await loadMcpServers();
-  const srv = file.servers.find((s) => s.id === id);
-  if (!srv) return null;
+  return withMcpServersLock(async () => {
+    const file = await loadMcpServers();
+    const srv = file.servers.find((s) => s.id === id);
+    if (!srv) return null;
 
-  validateInput({ ...input, transport: srv.transport });
+    validateInput({ ...input, transport: srv.transport });
 
-  // Plugin-managed rows: only `enabled` is mutable. Everything else is the
-  // plugin manifest's responsibility and would be overwritten on next sync.
-  if (srv.pluginId) {
-    if (input.enabled !== undefined) {
-      srv.enabled = input.enabled;
-      await saveMcpServers(file);
-      await closeClient(id);
+    // Plugin-managed rows: only `enabled` is mutable. Everything else is the
+    // plugin manifest's responsibility and would be overwritten on next sync.
+    if (srv.pluginId) {
+      if (input.enabled !== undefined) {
+        srv.enabled = input.enabled;
+        await closeClient(id);
+        await saveMcpServers(file);
+      }
+      return enrichServerConfig(srv);
     }
-    return srv;
-  }
 
-  if (input.name !== undefined) srv.name = input.name.trim();
-  if (input.enabled !== undefined) srv.enabled = input.enabled;
+    if (input.name !== undefined) srv.name = input.name.trim();
+    if (input.enabled !== undefined) srv.enabled = input.enabled;
 
-  if (srv.transport === 'stdio') {
-    if (input.command !== undefined) srv.command = input.command;
-    if (input.args !== undefined) srv.args = input.args;
-    if (input.env !== undefined) srv.env = input.env;
-  } else {
-    if (input.url !== undefined) srv.url = input.url;
-    if (input.headers !== undefined) {
-      srv.headers = input.headers === null ? undefined : encryptHeaderValues(input.headers);
+    if (srv.transport === 'stdio') {
+      if (input.command !== undefined) srv.command = input.command;
+      if (input.args !== undefined) srv.args = input.args;
+      if (input.env !== undefined) srv.env = input.env;
+    } else {
+      if (input.url !== undefined) srv.url = input.url;
+      if (input.headers !== undefined) {
+        srv.headers = input.headers === null ? undefined : encryptHeaderValues(input.headers);
+      }
     }
-  }
 
-  await saveMcpServers(file);
-  await closeClient(id);
-  return srv;
+    await closeClient(id);
+    await saveMcpServers(file);
+    return enrichServerConfig(srv);
+  });
 }
 
 // ─── Plugin-managed sync ─────────────────────────────────────────────────
@@ -262,54 +281,59 @@ function applySpecToManagedRow(
  */
 export async function syncManagedMcpServers(): Promise<void> {
   const pluginsFile = await loadPlugins();
-  const mcpFile = await loadMcpServers();
+  
+  const droppedIds = await withMcpServersLock(async () => {
+    const mcpFile = await loadMcpServers();
 
-  // Build the set of expected (pluginId, scopedName) → (plugin, spec).
-  const expected = new Map<
-    string,
-    { plugin: PluginRecord; scopedName: string; spec: McpServerSpec }
-  >();
-  for (const plugin of pluginsFile.plugins) {
-    if (!plugin.mcpServers) continue;
-    for (const [scopedName, spec] of Object.entries(plugin.mcpServers)) {
-      expected.set(managedRowKey(plugin.id, scopedName), { plugin, scopedName, spec });
+    // Build the set of expected (pluginId, scopedName) → (plugin, spec).
+    const expected = new Map<
+      string,
+      { plugin: PluginRecord; scopedName: string; spec: McpServerSpec }
+    >();
+    for (const plugin of pluginsFile.plugins) {
+      if (!plugin.mcpServers) continue;
+      for (const [scopedName, spec] of Object.entries(plugin.mcpServers)) {
+        expected.set(managedRowKey(plugin.id, scopedName), { plugin, scopedName, spec });
+      }
     }
-  }
 
-  const out: McpServerConfig[] = [];
-  const seenKeys = new Set<string>();
-  const droppedIds: string[] = [];
+    const out: McpServerConfig[] = [];
+    const seenKeys = new Set<string>();
+    const droppedIds: string[] = [];
 
-  for (const srv of mcpFile.servers) {
-    if (!srv.pluginId) {
-      out.push(srv); // user-authored, leave alone
-      continue;
+    for (const srv of mcpFile.servers) {
+      if (!srv.pluginId) {
+        out.push(srv); // user-authored, leave alone
+        continue;
+      }
+      const key = managedRowKey(srv.pluginId, srv.pluginScopedName ?? '');
+      const exp = expected.get(key);
+      if (!exp) {
+        droppedIds.push(srv.id);
+        continue;
+      }
+      seenKeys.add(key);
+      out.push(applySpecToManagedRow(srv, exp.plugin, exp.scopedName, exp.spec));
     }
-    const key = managedRowKey(srv.pluginId, srv.pluginScopedName ?? '');
-    const exp = expected.get(key);
-    if (!exp) {
-      droppedIds.push(srv.id);
-      continue;
+
+    for (const [key, exp] of expected) {
+      if (seenKeys.has(key)) continue;
+      out.push(buildManagedRow(exp.plugin, exp.scopedName, exp.spec));
     }
-    seenKeys.add(key);
-    out.push(applySpecToManagedRow(srv, exp.plugin, exp.scopedName, exp.spec));
-  }
 
-  for (const [key, exp] of expected) {
-    if (seenKeys.has(key)) continue;
-    out.push(buildManagedRow(exp.plugin, exp.scopedName, exp.spec));
-  }
+    await saveMcpServers({ servers: out });
 
-  await saveMcpServers({ servers: out });
+    // Drop pooled connections for removed rows so the runtime stops talking
+    // to a config that no longer exists.
+    for (const id of droppedIds) {
+      await closeClient(id);
+    }
+    return droppedIds;
+  });
 
-  // Drop pooled connections for removed rows so the runtime stops talking
-  // to a config that no longer exists.
-  for (const id of droppedIds) {
-    await closeClient(id);
-  }
   // Same agent-ref cleanup as a direct deleteMcpServer call.
   await pruneAgentMcpRefs(droppedIds);
 }
 
 export { authenticateMcpServer, revokeMcpAuth } from './oauth.js';
-
+export { readOAuthBlob, readOAuthBlobSafe } from './oauth_store.js';

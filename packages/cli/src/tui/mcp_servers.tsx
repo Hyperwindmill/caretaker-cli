@@ -61,7 +61,7 @@ export default function McpServers({ onBack }: { onBack: () => void }) {
       } catch (err) {
         setAuthStatus(`Failed: ${String(err)}`);
       }
-    } else if (input === 'x' && selected.oauthState) {
+    } else if (input === 'x' && selected.hasMcpTokens) {
       setAuthStatus('Signing out…');
       try {
         await revokeMcpAuth(selected.id);
@@ -193,8 +193,8 @@ export default function McpServers({ onBack }: { onBack: () => void }) {
             <Text>url: {selected.url ?? '(none)'}</Text>
             <Text>headers: {headerCount > 0 ? `${headerCount} (encrypted)` : '(none)'}</Text>
             <Text dimColor>
-              auth: {selected.oauthState ? 'authenticated' : 'not authenticated'} — press [a] to authenticate
-              {selected.oauthState ? ', [x] to sign out' : ''}
+              auth: {selected.hasMcpTokens ? 'authenticated' : 'not authenticated'} — press [a] to authenticate
+              {selected.hasMcpTokens ? ', [x] to sign out' : ''}
             </Text>
             {authStatus && <Text color="cyan">{authStatus}</Text>}
           </>
