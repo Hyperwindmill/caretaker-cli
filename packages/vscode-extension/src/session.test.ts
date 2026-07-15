@@ -100,6 +100,7 @@ function makeCallbacks(overrides: Partial<ChatCallbacks> = {}): {
   const events: string[] = [];
   const cb: ChatCallbacks = {
     onChunk: (text) => events.push(`chunk:${text}`),
+    onThinking: (text) => events.push(`thinking:${text}`),
     onToolCall: (id, name) => events.push(`tool_call:${id}:${name}`),
     onToolResult: (id) => events.push(`tool_result:${id}`),
     askConfirm: async () => 'once',
@@ -174,6 +175,28 @@ test('forwards onChunk and onToolCall events from the harness', async () => {
     'chunk: world',
     'done',
   ]);
+});
+
+test('forwards onThinking events from the harness', async () => {
+  const { deps } = makeDeps({
+    run: async (_opts, cbs = {}) => {
+      cbs.onThinking?.('let me think');
+      cbs.onChunk?.('answer');
+      return { text: 'answer', toolCalls: 0, usage: { input: 1, output: 1 }, stop: 'done' };
+    },
+  });
+  const ctl = new ChatSessionController({
+    agent: fakeAgent,
+    provider: fakeProvider,
+    tools: [],
+    workingDir: '/tmp',
+    deps,
+  });
+  const { cb, events } = makeCallbacks();
+
+  await ctl.start('hi', cb);
+
+  assert.deepEqual(events, ['thinking:let me think', 'chunk:answer', 'done']);
 });
 
 test('persists user + assistant + tool messages via appendMessage', async () => {

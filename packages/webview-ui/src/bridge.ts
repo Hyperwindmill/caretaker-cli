@@ -1,8 +1,8 @@
 // Wire protocol between the extension host and the chat webview.
 // Both sides import these types so a change here forces both ends to
 // update. Event names mirror the sister repo's SSE protocol where the
-// concepts overlap, adapted to the in-process model (no `thinking`
-// stream for now, no `usage` until the harness exposes it cleanly).
+// concepts overlap, adapted to the in-process model (no `usage` until
+// the harness exposes it cleanly).
 //
 // The webview is hostile until proven otherwise: messages arriving on
 // the host side must be runtime-validated with `parseViewToHost`. The
@@ -70,6 +70,7 @@ export type HostToView =
   | { type: 'sessionsLoaded'; sessions: SessionSummary[] }
   | { type: 'sessionLoaded'; messages: ChatMessage[] }
   | { type: 'chunk'; text: string }
+  | { type: 'thinking'; text: string }
   | { type: 'tool_call'; id: string; name: string; args: unknown }
   | { type: 'tool_result'; id: string; content: string }
   | { type: 'permission_request'; id: string; toolName: string; args: unknown }

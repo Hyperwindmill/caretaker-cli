@@ -26,6 +26,7 @@ export type AskConfirm = (
 
 export interface ChatCallbacks {
   onChunk: (text: string) => void;
+  onThinking: (text: string) => void;
   onToolCall: (id: string, name: string, args: unknown) => void;
   onToolResult: (id: string, content: string) => void;
   askConfirm: AskConfirm;
@@ -129,6 +130,7 @@ export class ChatSessionController {
         },
         {
           onChunk: cb.onChunk,
+          onThinking: cb.onThinking,
           onToolCall: cb.onToolCall,
           onToolResult: cb.onToolResult,
           confirmTool: async (id, name, args) => {

@@ -51,6 +51,7 @@ const webviewDistPath = path.resolve(__dirname, '../../../../webview-ui/dist');
 
 export interface ChatCallbacks {
   onChunk: (text: string) => void;
+  onThinking: (text: string) => void;
   onToolCall: (id: string, name: string, args: unknown) => void;
   onToolResult: (id: string, content: string) => void;
   askConfirm: (id: string, toolName: string, args: unknown) => Promise<ConfirmDecision>;
@@ -147,6 +148,7 @@ export class WebSessionController {
         },
         {
           onChunk: cb.onChunk,
+          onThinking: cb.onThinking,
           onToolCall: cb.onToolCall,
           onToolResult: cb.onToolResult,
           confirmTool: async (id, name, args) => {
@@ -635,6 +637,7 @@ export async function startServer(port: number, host: string): Promise<void> {
               msg.prompt,
               {
                 onChunk: (text) => post({ type: 'chunk', text }),
+                onThinking: (text) => post({ type: 'thinking', text }),
                 onToolCall: (id, name, args) => post({ type: 'tool_call', id, name, args }),
                 onToolResult: (id, content) => post({ type: 'tool_result', id, content }),
                 askConfirm: (id, toolName, args) =>
