@@ -71,6 +71,10 @@ function restrictToCurrentUser(path: string): void {
   }
 }
 
+// Guards the one-shot ACL heal below so `icacls` runs at most once per process
+// rather than on every encrypt/decrypt (getKey re-reads the key each call).
+let keyAclEnsured = false;
+
 function loadOrCreateOnDiskKey(): Buffer {
   const dir = dataDir();
   const path = encryptionKeyPath();
@@ -81,6 +85,13 @@ function loadOrCreateOnDiskKey(): Buffer {
       throw new Error(
         `encryption.key at ${path} must be exactly ${KEY_BYTES} bytes (found ${buf.length})`,
       );
+    }
+    // Heal Windows keys created before owner-only ACLs existed: re-apply the
+    // ACL once per process (idempotent, no-op on POSIX). Regenerating the key
+    // is NOT an option — it would orphan every existing ciphertext blob.
+    if (!keyAclEnsured) {
+      keyAclEnsured = true;
+      restrictToCurrentUser(path);
     }
     return buf;
   }
@@ -107,8 +118,8 @@ function loadOrCreateOnDiskKey(): Buffer {
     }
     renameSync(tmp, path);
     // Windows: chmod 0600 above is a no-op for confidentiality; apply a real
-    // owner-only ACL. POSIX no-ops here. Creation-time only — never on the
-    // load path, which runs on every encrypt/decrypt.
+    // owner-only ACL. POSIX no-ops here.
+    keyAclEnsured = true;
     restrictToCurrentUser(path);
   } catch (err) {
     try {
