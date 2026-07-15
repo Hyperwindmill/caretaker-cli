@@ -1,16 +1,27 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { McpServersFile, McpServerConfig, McpTransport } from 'caretaker-types';
 import type { ViewToHost } from './bridge.js';
-import { WarningIcon, EditIcon, DeleteIcon } from './icons.js';
+import { WarningIcon, EditIcon, DeleteIcon, CloseIcon } from './icons.js';
 
 interface McpTabProps {
   mcpServersFile: McpServersFile;
+  mcpAuthOutcome: { serverId: string; ok: boolean; error?: string } | null;
+  setMcpAuthOutcome: (out: { serverId: string; ok: boolean; error?: string } | null) => void;
   postMessage: (msg: ViewToHost) => void;
 }
 
-export function McpTab({ mcpServersFile, postMessage }: McpTabProps) {
+
+export function McpTab({ mcpServersFile, mcpAuthOutcome, setMcpAuthOutcome, postMessage }: McpTabProps) {
   const [editingServer, setEditingServer] = useState<McpServerConfig | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+
+  // Clear outcome on unmount
+  useEffect(() => {
+    return () => {
+      setMcpAuthOutcome(null);
+    };
+  }, []);
+
 
   // Form states
   const [name, setName] = useState('');
@@ -217,6 +228,23 @@ export function McpTab({ mcpServersFile, postMessage }: McpTabProps) {
 
       {errorMsg && <div className="validation-error"><WarningIcon size={13} /> {errorMsg}</div>}
 
+      {mcpAuthOutcome && (
+        <div className={`sync-banner ${mcpAuthOutcome.error ? 'sync-banner--error' : 'sync-banner--success'}`}>
+          <div className="sync-banner__title">
+            {mcpAuthOutcome.error ? 'Authentication Failed' : 'Authentication Succeeded'}
+            <button className="sync-banner__close" onClick={() => setMcpAuthOutcome(null)} aria-label="Dismiss"><CloseIcon size={13} /></button>
+          </div>
+          <div className="sync-banner__body">
+            {mcpAuthOutcome.error ? (
+              <span className="error-text">{mcpAuthOutcome.error}</span>
+            ) : (
+              <span>Successfully authenticated with server.</span>
+            )}
+          </div>
+        </div>
+      )}
+
+
       {showForm ? (
         <div className="glass-form">
           <h4>{isCreating ? 'Register MCP Server' : `Edit MCP Server: ${editingServer?.name}`}</h4>
@@ -381,28 +409,61 @@ export function McpTab({ mcpServersFile, postMessage }: McpTabProps) {
                       <WarningIcon size={13} /> Connect Error: {server.lastConnectError}
                     </div>
                   )}
+                  {server.transport === 'http' && (
+                    <div className="settings-card__metadata">
+                      Status:{' '}
+                      {server.oauthState ? (
+                        <span className="success-text" style={{ fontWeight: '500' }}>authenticated</span>
+                      ) : /(401|unauthorized)/i.test(server.lastConnectError ?? '') ? (
+                        <span className="error-text" style={{ fontWeight: '500' }}>needs authentication</span>
+                      ) : (
+                        <span className="muted-text">not authenticated</span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
-                {!server.pluginId && (
-                  <div className="settings-card__actions">
-                    <button
-                      className="icon-btn"
-                      onClick={() => startEdit(server)}
-                      title="Edit server"
-                      aria-label="Edit server"
-                    >
-                      <EditIcon size={13} />
-                    </button>
-                    <button
-                      className="icon-btn icon-btn--danger"
-                      onClick={() => deleteServer(server.id)}
-                      title="Delete server"
-                      aria-label="Delete server"
-                    >
-                      <DeleteIcon size={13} />
-                    </button>
+                {(!server.pluginId || server.transport === 'http') && (
+                  <div className="settings-card__actions" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {server.transport === 'http' && (
+                      <button
+                        className="btn btn--secondary btn--xs"
+                        onClick={() => postMessage({ type: 'authenticateMcpServer', serverId: server.id })}
+                      >
+                        Authenticate
+                      </button>
+                    )}
+                    {server.transport === 'http' && server.oauthState && (
+                      <button
+                        className="btn btn--secondary btn--xs"
+                        onClick={() => postMessage({ type: 'revokeMcpAuth', serverId: server.id })}
+                      >
+                        Sign out
+                      </button>
+                    )}
+                    {!server.pluginId && (
+                      <>
+                        <button
+                          className="icon-btn"
+                          onClick={() => startEdit(server)}
+                          title="Edit server"
+                          aria-label="Edit server"
+                        >
+                          <EditIcon size={13} />
+                        </button>
+                        <button
+                          className="icon-btn icon-btn--danger"
+                          onClick={() => deleteServer(server.id)}
+                          title="Delete server"
+                          aria-label="Delete server"
+                        >
+                          <DeleteIcon size={13} />
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
+
               </div>
             ))
           )}

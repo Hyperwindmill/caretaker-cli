@@ -37,7 +37,10 @@ import {
   deleteMcpServer,
   patchMcpServer,
   listMcpServers,
+  authenticateMcpServer,
+  revokeMcpAuth,
 } from 'caretaker-cli/mcp';
+
 import { listForAgent, readSession, computeContextUsage } from 'caretaker-cli/session';
 import type { AgentConfig, ProviderConfig, PluginsFile, McpServerConfig } from 'caretaker-cli/types';
 
@@ -435,7 +438,28 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
           vscode.window.showErrorMessage(`Failed to delete MCP server: ${err}`);
         }
         return;
+      case 'authenticateMcpServer':
+        try {
+          await authenticateMcpServer(msg.serverId);
+          void this.loadAgentsAndSend(webview);
+          void this.sendSettingsData(webview);
+          this.post(webview, { type: 'mcpAuthOutcome', serverId: msg.serverId, ok: true });
+        } catch (err) {
+          this.post(webview, { type: 'mcpAuthOutcome', serverId: msg.serverId, ok: false, error: String(err) });
+        }
+        return;
+      case 'revokeMcpAuth':
+        try {
+          await revokeMcpAuth(msg.serverId);
+          void this.loadAgentsAndSend(webview);
+          void this.sendSettingsData(webview);
+          this.post(webview, { type: 'mcpAuthOutcome', serverId: msg.serverId, ok: true });
+        } catch (err) {
+          this.post(webview, { type: 'mcpAuthOutcome', serverId: msg.serverId, ok: false, error: String(err) });
+        }
+        return;
       case 'fetchModels':
+
         try {
           const result = await harness.fetchOpenAiStyleModels(msg.endpoint, msg.apiKey ?? null);
           this.post(webview, { type: 'modelsFetched', result });

@@ -307,6 +307,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
   const [modelsResult, setModelsResult] = useState<ModelsResult | null>(null);
   const [refreshingSourceId, setRefreshingSourceId] = useState<string | null>(null);
   const [refreshOutcome, setRefreshOutcome] = useState<RefreshOutcome | null>(null);
+  const [mcpAuthOutcome, setMcpAuthOutcome] = useState<{ serverId: string; ok: boolean; error?: string } | null>(null);
   const [taskRuns, setTaskRuns] = useState<Record<string, any[]>>({});
 
   useEffect(() => {
@@ -379,6 +380,9 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
         case 'refreshPluginOutcome':
           setRefreshingSourceId(null);
           setRefreshOutcome(msg.outcome);
+          return;
+        case 'mcpAuthOutcome':
+          setMcpAuthOutcome({ serverId: msg.serverId, ok: msg.ok, error: msg.error });
           return;
         case 'taskRunsLoaded':
           setTaskRuns((prev) => ({ ...prev, [msg.taskId]: msg.runs }));
@@ -513,9 +517,12 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
           refreshingSourceId={refreshingSourceId}
           refreshOutcome={refreshOutcome}
           setRefreshOutcome={setRefreshOutcome}
+          mcpAuthOutcome={mcpAuthOutcome}
+          setMcpAuthOutcome={setMcpAuthOutcome}
           taskRuns={taskRuns}
           onClose={() => setActiveScreen('chat')}
         />
+
       </div>
     );
   }
