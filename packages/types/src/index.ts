@@ -182,6 +182,10 @@ export type McpServerConfig = {
    *  decrypted at connect time; freshly-set values are encrypted on save.
    *  Auth tokens belong here (e.g. `Authorization: Bearer …`). */
   headers?: Record<string, string>;
+  /** OAuth state for an http MCP server, AES-256-GCM encrypted at rest:
+   *  a single encrypted JSON blob of { clientInformation, tokens }. The PKCE
+   *  code verifier is transient and never stored here. */
+  oauthState?: string;
   /** ISO timestamp of the last successful or failed connect. */
   lastConnectedAt?: string | null;
   /** Last connect error message; null when the last connect succeeded. */
