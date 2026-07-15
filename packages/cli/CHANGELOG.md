@@ -1,5 +1,16 @@
 # caretaker-cli
 
+## 0.4.2
+
+### Patch Changes
+
+- 2656cfc: Heal Windows installs whose encryption key predates the owner-only ACL: the
+  ACL is now re-applied once per process when an existing key is loaded, so
+  keys created before the previous release get locked down on next launch
+  without regenerating the key (which would orphan all existing ciphertext).
+  - webview-ui@0.4.2
+  - caretaker-types@0.4.2
+
 ## 0.4.1
 
 ### Patch Changes
