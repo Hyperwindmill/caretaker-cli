@@ -25,9 +25,12 @@ interface SettingsPanelProps {
   refreshingSourceId: string | null;
   refreshOutcome: RefreshOutcome | null;
   setRefreshOutcome: (out: RefreshOutcome | null) => void;
+  mcpAuthOutcome: { serverId: string; ok: boolean; error?: string } | null;
+  setMcpAuthOutcome: (out: { serverId: string; ok: boolean; error?: string } | null) => void;
   taskRuns?: Record<string, any[]>;
   onClose: () => void;
 }
+
 
 type TabId = 'providers' | 'projects' | 'agents' | 'plugins' | 'mcp' | 'scheduler';
 
@@ -40,9 +43,12 @@ export function SettingsPanel({
   refreshingSourceId,
   refreshOutcome,
   setRefreshOutcome,
+  mcpAuthOutcome,
+  setMcpAuthOutcome,
   taskRuns = {},
   onClose,
 }: SettingsPanelProps) {
+
   const [activeTab, setActiveTab] = useState<TabId>('providers');
 
   if (!settingsData) {
@@ -106,9 +112,12 @@ export function SettingsPanel({
         return (
           <McpTab
             mcpServersFile={mcpServersFile}
+            mcpAuthOutcome={mcpAuthOutcome}
+            setMcpAuthOutcome={setMcpAuthOutcome}
             postMessage={postMessage}
           />
         );
+
       case 'scheduler':
         return (
           <SchedulerTab

@@ -310,3 +310,6 @@ export async function syncManagedMcpServers(): Promise<void> {
   // Same agent-ref cleanup as a direct deleteMcpServer call.
   await pruneAgentMcpRefs(droppedIds);
 }
+
+export { authenticateMcpServer, revokeMcpAuth } from './oauth.js';
+
