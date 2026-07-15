@@ -484,6 +484,7 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
 
     await this.controller.start(prompt, {
       onChunk: (text) => this.post(webview, { type: 'chunk', text }),
+      onThinking: (text) => this.post(webview, { type: 'thinking', text }),
       onToolCall: (id, name, args) => this.post(webview, { type: 'tool_call', id, name, args }),
       onToolResult: (id, content) =>
         this.post(webview, { type: 'tool_result', id, content }),

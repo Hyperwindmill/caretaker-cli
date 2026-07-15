@@ -86,6 +86,7 @@ interface AppState {
 type Action =
   | { kind: 'send-user'; text: string; attachments?: ToolAttachmentRecord[] }
   | { kind: 'append-chunk'; text: string }
+  | { kind: 'append-thinking'; text: string }
   | { kind: 'tool-call'; id: string; name: string; args: unknown }
   | { kind: 'tool-result'; id: string; content: string }
   | { kind: 'permission-request'; id: string; toolName: string; args: unknown }
@@ -175,6 +176,18 @@ function reducer(state: State, action: Action): State {
       return {
         ...state,
         items: [...state.items, { kind: 'assistant', text: action.text, streaming: true }],
+      };
+    }
+
+    case 'append-thinking': {
+      const last = state.items[state.items.length - 1];
+      if (last && last.kind === 'thinking') {
+        const updated: ThinkingItem = { ...last, text: last.text + action.text };
+        return { ...state, items: [...state.items.slice(0, -1), updated] };
+      }
+      return {
+        ...state,
+        items: [...state.items, { kind: 'thinking', text: action.text }],
       };
     }
 
@@ -319,6 +332,9 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
           return;
         case 'chunk':
           dispatch({ kind: 'append-chunk', text: msg.text });
+          return;
+        case 'thinking':
+          dispatch({ kind: 'append-thinking', text: msg.text });
           return;
         case 'tool_call':
           dispatch({ kind: 'tool-call', id: msg.id, name: msg.name, args: msg.args });
