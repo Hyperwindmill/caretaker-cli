@@ -4,7 +4,7 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadMcpServers, saveMcpServers } from '../store/json.js';
 import { readOAuthBlob } from './oauth_store.js';
-import { StoredOAuthProvider } from './oauth.js';
+import { StoredOAuthProvider, revokeMcpAuth } from './oauth.js';
 
 beforeEach(async () => {
   await saveMcpServers({
@@ -35,4 +35,12 @@ test('code verifier is in-memory only', async () => {
   assert.equal(await p.codeVerifier(), 'verifier-123');
   const file = await loadMcpServers();
   assert.equal(JSON.stringify(file).includes('verifier-123'), false);
+});
+
+test('revokeMcpAuth clears oauthState', async () => {
+  const p = new StoredOAuthProvider('s1', 'http://127.0.0.1:1/callback');
+  await p.saveTokens({ access_token: 'at', token_type: 'bearer' });
+  await revokeMcpAuth('s1');
+  const file = await loadMcpServers();
+  assert.equal(file.servers.find((s) => s.id === 's1')!.oauthState, undefined);
 });
