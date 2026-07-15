@@ -1,5 +1,16 @@
 # caretaker-cli
 
+## 0.3.3
+
+### Patch Changes
+
+- 254936d: chore: prepare the repository for public release
+
+  Add package metadata for a public repo: `license` (FSL-1.1-MIT via `SEE LICENSE IN LICENSE`), `author`, `repository`, `homepage`, `bugs`, and `keywords` across the workspace packages, and broaden the root description to cover all surfaces. No runtime behavior changes.
+
+  - webview-ui@0.3.3
+  - caretaker-types@0.3.3
+
 ## 0.3.2
 
 ### Patch Changes
