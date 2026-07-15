@@ -1,20 +1,20 @@
 #!/bin/sh
 
-# Evitiamo il controllo se siamo sul branch principale (main/master), in HEAD staccato o durante il rilascio
+# Skip the check on the main branch (main/master), in detached HEAD, or during a release.
 CURRENT_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
 if [ "$CURRENT_BRANCH" = "main" ] || [ "$CURRENT_BRANCH" = "master" ] || [ -z "$CURRENT_BRANCH" ]; then
     exit 0
 fi
 
-# Controlliamo se ci sono file changeset (.changeset/*.md) aggiunti o modificati in questo commit
-# Ignoriamo il README.md dei changesets
+# Check whether any changeset files (.changeset/*.md) are staged in this commit.
+# Ignore the changesets README.md.
 CHANGESET_STAGED=$(git diff --cached --name-only --diff-filter=ACM | grep -E "^\.changeset/[a-zA-Z0-9_-]+\.md$" | grep -v "README.md")
 
 if [ -z "$CHANGESET_STAGED" ]; then
-    echo -e "\n\033[31m[ERROR] Nessun changeset rilevato in staging!\033[0m"
-    echo -e "Poiché sei sul branch di feature '\033[36m$CURRENT_BRANCH\033[0m', devi registrare una changeset prima del commit."
-    echo -e "Per favore, crea una changeset eseguendo:"
+    echo -e "\n\033[31m[ERROR] No changeset staged!\033[0m"
+    echo -e "Since you are on the feature branch '\033[36m$CURRENT_BRANCH\033[0m', you must add a changeset before committing."
+    echo -e "Please create one by running:"
     echo -e "  \033[33mpnpm run changeset\033[0m"
-    echo -e "Quindi aggiungila allo staging prima di ripetere il commit.\n"
+    echo -e "Then stage it before committing again.\n"
     exit 1
 fi

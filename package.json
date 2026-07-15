@@ -2,7 +2,17 @@
   "name": "caretaker-cli-monorepo",
   "private": true,
   "version": "0.0.0",
-  "description": "Caretaker monorepo root — CLI and IDE extensions.",
+  "description": "Caretaker — a multi-surface AI agent harness: CLI/TUI, local web GUI, Electron desktop app, and VSCode sidebar.",
+  "license": "SEE LICENSE IN LICENSE",
+  "author": "Hyperwindmill <hyperwindmill@gmail.com>",
+  "homepage": "https://github.com/Hyperwindmill/caretaker-cli",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Hyperwindmill/caretaker-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Hyperwindmill/caretaker-cli/issues"
+  },
   "scripts": {
     "dev": "pnpm -F caretaker-cli dev",
     "build": "pnpm -r build",

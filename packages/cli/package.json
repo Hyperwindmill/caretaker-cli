@@ -4,6 +4,28 @@
   "private": true,
   "type": "module",
   "description": "Caretaker — in-process agent harness, TUI, file-based state.",
+  "license": "SEE LICENSE IN LICENSE",
+  "author": "Hyperwindmill <hyperwindmill@gmail.com>",
+  "homepage": "https://github.com/Hyperwindmill/caretaker-cli/tree/main/packages/cli",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Hyperwindmill/caretaker-cli.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/Hyperwindmill/caretaker-cli/issues"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "harness",
+    "llm",
+    "cli",
+    "tui",
+    "mcp",
+    "openai",
+    "byok"
+  ],
   "bin": {
     "caretaker-cli": "dist/index.js"
   },
