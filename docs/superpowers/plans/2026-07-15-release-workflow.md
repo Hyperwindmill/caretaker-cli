@@ -328,7 +328,7 @@ git commit -m "ci: publish release artifacts to a GitHub Release on tag push"
 
 ---
 
-### Task 5: Manual end-to-end verification
+### Task 5: Manual end-to-end verification (DEFERRED — user declined the remote push during execution on 2026-07-15; do this before relying on the workflow in production)
 
 **Files:**
 - None (verification only; no file changes expected unless a bug surfaces, in which case fix `.github/workflows/release.yml` and repeat the relevant step from Tasks 1–4).
