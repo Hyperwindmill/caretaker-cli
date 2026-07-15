@@ -16,6 +16,7 @@
     "desktop:dev": "pnpm build && pnpm -F caretaker-desktop dev",
     "desktop:pack": "pnpm build && pnpm -F caretaker-desktop exec electron-builder --dir",
     "desktop:dist": "pnpm build && pnpm -F caretaker-desktop exec electron-builder",
+    "vscode:package": "pnpm build && pnpm -F caretaker-vscode package",
     "changeset": "changeset",
     "version-packages": "changeset version",
     "prepare": "husky"
