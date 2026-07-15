@@ -24,18 +24,21 @@ import type {
   CaretakerConfig, 
   AgentConfig, 
   PluginsFile, 
-  McpServerConfig 
+  McpServerConfig,
+  ToolAttachmentRecord
 } from './bridge.js';
 
 import { MessageList } from './MessageList.js';
 import { Composer } from './Composer.js';
 import { ConfirmCard } from './ConfirmCard.js';
 import { SettingsPanel } from './SettingsPanel.js';
+import { ProjectsTab } from './ProjectsTab.js';
 import logo from './caretaker_cli.png';
 
 export interface UserItem {
   kind: 'user';
   text: string;
+  attachments?: ToolAttachmentRecord[];
 }
 export interface AssistantItem {
   kind: 'assistant';
@@ -81,7 +84,7 @@ interface AppState {
 }
 
 type Action =
-  | { kind: 'send-user'; text: string }
+  | { kind: 'send-user'; text: string; attachments?: ToolAttachmentRecord[] }
   | { kind: 'append-chunk'; text: string }
   | { kind: 'tool-call'; id: string; name: string; args: unknown }
   | { kind: 'tool-result'; id: string; content: string }
@@ -105,7 +108,7 @@ function reconstructChatItems(messages: ChatMessage[]): ChatItem[] {
   for (const msg of messages) {
     if (msg.role === 'user') {
       items = closeStreamingAssistant(items);
-      items.push({ kind: 'user', text: msg.content });
+      items.push({ kind: 'user', text: msg.content, attachments: msg.attachments });
     } else if (msg.role === 'assistant') {
       items = closeStreamingAssistant(items);
       
@@ -160,7 +163,7 @@ function reducer(state: State, action: Action): State {
         ...state,
         status: 'streaming',
         errorText: null,
-        items: [...state.items, { kind: 'user', text: action.text }],
+        items: [...state.items, { kind: 'user', text: action.text, attachments: action.attachments }],
       };
 
     case 'append-chunk': {
@@ -279,7 +282,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
   const [showSessions, setShowSessions] = useState(false);
   const [showAllAgents, setShowAllAgents] = useState(false);
 
-  const [activeScreen, setActiveScreen] = useState<'chat' | 'settings'>('chat');
+  const [activeScreen, setActiveScreen] = useState<'chat' | 'settings' | 'projects'>('chat');
   const [settingsData, setSettingsData] = useState<{
     config: CaretakerConfig;
     agents: AgentConfig[];
@@ -369,11 +372,23 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
     return () => window.removeEventListener('message', handle);
   }, [selectedAgentId]);
 
-  const onSend = (text: string): void => {
+  const onSend = (
+    text: string,
+    attachments?: Array<{ name: string; mime: string; base64: string }>,
+  ): void => {
     const trimmed = text.trim();
-    if (!trimmed || chatState.status === 'streaming') return;
-    dispatch({ kind: 'send-user', text: trimmed });
-    postMessage({ type: 'start', prompt: trimmed });
+    if (!trimmed && (!attachments || attachments.length === 0)) return;
+    if (chatState.status === 'streaming') return;
+
+    const localAttachments: ToolAttachmentRecord[] = (attachments || []).map((att) => ({
+      mime: att.mime,
+      id: att.name,
+      name: att.name,
+      base64: att.base64,
+    }));
+
+    dispatch({ kind: 'send-user', text: trimmed, attachments: localAttachments });
+    postMessage({ type: 'start', prompt: trimmed, attachments });
   };
 
   const onConfirm = (id: string, decision: ConfirmDecision): void => {
@@ -435,6 +450,39 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
 
   const selectedAgentName = agents.find((a) => a.id === selectedAgentId)?.name;
   const activeAgent = agents.find((a) => a.id === selectedAgentId);
+
+  if (activeScreen === 'projects') {
+    return (
+      <div className="app" style={{ height: '100%' }}>
+        <header className="app__header">
+          <div className="app__header-row">
+            <div className="app__logo-title-wrapper" onClick={() => setActiveScreen('chat')} style={{ cursor: 'pointer' }}>
+              <img src={logo} alt="Caretaker" className="app__logo" />
+              <span>Caretaker</span>
+            </div>
+            <div className="app__controls">
+              <button className="app__sessions-btn" onClick={() => setActiveScreen('chat')}>
+                💬 Chat
+              </button>
+              <button
+                className="app__settings-btn"
+                onClick={() => {
+                  setActiveScreen('settings');
+                  postMessage({ type: 'getSettingsData' });
+                }}
+                title="Caretaker Settings"
+              >
+                ⚙️ Settings
+              </button>
+            </div>
+          </div>
+        </header>
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <ProjectsTab agents={agents} />
+        </div>
+      </div>
+    );
+  }
 
   if (activeScreen === 'settings') {
     return (
@@ -549,7 +597,16 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
             )}
           </div>
 
-          <div className="app__sidebar-footer">
+          <div className="app__sidebar-footer" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <button
+              className="app__sidebar-settings-btn"
+              onClick={() => {
+                setActiveScreen('projects');
+              }}
+              title="Projects & Autonomous Tasks"
+            >
+              <span>📁 Projects</span>
+            </button>
             <button
               className="app__sidebar-settings-btn"
               onClick={() => {
@@ -580,6 +637,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
               </header>
               <MessageList
                 items={chatState.items}
+                sessionId={selectedSessionId}
                 isStreaming={chatState.status === 'streaming'}
                 agentName={selectedAgentName}
                 trailing={chatState.pendingConfirms.map((p) => (
@@ -628,6 +686,15 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
                 ))}
               </select>
             </div>
+            <button
+              className="app__sessions-btn"
+              onClick={() => {
+                setActiveScreen('projects');
+              }}
+              title="Projects & Autonomous Tasks"
+            >
+              📁 Projects
+            </button>
             <button
               className="app__sessions-btn"
               onClick={onToggleSessions}
@@ -692,6 +759,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
 
       <MessageList
         items={chatState.items}
+        sessionId={selectedSessionId}
         isStreaming={chatState.status === 'streaming'}
         agentName={selectedAgentName}
         trailing={chatState.pendingConfirms.map((p) => (

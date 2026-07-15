@@ -46,6 +46,16 @@ export async function resolveAgentTools(
 ): Promise<Tool[]> {
   const tools = registry.filtered(agent.allowedTools);
 
+  if (agent.allowedTools.includes('mcp__task__*')) {
+    const taskTools = registry.list().filter((t) => t.name.startsWith('mcp__task__'));
+    const have = new Set(tools.map((t) => t.name));
+    for (const t of taskTools) {
+      if (!have.has(t.name)) {
+        tools.push(t);
+      }
+    }
+  }
+
   autoInclude(tools, registry, ALWAYS_ON_TOOL_NAMES);
 
   if ((agent.plugins ?? []).length > 0) {

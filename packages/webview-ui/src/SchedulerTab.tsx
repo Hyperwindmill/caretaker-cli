@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { CaretakerConfig, AgentConfig, ScheduledTaskConfig } from 'caretaker-cli/types';
+import type { CaretakerConfig, AgentConfig, ScheduledTaskConfig } from 'caretaker-types';
 import type { ViewToHost, ChatMessage } from './bridge.js';
 import type { ChatItem } from './App.js';
 import { MessageList } from './MessageList.js';

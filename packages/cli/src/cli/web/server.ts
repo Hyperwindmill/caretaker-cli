@@ -2,11 +2,13 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
 import { watch, existsSync, mkdirSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import { WebSocketServer, WebSocket } from 'ws';
 
 import * as harness from '../../harness/index.js';
+import { getDb, Task, getTaskById, saveTask, createTask, addTaskMessage, runQuery } from '../../store/db.js';
 import {
   loadAgents,
   loadConfig,
@@ -31,13 +33,17 @@ import {
   createSession,
   userMessage,
   appendMessage,
+  saveAttachment,
+  attachmentsDir,
   type MessageRecord,
   type SessionMetaRecord,
+  type ToolAttachmentRecord,
 } from '../../session/index.js';
 
 import type { AgentConfig, ProviderConfig, PluginsFile, McpServerConfig } from '../../types.js';
 import type { ConfirmDecision, HostToView, ViewToHost } from 'webview-ui/bridge';
 import { startBackgroundScheduler, loadTaskRuns } from './scheduler.js';
+import { fsRouter } from './fs.js';
 
 // Resolve Webview static files path
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -81,7 +87,11 @@ export class WebSessionController {
     return computeContextUsage(this.history, this.opts.agent.model);
   }
 
-  async start(prompt: string, cb: ChatCallbacks): Promise<void> {
+  async start(
+    prompt: string,
+    cb: ChatCallbacks,
+    rawAttachments?: Array<{ name: string; mime: string; base64: string }>,
+  ): Promise<void> {
     if (this.inflight) {
       cb.onError('A turn is already in progress.');
       return;
@@ -105,7 +115,20 @@ export class WebSessionController {
       }
 
       const meta = this.metaRecord!;
-      const userMsg = userMessage(prompt);
+
+      const attachmentRecords: ToolAttachmentRecord[] = [];
+      if (rawAttachments && rawAttachments.length > 0) {
+        for (const att of rawAttachments) {
+          const buf = Buffer.from(att.base64, 'base64');
+          const ext = path.extname(att.name) || '';
+          const id = await saveAttachment(meta.id, buf, ext);
+          attachmentRecords.push({ mime: att.mime, id, name: att.name });
+        }
+      }
+
+      const userMsg = userMessage(prompt, {
+        attachments: attachmentRecords.length > 0 ? attachmentRecords : undefined,
+      });
       await appendMessage(meta, userMsg);
       const priorHistory = [...this.history];
       this.history.push(userMsg);
@@ -119,6 +142,8 @@ export class WebSessionController {
           history: priorHistory,
           signal: ac.signal,
           workingDir: this.opts.workingDir,
+          sessionId: meta.id,
+          promptAttachments: attachmentRecords.length > 0 ? attachmentRecords : undefined,
         },
         {
           onChunk: cb.onChunk,
@@ -151,6 +176,8 @@ export class WebSessionController {
 
 export async function startServer(port: number, host: string): Promise<void> {
   const app = new Hono();
+
+  app.route('/api/fs', fsRouter);
 
   // Pure-Node static serving with absolute path validation and fallback
   app.get('/', (c) => {
@@ -187,6 +214,195 @@ export async function startServer(port: number, host: string): Promise<void> {
     const file = fs.readFileSync(path.join(webviewDistPath, 'standalone.css.map'));
     c.header('Content-Type', 'application/json');
     return c.body(file);
+  });
+
+  // Attachments REST endpoint
+  app.get('/api/attachments/:sessionId/:id', async (c) => {
+    const sessionId = c.req.param('sessionId');
+    const id = c.req.param('id');
+    try {
+      const filePath = path.join(attachmentsDir(sessionId), id);
+      if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+        return c.text('Attachment not found', 404);
+      }
+      
+      const fileBuffer = fs.readFileSync(filePath);
+      const ext = path.extname(id).toLowerCase();
+      let contentType = 'application/octet-stream';
+      if (ext === '.png') contentType = 'image/png';
+      else if (ext === '.jpg' || ext === '.jpeg') contentType = 'image/jpeg';
+      else if (ext === '.webp') contentType = 'image/webp';
+      else if (ext === '.gif') contentType = 'image/gif';
+      else if (ext === '.pdf') contentType = 'application/pdf';
+      else if (ext === '.txt') contentType = 'text/plain; charset=utf-8';
+      else if (ext === '.json') contentType = 'application/json';
+      
+      c.header('Content-Type', contentType);
+      return c.body(fileBuffer);
+    } catch (err) {
+      return c.text(`Failed to serve attachment: ${err}`, 500);
+    }
+  });
+
+  const db = getDb();
+
+  // Projects REST endpoints
+  app.get('/api/projects', async (c) => {
+    try {
+      const config = await loadConfig();
+      return c.json(config.projects || []);
+    } catch (err) {
+      return c.json([], 200);
+    }
+  });
+
+  app.post('/api/projects', async (c) => {
+    try {
+      const body = await c.req.json();
+      const { name, description, workingDir, agentId } = body;
+      const config = await loadConfig();
+      if (!config.projects) {
+        config.projects = [];
+      }
+      const nextId = config.projects.length > 0 ? Math.max(...config.projects.map((p) => p.id)) + 1 : 1;
+      const project = {
+        id: nextId,
+        name,
+        description: description || '',
+        workingDir,
+        agentId,
+        active: true,
+      };
+      config.projects.push(project);
+      await saveConfig(config);
+      return c.json({ ok: true });
+    } catch (err) {
+      return c.json({ error: String(err) }, 500);
+    }
+  });
+
+  app.delete('/api/projects/:id', async (c) => {
+    try {
+      const id = Number(c.req.param('id'));
+      const config = await loadConfig();
+      if (config.projects) {
+        config.projects = config.projects.filter((p) => p.id !== id);
+        await saveConfig(config);
+      }
+      await runQuery(`DELETE FROM tasks WHERE projectId = ${id}`);
+      return c.json({ ok: true });
+    } catch (err) {
+      return c.json({ error: String(err) }, 500);
+    }
+  });
+
+  // Tasks REST endpoints
+  app.get('/api/projects/:id/tasks', async (c) => {
+    const id = Number(c.req.param('id'));
+    try {
+      const rows = await runQuery(`SELECT * FROM tasks WHERE projectId = ${id}`);
+      return c.json(rows);
+    } catch (err) {
+      return c.json([], 200);
+    }
+  });
+
+  app.post('/api/projects/:id/tasks', async (c) => {
+    const projectId = Number(c.req.param('id'));
+    const body = await c.req.json();
+    const { title, objective, checklist, startActive } = body;
+
+    const checklistItems = (checklist || []).map((item: any, idx: number) => ({
+      id: randomUUID(),
+      text: item.text,
+      status: 'pending',
+      order: idx,
+    }));
+
+    await createTask({
+      projectId,
+      title,
+      objective,
+      checklist: checklistItems,
+      status: startActive ? 'active' : 'draft',
+      blockedReason: null,
+      noProgressCount: 0,
+      maxNoProgress: 5,
+      lockedAt: null,
+    });
+    return c.json({ ok: true });
+  });
+
+  app.get('/api/tasks/:id/messages', async (c) => {
+    const taskId = Number(c.req.param('id'));
+    try {
+      const rows = (await runQuery(`SELECT * FROM task_messages WHERE taskId = ${taskId}`)) as any[];
+      rows.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      return c.json(rows);
+    } catch (err) {
+      return c.json([], 200);
+    }
+  });
+
+  app.post('/api/tasks/:id/messages', async (c) => {
+    const taskId = Number(c.req.param('id'));
+    const body = await c.req.json();
+    const { content } = body;
+
+    await addTaskMessage({
+      taskId,
+      role: 'user',
+      messageType: 'chat',
+      content,
+    });
+
+    // Wake up/unpause/unblock the task so it runs on next scheduler tick
+    const task = await getTaskById(taskId);
+    if (task) {
+      task.status = 'active';
+      task.blockedReason = null;
+      task.noProgressCount = 0;
+      task.updatedAt = new Date().toISOString();
+      await saveTask(task);
+    }
+
+    return c.json({ ok: true });
+  });
+
+  app.post('/api/tasks/:id/status', async (c) => {
+    const taskId = Number(c.req.param('id'));
+    const body = await c.req.json();
+    const { status } = body;
+
+    const task = await getTaskById(taskId);
+    if (task) {
+      task.status = status;
+      if (status === 'active') {
+        task.noProgressCount = 0;
+        task.blockedReason = null;
+      }
+      task.updatedAt = new Date().toISOString();
+      await saveTask(task);
+    }
+
+    return c.json({ ok: true });
+  });
+
+  app.post('/api/tasks/:id/checklist-item', async (c) => {
+    const taskId = Number(c.req.param('id'));
+    const body = await c.req.json();
+    const { itemId, status } = body;
+
+    const task = await getTaskById(taskId);
+    if (task) {
+      task.checklist = (task.checklist || []).map((item) =>
+        item.id === itemId ? { ...item, status } : item,
+      );
+      task.updatedAt = new Date().toISOString();
+      await saveTask(task);
+    }
+
+    return c.json({ ok: true });
   });
 
   const nodeServer = serve({
@@ -250,6 +466,28 @@ export async function startServer(port: number, host: string): Promise<void> {
         // Select the first agent as default if none is active
         if (!currentAgent && agents.length > 0) {
           await selectAgentInternal(agents[0], providers);
+          return;
+        }
+
+        // If currentAgent is set, check if it was modified on disk and refresh in-place
+        if (currentAgent) {
+          const freshAgent = agents.find((a) => a.id === currentAgent!.id);
+          if (freshAgent) {
+            // Detect fields that affect runtime and update them in-place
+            const needsToolRefresh =
+              freshAgent.allowedTools.join('|') !== currentAgent.allowedTools.join('|') ||
+              (freshAgent.plugins ?? []).join('|') !== (currentAgent.plugins ?? []).join('|') ||
+              (freshAgent.mcpServers ?? []).join('|') !== (currentAgent.mcpServers ?? []).join('|');
+
+            // Update currentAgent fields that may have changed
+            currentAgent = { ...freshAgent };
+
+            if (needsToolRefresh && currentProvider) {
+              // Re-resolve tools if allowedTools/plugins/mcpServers changed
+              currentTools = await harness.resolveAgentTools(currentAgent, harness.tools);
+              post({ type: 'contextUsage', usage: controller?.getContextUsage() ?? null });
+            }
+          }
         }
       } catch (err) {
         post({
@@ -322,7 +560,10 @@ export async function startServer(port: number, host: string): Promise<void> {
           loadPlugins(),
           loadMcpServers(),
         ]);
-        const availableTools = harness.tools.list().map((t) => t.name);
+        const availableTools = harness.tools.list()
+          .map((t) => t.name)
+          .filter((name) => !name.startsWith('mcp__task__'));
+        availableTools.push('mcp__task__*');
         post({
           type: 'settingsDataLoaded',
           config,
@@ -368,7 +609,6 @@ export async function startServer(port: number, host: string): Promise<void> {
             await loadAgentsAndSend();
             return;
           case 'start': {
-            const workspaceFolder = process.cwd(); // Default local-first workspace folder!
             if (!currentAgent || !currentProvider || !currentTools) {
               post({
                 type: 'error',
@@ -376,6 +616,10 @@ export async function startServer(port: number, host: string): Promise<void> {
               });
               return;
             }
+
+            const workspaceFolder = (currentAgent.workingDir && currentAgent.workingDir.trim())
+              ? currentAgent.workingDir.trim()
+              : process.cwd();
 
             if (!controller) {
               controller = new WebSessionController({
@@ -387,32 +631,36 @@ export async function startServer(port: number, host: string): Promise<void> {
               });
             }
 
-            await controller.start(msg.prompt, {
-              onChunk: (text) => post({ type: 'chunk', text }),
-              onToolCall: (id, name, args) => post({ type: 'tool_call', id, name, args }),
-              onToolResult: (id, content) => post({ type: 'tool_result', id, content }),
-              askConfirm: (id, toolName, args) =>
-                new Promise<ConfirmDecision>((resolve) => {
-                  pendingConfirms.set(id, resolve);
-                  post({ type: 'permission_request', id, toolName, args });
-                }),
-              onError: (message) => {
-                resolveAllPending('reject');
-                post({ type: 'error', message });
+            await controller.start(
+              msg.prompt,
+              {
+                onChunk: (text) => post({ type: 'chunk', text }),
+                onToolCall: (id, name, args) => post({ type: 'tool_call', id, name, args }),
+                onToolResult: (id, content) => post({ type: 'tool_result', id, content }),
+                askConfirm: (id, toolName, args) =>
+                  new Promise<ConfirmDecision>((resolve) => {
+                    pendingConfirms.set(id, resolve);
+                    post({ type: 'permission_request', id, toolName, args });
+                  }),
+                onError: (message) => {
+                  resolveAllPending('reject');
+                  post({ type: 'error', message });
+                },
+                onDone: () => {
+                  resolveAllPending('reject');
+                  post({ type: 'done' });
+                  if (controller) {
+                    const usage = controller.getContextUsage();
+                    post({ type: 'contextUsage', usage });
+                  }
+                },
+                onSessionCreated: (sessionId: string) => {
+                  currentSessionId = sessionId;
+                  void loadSessionsAndSend(currentAgent!.id);
+                },
               },
-              onDone: () => {
-                resolveAllPending('reject');
-                post({ type: 'done' });
-                if (controller) {
-                  const usage = controller.getContextUsage();
-                  post({ type: 'contextUsage', usage });
-                }
-              },
-              onSessionCreated: (sessionId: string) => {
-                currentSessionId = sessionId;
-                void loadSessionsAndSend(currentAgent!.id);
-              },
-            });
+              msg.attachments,
+            );
             return;
           }
           case 'abort':

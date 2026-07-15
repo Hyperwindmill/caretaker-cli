@@ -10,8 +10,11 @@
 //  - tool → {role:"tool", tool_call_id, content}; orphan tool rows (no
 //    matching tool_use id in any prior assistant row) are dropped.
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { AssistantPart, MessageRecord } from '../session/types.js';
 import type { ChatMessage } from './provider.js';
+import { attachmentsDir } from '../session/store.js';
 
 function textConcat(parts: AssistantPart[]): string {
   return parts
@@ -20,13 +23,48 @@ function textConcat(parts: AssistantPart[]): string {
     .join('');
 }
 
-export function mapMessagesToChat(messages: MessageRecord[]): ChatMessage[] {
+export function mapMessagesToChat(messages: MessageRecord[], sessionId?: string): ChatMessage[] {
   const out: ChatMessage[] = [];
   const knownToolCallIds = new Set<string>();
 
   for (const m of messages) {
     if (m.role === 'user') {
-      out.push({ role: 'user', content: m.content });
+      if (m.attachments && m.attachments.length > 0) {
+        let textContent = m.content;
+        const imageParts: any[] = [];
+        for (const att of m.attachments) {
+          const displayName = att.name || att.id;
+          textContent += `\n\n[Allegato: ${displayName} (ID: ${att.id})]`;
+          if (att.mime.startsWith('image/')) {
+            try {
+              const filePath = join(attachmentsDir(sessionId || 'default'), att.id);
+              const data = readFileSync(filePath);
+              const base64 = data.toString('base64');
+              imageParts.push({
+                type: 'image_url',
+                image_url: {
+                  url: `data:${att.mime};base64,${base64}`,
+                },
+              });
+            } catch (err) {
+              console.error(`[history] failed to read user image attachment ${att.id}:`, err);
+            }
+          }
+        }
+        if (imageParts.length > 0) {
+          out.push({
+            role: 'user',
+            content: [
+              { type: 'text', text: textContent },
+              ...imageParts,
+            ],
+          });
+        } else {
+          out.push({ role: 'user', content: textContent });
+        }
+      } else {
+        out.push({ role: 'user', content: m.content });
+      }
       continue;
     }
     if (m.role === 'assistant') {
@@ -54,6 +92,28 @@ export function mapMessagesToChat(messages: MessageRecord[]): ChatMessage[] {
       const id = m.toolCallId ?? '';
       if (!id || !knownToolCallIds.has(id)) continue;
       out.push({ role: 'tool', tool_call_id: id, content: m.content });
+
+      if (m.attachments && m.attachments.length > 0) {
+        const parts: any[] = [{ type: 'text', text: 'Attachment from tool:' }];
+        for (const att of m.attachments) {
+          try {
+            const filePath = join(attachmentsDir(sessionId || 'default'), att.id);
+            const data = readFileSync(filePath);
+            const base64 = data.toString('base64');
+            parts.push({
+              type: 'image_url',
+              image_url: {
+                url: `data:${att.mime};base64,${base64}`,
+              },
+            });
+          } catch (err) {
+            console.error(`[history] failed to read attachment ${att.id}:`, err);
+          }
+        }
+        if (parts.length > 1) {
+          out.push({ role: 'user', content: parts });
+        }
+      }
     }
   }
 

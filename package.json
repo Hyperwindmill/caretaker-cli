@@ -2,7 +2,17 @@
   "name": "caretaker-cli-monorepo",
   "private": true,
   "version": "0.0.0",
-  "description": "Caretaker monorepo root — CLI and IDE extensions.",
+  "description": "Caretaker — a multi-surface AI agent harness: CLI/TUI, local web GUI, Electron desktop app, and VSCode sidebar.",
+  "license": "SEE LICENSE IN LICENSE",
+  "author": "Hyperwindmill <hyperwindmill@gmail.com>",
+  "homepage": "https://github.com/Hyperwindmill/caretaker-cli",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Hyperwindmill/caretaker-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Hyperwindmill/caretaker-cli/issues"
+  },
   "scripts": {
     "dev": "pnpm -F caretaker-cli dev",
     "build": "pnpm -r build",
@@ -11,6 +21,18 @@
     "lint": "pnpm -r lint",
     "format": "pnpm -r format",
     "format:check": "pnpm -r format:check",
-    "link:global": "pnpm -F caretaker-cli link:global"
+    "link:global": "pnpm -F caretaker-cli link:global",
+    "desktop:build": "pnpm -F caretaker-desktop build",
+    "desktop:dev": "pnpm build && pnpm -F caretaker-desktop dev",
+    "desktop:pack": "pnpm build && pnpm -F caretaker-desktop exec electron-builder --dir",
+    "desktop:dist": "pnpm build && pnpm -F caretaker-desktop exec electron-builder",
+    "vscode:package": "pnpm build && pnpm -F caretaker-vscode package",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.31.0",
+    "husky": "^9.1.7"
   }
 }

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@2.31.0/schema.json",
+  "changelog": ["@changesets/cli/changelog", { "privatePackages": true }],
+  "commit": ["@changesets/cli/commit", { "skipCI": "add" }],
+  "fixed": [
+    ["caretaker-cli", "caretaker-desktop", "caretaker-vscode", "webview-ui", "caretaker-types"]
+  ],
+  "linked": [],
+  "access": "restricted",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": []
+}

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import type { CaretakerConfig, AgentConfig, PluginsFile, McpServerConfig } from 'caretaker-cli/types';
+import type { CaretakerConfig, AgentConfig, PluginsFile, McpServerConfig } from 'caretaker-types';
 import type { ViewToHost, ModelsResult } from './bridge.js';
+import FolderPicker from './FolderPicker.js';
 
 interface AgentsTabProps {
   config: CaretakerConfig;
@@ -94,8 +95,13 @@ export function AgentsTab({
     const initialTools: Record<string, boolean> = {};
     const initialConfirm: Record<string, boolean> = {};
     availableTools.forEach(t => {
-      initialTools[t] = agent.allowedTools.includes(t);
-      initialConfirm[t] = agent.confirmTools?.includes(t) || false;
+      if (t === 'mcp__task__*') {
+        initialTools[t] = agent.allowedTools.includes(t) || agent.allowedTools.some(x => x.startsWith('mcp__task__'));
+        initialConfirm[t] = agent.confirmTools?.includes(t) || agent.confirmTools?.some(x => x.startsWith('mcp__task__')) || false;
+      } else {
+        initialTools[t] = agent.allowedTools.includes(t);
+        initialConfirm[t] = agent.confirmTools?.includes(t) || false;
+      }
     });
     setSelectedTools(initialTools);
     setConfirmTools(initialConfirm);
@@ -234,10 +240,11 @@ export function AgentsTab({
       {errorMsg && <div className="validation-error">⚠ {errorMsg}</div>}
 
       {showForm ? (
-        <div className="glass-form glass-form--scrollable">
+        <div className="glass-form">
           <h4>{isCreating ? 'Create Agent' : `Edit Agent: ${editingAgent?.name}`}</h4>
           
-          <div className="form-group">
+          <div className="glass-form__body">
+            <div className="form-group">
             <label htmlFor="agent-name">Agent Name</label>
             <input
               id="agent-name"
@@ -323,12 +330,11 @@ export function AgentsTab({
 
           <div className="form-group">
             <label htmlFor="agent-dir">Working Directory (Absolute Path - Optional)</label>
-            <input
+            <FolderPicker
               id="agent-dir"
-              type="text"
               placeholder="e.g. /home/user/my-project"
               value={workingDir}
-              onChange={(e) => setWorkingDir(e.target.value)}
+              onChange={setWorkingDir}
             />
           </div>
 
@@ -338,8 +344,40 @@ export function AgentsTab({
             <div className="chips-container-vertical">
               <div className="chips-header-row">
                 <span className="chip-col-name">Tool</span>
-                <span className="chip-col-check">Allow</span>
-                <span className="chip-col-check">Ask First</span>
+                <span className="chip-col-check">
+                  <span>Allow</span>
+                  <input
+                    type="checkbox"
+                    checked={availableTools.length > 0 && availableTools.every(t => selectedTools[t])}
+                    onChange={(e) => {
+                      const nextTools: Record<string, boolean> = {};
+                      availableTools.forEach(t => {
+                        nextTools[t] = e.target.checked;
+                      });
+                      setSelectedTools(nextTools);
+                      if (!e.target.checked) {
+                        setConfirmTools({});
+                      }
+                    }}
+                  />
+                </span>
+                <span className="chip-col-check">
+                  <span>Ask First</span>
+                  <input
+                    type="checkbox"
+                    disabled={!availableTools.some(t => selectedTools[t])}
+                    checked={availableTools.length > 0 && availableTools.every(t => !selectedTools[t] || confirmTools[t])}
+                    onChange={(e) => {
+                      const nextConfirm: Record<string, boolean> = {};
+                      availableTools.forEach(t => {
+                        if (selectedTools[t]) {
+                          nextConfirm[t] = e.target.checked;
+                        }
+                      });
+                      setConfirmTools(nextConfirm);
+                    }}
+                  />
+                </span>
               </div>
               {availableTools.map(tool => (
                 <div key={tool} className="chip-row">
@@ -419,6 +457,7 @@ export function AgentsTab({
               </div>
             </div>
           )}
+          </div>
 
           <div className="form-actions">
             <button className="btn btn--secondary" onClick={cancelForm}>

@@ -30,6 +30,7 @@ import type {
   MessageRecord,
   Session,
   SessionMetaRecord,
+  ToolAttachmentRecord,
 } from './types.js';
 
 export function dataDir(): string {
@@ -256,13 +257,15 @@ export async function updateTitle(
 export async function deleteSession(agentId: string, sessionId: string): Promise<void> {
   const path = sessionPath(agentId, sessionId);
   await rm(path, { force: true });
+  const attDir = attachmentsDir(sessionId);
+  await rm(attDir, { recursive: true, force: true });
 }
 
 // ─── Message builders ───────────────────────────────────────────────────────
 
 export function userMessage(
   content: string,
-  opts?: { id?: string; createdAt?: string },
+  opts?: { id?: string; createdAt?: string; attachments?: ToolAttachmentRecord[] },
 ): MessageRecord {
   return {
     v: 1,
@@ -270,6 +273,7 @@ export function userMessage(
     id: opts?.id ?? randomUUID(),
     role: 'user',
     content,
+    ...(opts?.attachments ? { attachments: opts.attachments } : {}),
     createdAt: opts?.createdAt ?? nowIso(),
   };
 }
@@ -292,9 +296,33 @@ export function assistantMessage(
   };
 }
 
+export function attachmentsDir(sessionId: string): string {
+  return join(dataDir(), 'attachments', sessionId);
+}
+
+export async function saveAttachment(
+  sessionId: string,
+  data: Buffer,
+  extension: string,
+): Promise<string> {
+  const uuid = randomUUID();
+  const ext = extension.startsWith('.') ? extension : `.${extension}`;
+  const id = `${uuid}${ext}`;
+  const dir = attachmentsDir(sessionId);
+  await ensureDir(dir);
+  await writeFile(join(dir, id), data);
+  return id;
+}
+
+export async function readAttachment(sessionId: string, id: string): Promise<Buffer> {
+  const path = join(attachmentsDir(sessionId), id);
+  return await readFile(path);
+}
+
 export function toolMessage(
   toolCallId: string,
   content: string,
+  attachments?: ToolAttachmentRecord[],
   opts?: { id?: string; createdAt?: string },
 ): MessageRecord {
   return {
@@ -304,6 +332,7 @@ export function toolMessage(
     role: 'tool',
     toolCallId,
     content,
+    ...(attachments ? { attachments } : {}),
     createdAt: opts?.createdAt ?? nowIso(),
   };
 }
