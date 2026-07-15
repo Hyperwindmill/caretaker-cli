@@ -117,6 +117,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download deb artifact
         uses: actions/download-artifact@v4
         with:
@@ -135,9 +138,29 @@ jobs:
           name: vsix-package
           path: dist/vsix
 
-      - name: Create/update GitHub Release
+      - name: Assemble release notes from changesets changelogs
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          : > release_notes.md
+          for pkg in cli desktop vscode-extension webview-ui types; do
+            f="packages/$pkg/CHANGELOG.md"
+            [ -f "$f" ] || continue
+            section=$(awk -v ver="$VERSION" '$0 == "## " ver {flag=1; next} /^## / {flag=0} flag' "$f")
+            # skip packages whose section only contains "Updated dependencies" bumps
+            if printf '%s\n' "$section" | grep -qE '^- [0-9a-f]+: '; then
+              name=$(head -1 "$f" | sed 's/^# //')
+              printf '## %s\n%s\n\n' "$name" "$section" >> release_notes.md
+            fi
+          done
+          if [ ! -s release_notes.md ]; then
+            echo "_No changelog entries found for version ${VERSION}._" > release_notes.md
+          fi
+
+      - name: Create draft GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          draft: true
+          body_path: release_notes.md
           files: |
             dist/deb/*.deb
             dist/windows/*.exe
