@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { CaretakerConfig, AgentConfig, ProjectConfig } from 'caretaker-types';
 import type { ViewToHost } from './bridge.js';
 import FolderPicker from './FolderPicker.js';
+import { WarningIcon, FolderIcon, EditIcon, DeleteIcon } from './icons.js';
 
 interface ProjectsTabSettingsProps {
   config: CaretakerConfig;
@@ -136,7 +137,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
         )}
       </div>
 
-      {errorMsg && <div className="validation-error">⚠ {errorMsg}</div>}
+      {errorMsg && <div className="validation-error"><WarningIcon size={14} /> {errorMsg}</div>}
 
       {showForm ? (
         <div className="glass-form">
@@ -209,7 +210,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
               return (
                 <div key={proj.id} className="settings-card">
                   <div className="settings-card__body">
-                    <div className="settings-card__title">📁 {proj.name}</div>
+                    <div className="settings-card__title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><FolderIcon size={14} /> {proj.name}</div>
                     {proj.description && <div className="settings-card__subtitle" style={{ fontSize: '11px', opacity: 0.8, marginBottom: '4px' }}>{proj.description}</div>}
                     <div className="settings-card__subtitle" style={{ fontFamily: 'var(--font-mono)', fontSize: '10px' }}>{proj.workingDir}</div>
                     <div className="settings-card__badge" style={{ marginTop: '6px' }}>Agent: {assignedAgent}</div>
@@ -219,15 +220,17 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
                       className="icon-btn"
                       onClick={() => startEdit(proj)}
                       title="Edit project"
+                      aria-label="Edit project"
                     >
-                      ✏️
+                      <EditIcon size={14} />
                     </button>
                     <button
                       className="icon-btn icon-btn--danger"
                       onClick={() => deleteProject(proj.id)}
                       title="Delete project"
+                      aria-label="Delete project"
                     >
-                      🗑️
+                      <DeleteIcon size={14} />
                     </button>
                   </div>
                 </div>

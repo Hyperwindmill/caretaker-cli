@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import type { PluginsFile, PluginSource, PluginRecord } from 'caretaker-types';
 import type { ViewToHost, RefreshOutcome } from './bridge.js';
 import FolderPicker from './FolderPicker.js';
+import { WarningIcon, CloseIcon, GitIcon, FolderIcon, EditIcon, DeleteIcon } from './icons.js';
 
 interface PluginsTabProps {
   pluginsFile: PluginsFile;
@@ -145,13 +146,13 @@ export function PluginsTab({
         )}
       </div>
 
-      {errorMsg && <div className="validation-error">⚠ {errorMsg}</div>}
+      {errorMsg && <div className="validation-error"><WarningIcon size={13} /> {errorMsg}</div>}
 
       {refreshOutcome && (
         <div className={`sync-banner ${refreshOutcome.error ? 'sync-banner--error' : 'sync-banner--success'}`}>
           <div className="sync-banner__title">
             {refreshOutcome.error ? 'Sync Failed' : 'Sync Succeeded'}
-            <button className="sync-banner__close" onClick={() => setRefreshOutcome(null)}>×</button>
+            <button className="sync-banner__close" onClick={() => setRefreshOutcome(null)} aria-label="Dismiss"><CloseIcon size={13} /></button>
           </div>
           <div className="sync-banner__body">
             {refreshOutcome.error ? (
@@ -275,7 +276,8 @@ export function PluginsTab({
                 <div key={source.id} className="settings-card settings-card--plugin">
                   <div className="settings-card__body">
                     <div className="settings-card__title">
-                      {source.kind === 'git' ? '📦 Git Source' : '📁 Local Source'}
+                      {source.kind === 'git' ? <GitIcon size={13} /> : <FolderIcon size={13} />}
+                      {source.kind === 'git' ? ' Git Source' : ' Local Source'}
                       {isRefreshing && <span className="settings-card__badge-managed">Syncing...</span>}
                     </div>
                     <div className="settings-card__subtitle text-ellipsis" title={source.url}>
@@ -324,16 +326,18 @@ export function PluginsTab({
                         disabled={isRefreshing}
                         onClick={() => startEdit(source)}
                         title="Edit source"
+                        aria-label="Edit source"
                       >
-                        ✏️
+                        <EditIcon size={13} />
                       </button>
                       <button
                         className="icon-btn icon-btn--danger"
                         disabled={isRefreshing}
                         onClick={() => deleteSource(source.id)}
                         title="Delete source"
+                        aria-label="Delete source"
                       >
-                        🗑️
+                        <DeleteIcon size={13} />
                       </button>
                     </div>
                   </div>

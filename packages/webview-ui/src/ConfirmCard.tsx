@@ -5,6 +5,7 @@
 
 import type { ConfirmDecision } from './bridge.js';
 import type { PendingConfirm } from './App.js';
+import { LockIcon } from './icons.js';
 
 export interface ConfirmCardProps {
   pending: PendingConfirm;
@@ -16,7 +17,7 @@ export function ConfirmCard({ pending, onDecide }: ConfirmCardProps) {
   return (
     <div className="confirm">
       <div className="confirm__header">
-        <span className="confirm__icon">🔒</span>
+        <span className="confirm__icon"><LockIcon size={14} /></span>
         <span className="confirm__prompt">
           Allow <code className="confirm__tool">{pending.toolName}</code>?
         </span>

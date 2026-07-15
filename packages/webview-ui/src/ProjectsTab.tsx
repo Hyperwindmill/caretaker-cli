@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import type { AgentSummary } from './bridge.js';
+import { FolderIcon, DeleteIcon, WarningIcon, ToolIcon, SettingsIcon, PauseIcon, ActivateIcon } from './icons.js';
 
 interface Project {
   id: number;
@@ -339,7 +340,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
                     onClick={() => setSelectedProjectId(project.id)}
                   >
                     <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                      <div style={{ fontWeight: 600, fontSize: '12px' }}>📁 {project.name}</div>
+                      <div style={{ fontWeight: 600, fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}><FolderIcon size={12} /> {project.name}</div>
                       <div style={{ fontSize: '10px', opacity: 0.7 }} title={project.workingDir}>
                         {project.workingDir.length > 25 ? `...${project.workingDir.slice(-22)}` : project.workingDir}
                       </div>
@@ -359,8 +360,9 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
                         opacity: 0.8,
                       }}
                       title="Delete Project"
+                      aria-label="Delete Project"
                     >
-                      🗑️
+                      <DeleteIcon size={12} />
                     </button>
                   </div>
                 );
@@ -506,9 +508,17 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
                     <button
                       className="confirm__btn confirm__btn--primary"
                       onClick={() => handleToggleTaskStatus(selectedTask)}
-                      style={{ padding: '3px 10px', fontSize: '10px' }}
+                      style={{ padding: '3px 10px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                     >
-                      {selectedTask.status === 'active' ? '⏸️ Pause' : '▶️ Activate'}
+                      {selectedTask.status === 'active' ? (
+                        <>
+                          <PauseIcon size={12} /> Pause
+                        </>
+                      ) : (
+                        <>
+                          <ActivateIcon size={12} /> Activate
+                        </>
+                      )}
                     </button>
                   </div>
 
@@ -533,7 +543,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
                         fontSize: '12px',
                       }}
                     >
-                      <strong>⚠️ Blocked Reason:</strong>
+                      <strong><WarningIcon size={13} /> Blocked Reason:</strong>
                       <p style={{ margin: '4px 0 0 0' }}>{selectedTask.blockedReason}</p>
                     </div>
                   )}
@@ -616,7 +626,13 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
                                 textAlign: 'center',
                               }}
                             >
-                              {isBlock ? '⚠️ Task Blocked: ' : isToolCall ? '🛠️ Tool Call: ' : '⚙️ '}
+                              {isBlock ? (
+                                <><WarningIcon size={12} /> Task Blocked: </>
+                              ) : isToolCall ? (
+                                <><ToolIcon size={12} /> Tool Call: </>
+                              ) : (
+                                <><SettingsIcon size={12} /> </>
+                              )}
                               {msg.content}
                             </div>
                           );
@@ -723,7 +739,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
             }}
           >
             <div className="confirm__header">
-              <span style={{ fontSize: '18px' }}>📁</span>
+              <span style={{ fontSize: '18px', display: 'inline-flex' }}><FolderIcon size={18} /></span>
               <span className="confirm__prompt" style={{ fontSize: '14px' }}>Register New Project</span>
             </div>
 
@@ -852,7 +868,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
             }}
           >
             <div className="confirm__header">
-              <span style={{ fontSize: '18px' }}>🛠️</span>
+              <span style={{ fontSize: '18px', display: 'inline-flex' }}><ToolIcon size={18} /></span>
               <span className="confirm__prompt" style={{ fontSize: '14px' }}>Create New Task</span>
             </div>
 

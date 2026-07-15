@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import type { CaretakerConfig, AgentConfig, PluginsFile, McpServerConfig } from 'caretaker-types';
 import type { ViewToHost, ModelsResult } from './bridge.js';
 import FolderPicker from './FolderPicker.js';
+import { WarningIcon, EditIcon, DeleteIcon } from './icons.js';
 
 interface AgentsTabProps {
   config: CaretakerConfig;
@@ -237,7 +238,7 @@ export function AgentsTab({
         )}
       </div>
 
-      {errorMsg && <div className="validation-error">⚠ {errorMsg}</div>}
+      {errorMsg && <div className="validation-error"><WarningIcon size={13} /> {errorMsg}</div>}
 
       {showForm ? (
         <div className="glass-form">
@@ -499,14 +500,14 @@ export function AgentsTab({
                     onClick={() => startEdit(agent)}
                     title="Edit agent"
                   >
-                    ✏️
+                    <EditIcon size={13} />
                   </button>
                   <button
                     className="icon-btn icon-btn--danger"
                     onClick={() => deleteAgent(agent.id)}
                     title="Delete agent"
                   >
-                    🗑️
+                    <DeleteIcon size={13} />
                   </button>
                 </div>
               </div>

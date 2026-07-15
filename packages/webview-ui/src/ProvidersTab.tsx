@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { CaretakerConfig, AgentConfig, ProviderConfig } from 'caretaker-types';
 import type { ViewToHost } from './bridge.js';
+import { WarningIcon, EditIcon, DeleteIcon } from './icons.js';
 
 interface ProvidersTabProps {
   config: CaretakerConfig;
@@ -135,7 +136,7 @@ export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps)
         )}
       </div>
 
-      {errorMsg && <div className="validation-error">⚠ {errorMsg}</div>}
+      {errorMsg && <div className="validation-error"><WarningIcon size={13} /> {errorMsg}</div>}
 
       {showForm ? (
         <div className="glass-form">
@@ -197,15 +198,17 @@ export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps)
                     className="icon-btn"
                     onClick={() => startEdit(prov)}
                     title="Edit provider"
+                    aria-label="Edit provider"
                   >
-                    ✏️
+                    <EditIcon size={13} />
                   </button>
                   <button
                     className="icon-btn icon-btn--danger"
                     onClick={() => deleteProvider(prov.name)}
                     title="Delete provider"
+                    aria-label="Delete provider"
                   >
-                    🗑️
+                    <DeleteIcon size={13} />
                   </button>
                 </div>
               </div>

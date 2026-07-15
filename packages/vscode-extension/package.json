@@ -74,7 +74,6 @@
     "package": "vsce package --no-dependencies"
   },
   "dependencies": {
-    "@vscode/codicons": "^0.0.45",
     "caretaker-cli": "workspace:*",
     "webview-ui": "workspace:*",
     "marked": "^15.0.12",

@@ -1585,14 +1585,18 @@ body.vscode-light .settings-panel__tab-btn--active {
   align-items: center;
   justify-content: center;
   font-size: 11px;
+  /* SVG icons inherit currentColor — keep them legible on dark cards. */
+  color: var(--vscode-descriptionForeground, #a0a0a0);
 }
 
 .icon-btn:hover {
   background: oklch(1 0 0 / 0.08);
+  color: var(--vscode-foreground, #f1f1f1);
 }
 
 .icon-btn--danger:hover {
   background: oklch(0.55 0.22 20 / 0.15);
+  color: oklch(0.68 0.22 20);
 }
 
 /* Validation & Banner alerts */

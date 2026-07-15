@@ -6,7 +6,6 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { App } from 'webview-ui';
-import '@vscode/codicons/dist/codicon.css';
 import 'webview-ui/src/styles.css';
 
 declare global {
