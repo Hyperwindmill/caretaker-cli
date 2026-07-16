@@ -2992,3 +2992,200 @@ body.vscode-light .composer__attachment {
   box-shadow: 0 4px 12px oklch(0 0 0 / 0.3);
   animation: app__confirm-fade 0.12s ease-out;
 }
+
+/* =========================================================================
+   Task view — multi-view (list / log / edit) restructure
+   ========================================================================= */
+
+.task-view__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--vscode-panel-border, rgba(255, 255, 255, 0.08));
+  flex-shrink: 0;
+}
+
+.task-view__sub-header {
+  border-bottom: 1px solid var(--vscode-panel-border, rgba(255, 255, 255, 0.08));
+}
+
+.task-view__archived-toggle {
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
+/* --- Tasks table --- */
+.task-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.task-table__th {
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.55;
+  border-bottom: 1px solid var(--vscode-panel-border, rgba(255, 255, 255, 0.08));
+  position: sticky;
+  top: 0;
+  background: var(--vscode-editor-background, #1e1e1e);
+  z-index: 1;
+}
+
+.task-table__row {
+  cursor: pointer;
+  transition: background 0.12s ease;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.task-table__row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.task-table__row--archived {
+  opacity: 0.55;
+}
+
+.task-table__td {
+  padding: 8px 10px;
+  vertical-align: middle;
+  color: var(--vscode-foreground);
+}
+
+.task-table__td--mono {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.task-table__td--muted {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.task-table__title {
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.task-table__badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: bold;
+  color: #ffffff;
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.task-table__progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.task-table__progress-bar {
+  flex: 1;
+  min-width: 40px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+  display: inline-block;
+}
+
+.task-table__progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent-cyan, #22d3ee);
+}
+
+.task-table__progress-text {
+  font-size: 10px;
+  opacity: 0.6;
+  white-space: nowrap;
+}
+
+.task-table__branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.task-table__branch code {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+.task-table__edit-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.6;
+  transition: all 0.12s ease;
+}
+
+.task-table__edit-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+  opacity: 1;
+}
+
+/* --- Pagination --- */
+.task-table__pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--vscode-panel-border, rgba(255, 255, 255, 0.08));
+  flex-shrink: 0;
+}
+
+.task-table__page-btn {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 12px;
+  background: var(--vscode-button-secondaryBackground, #3a3d3e);
+  color: var(--vscode-button-secondaryForeground, #ffffff);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+  transition: var(--transition-smooth, 0.12s ease);
+}
+
+.task-table__page-btn:hover:not(:disabled) {
+  background: var(--vscode-button-secondaryHoverBackground, #45494a);
+}
+
+.task-table__page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.task-table__page-info {
+  font-size: 11px;
+  opacity: 0.7;
+  white-space: nowrap;
+}
