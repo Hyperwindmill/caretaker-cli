@@ -5,8 +5,9 @@ import { getDb, Task, Project, TaskMessage, getTaskById, saveTask, addTaskMessag
 import { runningTasks } from './locks.js';
 import { isGitRepo, ensureWorktree, agentDirIn, commitWip, finalizeDone } from '../../../lib/task_git.js';
 import { runDoneReview, MAX_REVIEW_ROUNDS } from './task_review.js';
-import type { AgentConfig, ProviderConfig } from '../../../types.js';
+import type { AgentConfig, ProviderConfig, ProjectConfig } from '../../../types.js';
 import type { Tool } from '../../../harness/tools/types.js';
+import { resolveRoleAgent, resolveReviewEnabled, filterPlannerTools, TaskRole } from './task_roles.js';
 
 function buildPrompt(
   systemPrompt: string,
@@ -57,10 +58,53 @@ TASK ID: ${taskId}
 TITLE: ${taskTitle}`;
 }
 
+function buildPlanningPrompt(
+  systemPrompt: string,
+  taskId: number,
+  taskTitle: string,
+  maxRunSeconds: number,
+  maxTurns: number,
+  workingDir?: string,
+): string {
+  const workspaceLine = workingDir
+    ? `\n**Your workspace is: \`${workingDir}\`** — operate exclusively inside this directory.\n`
+    : '';
+
+  return `${systemPrompt}
+${workspaceLine}
+---
+
+You are running in **autonomous task mode**, in the **PLANNING phase**. Your only job
+is to produce an implementation plan for this task — you must NOT modify anything.
+
+You have read-only access to the workspace: explore it with \`read_file\`, \`glob\`, and
+\`grep\`. Write tools and \`bash\` are not available in this phase.
+
+You have no memory of previous invocations. Your only memory is in the task messages.
+You have **${maxRunSeconds} seconds** and at most **${maxTurns} turns** for this invocation.
+
+On each invocation:
+1. Read the current state with \`task_get_state\` (objective, checklist, recent messages)
+2. Explore the workspace as needed to understand how to achieve the objective
+3. When the plan is ready:
+   - Replace the checklist with concrete execution steps via \`task_update_checklist\`
+   - Call \`task_submit_plan\` with the full plan (markdown). This ends the planning
+     phase and starts execution — the executing agent will read your plan from the
+     task thread, so make it self-contained.
+4. If you cannot finish the plan in this invocation, call \`task_add_message\` with your
+   findings so far, then stop — you will continue planning in the next cycle.
+
+Do NOT call \`task_complete\` in this phase.
+
+TASK ID: ${taskId}
+TITLE: ${taskTitle}`;
+}
+
+
 export async function runTaskHeartbeatTick(now: Date): Promise<void> {
   // 1. Pick one active, unlocked task (oldest updatedAt first). Archived tasks
   //    are excluded from the heartbeat — they are deliberately parked.
-  const taskRows = (await runQuery(`SELECT * FROM tasks WHERE (status = 'active' OR status = 'reviewing') AND lockedAt IS NULL`)) as Task[];
+  const taskRows = (await runQuery(`SELECT * FROM tasks WHERE (status = 'active' OR status = 'reviewing' OR status = 'planning') AND lockedAt IS NULL`)) as Task[];
   const eligible = taskRows.filter((t) => !t.archived);
   if (eligible.length === 0) {
     return;
@@ -93,12 +137,13 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
       throw new Error(`Project with ID ${task.projectId} not found for task #${task.id}`);
     }
 
-    // 3. Load Agent — per-task override takes priority over project default.
+    // 3. Load Agent — resolved per role: the task's phase decides who runs.
+    //    planner/reviewer overrides degrade onto the developer chain
+    //    (task.agentId -> project.agentId -> agents[0]).
     const agents = await loadAgents();
-    const agent =
-      (task.agentId && agents.find((a) => a.id === task.agentId)) ||
-      agents.find((a) => a.id === project.agentId) ||
-      agents[0];
+    const role: TaskRole =
+      task.status === 'reviewing' ? 'reviewer' : task.status === 'planning' ? 'planner' : 'developer';
+    const agent = resolveRoleAgent(role, task, project, agents);
     if (!agent) {
       throw new Error(`No agent configured in agents.json for project "${project.name}"`);
     }
@@ -133,13 +178,22 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
     const effectiveAgent = { ...agent, allowedTools: baseTools };
 
     // Resolve tools
-    const tools = await harness.resolveAgentTools(effectiveAgent, harness.tools);
+    let tools = await harness.resolveAgentTools(effectiveAgent, harness.tools);
 
     // Reviewing tasks run one independent review pass on their branch as their
-    // own heartbeat cycle (not the agent's task loop), then transition.
+    // own heartbeat cycle (not the agent's task loop), then transition. The
+    // review gate flag is read at decision time: disabling it while a task sits
+    // in reviewing finalizes the task directly on the next tick.
     if (task.status === 'reviewing') {
-      await runReviewCycle({ task, agent: effectiveAgent, provider, tools, workingDir });
+      await runReviewCycle({ task, project, agent: effectiveAgent, provider, tools, workingDir });
       return; // the finally{} block still runs and releases the lock
+    }
+
+    const planning = task.status === 'planning';
+    if (planning) {
+      // Read-only phase: strip workspace-mutating tools (same post-filter
+      // mechanism the review uses to strip mcp__task__*).
+      tools = filterPlannerTools(tools);
     }
 
     // Max turns: standard sonnet settings or maxTurns
@@ -147,7 +201,9 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
     const maxRunSeconds = 120; // 2 minutes
 
     // 5. Construct prompt
-    const prompt = buildPrompt(agent.systemPrompt, task.id, task.title, maxRunSeconds, maxTurns, workingDir);
+    const prompt = planning
+      ? buildPlanningPrompt(agent.systemPrompt, task.id, task.title, maxRunSeconds, maxTurns, workingDir)
+      : buildPrompt(agent.systemPrompt, task.id, task.title, maxRunSeconds, maxTurns, workingDir);
 
     const checklistBefore = (task.checklist || []).filter((item) => item.status !== 'pending').length;
 
@@ -178,7 +234,7 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
 
     // Map history to loop-compatible message records
     const historyRecords = historyMessages
-      .filter((m) => m.messageType === 'chat' || m.messageType === 'heartbeat' || m.messageType === 'tool_call' || m.messageType === 'review')
+      .filter((m) => m.messageType === 'chat' || m.messageType === 'heartbeat' || m.messageType === 'tool_call' || m.messageType === 'review' || m.messageType === 'plan')
       .map((m) => ({
         id: randomUUID(),
         v: 1 as const,
@@ -226,7 +282,7 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
 
     // 6. Reload task to evaluate checklist progress
     const refreshedTask = await getTaskById(task.id);
-    if (refreshedTask && refreshedTask.status === 'active') {
+    if (refreshedTask && (refreshedTask.status === 'active' || refreshedTask.status === 'planning')) {
       const checklistAfter = (refreshedTask.checklist || []).filter((item) => item.status !== 'pending').length;
       let noProgressCount = refreshedTask.noProgressCount;
 
@@ -256,13 +312,21 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
     }
 
     // Git lifecycle: commit progress every cycle. When the agent has just
-    // completed the task it is now 'reviewing'; the review runs on the next
-    // tick as its own cycle (see runReviewCycle), not inline here.
+    // completed the task it is now 'reviewing' (review runs next tick as its
+    // own cycle) — or already 'done' when the review gate is disabled, in
+    // which case the worktree is finalized here, after the run has ended.
     const gitTask = await getTaskById(task.id);
     if (gitTask && gitTask.worktreePath) {
       try {
         if (await commitWip(gitTask.worktreePath, gitTask.title)) {
           console.log(`[task_heartbeat] Task #${task.id} committed WIP to ${gitTask.branch}`);
+        }
+        if (gitTask.status === 'done') {
+          await finalizeDone(gitTask.worktreePath);
+          gitTask.worktreePath = null;
+          gitTask.updatedAt = new Date().toISOString();
+          await saveTask(gitTask);
+          console.log(`[task_heartbeat] Task #${task.id} done (review gate off): worktree removed, branch ${gitTask.branch} kept`);
         }
       } catch (gitErr) {
         console.error(`[task_heartbeat] Task #${task.id} git step failed:`, gitErr);
@@ -298,13 +362,28 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
 
 async function runReviewCycle(opts: {
   task: Task;
+  project?: ProjectConfig | null;
   agent: AgentConfig;
   provider: ProviderConfig;
   tools: Tool[];
   workingDir: string;
 }): Promise<void> {
-  const { task, agent, provider, tools, workingDir } = opts;
+  const { task, project, agent, provider, tools, workingDir } = opts;
   if (!task.worktreePath) return; // reviewing implies a worktree; nothing to review otherwise
+
+  // Review gate disabled (task or project level): finalize directly, no review.
+  if (!resolveReviewEnabled(task, project)) {
+    await commitWip(task.worktreePath, task.title);
+    const current = await getTaskById(task.id);
+    if (!current || current.status !== 'reviewing') return;
+    await finalizeDone(current.worktreePath!);
+    current.status = 'done';
+    current.worktreePath = null;
+    current.updatedAt = new Date().toISOString();
+    await saveTask(current);
+    console.log(`[task_heartbeat] Task #${task.id} review gate disabled: finalized as done, branch ${current.branch} kept`);
+    return;
+  }
 
   // Finalize the agent's last work so the branch is complete before review.
   await commitWip(task.worktreePath, task.title);
