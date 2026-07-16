@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import * as path from 'node:path';
 import type { Tool } from '../types.js';
 import { attachmentsDir } from '../../../session/store.js';
-import { activeParsers, MAX_OUTPUT_CHARS } from './read_document.js';
+import { activeParsers, MAX_OUTPUT_CHARS, extractPdfWithFallback } from './read_document.js';
 
 export const readAttachmentTool: Tool = {
   name: 'read_attachment',
@@ -84,7 +84,7 @@ export const readAttachmentTool: Tool = {
       ]);
 
       if (ext === '.pdf') {
-        textResult = await activeParsers.extractPdf(buffer);
+        textResult = await extractPdfWithFallback(buffer, filePath, ctx.signal);
       } else if (ext === '.docx') {
         textResult = await activeParsers.extractDocx(buffer);
       } else if (ext === '.xlsx' || ext === '.xls') {

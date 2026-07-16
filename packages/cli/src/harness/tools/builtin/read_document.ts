@@ -110,6 +110,33 @@ const realParsers: DocumentParsers = {
   },
 };
 
+/**
+ * Try unpdf first; if it throws on a PDF the bundled pdfjs cannot handle,
+ * fall back to pandoc if installed. Requires the file path for pandoc invocation.
+ */
+export async function extractPdfWithFallback(
+  buffer: Buffer,
+  filePath: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  try {
+    return await activeParsers.extractPdf(buffer);
+  } catch (unpdfErr) {
+    const isPandoc = await activeParsers.checkPandoc();
+    if (isPandoc) {
+      const pandocRes = await activeParsers.runPandoc(filePath, signal);
+      if (pandocRes.error) {
+        throw new Error(
+          `unpdf failed (${unpdfErr instanceof Error ? unpdfErr.message : String(unpdfErr)})` +
+            ` and pandoc fallback also failed: ${pandocRes.error}`,
+        );
+      }
+      return pandocRes.content;
+    }
+    throw unpdfErr;
+  }
+}
+
 export let activeParsers: DocumentParsers = realParsers;
 
 /** Testing seam: inject mock document parsers. Pass `null` to restore real implementations. */
@@ -121,6 +148,7 @@ export const readDocumentTool: Tool = {
   name: 'read_document',
   description:
     'Read a PDF, DOCX (Word), or XLSX/XLS (Excel) file natively, extracting its text content. ' +
+    'For PDFs, falls back to pandoc if the native parser (unpdf/pdfjs) fails. ' +
     'For other document formats (e.g. EPUB, ODT, RTF), it will try to use the system pandoc command if installed.',
   parameters: {
     type: 'object',
@@ -164,7 +192,7 @@ export const readDocumentTool: Tool = {
     try {
       if (ext === '.pdf') {
         const buffer = await readFile(abs);
-        textResult = await activeParsers.extractPdf(buffer);
+        textResult = await extractPdfWithFallback(buffer, abs, ctx.signal);
       } else if (ext === '.docx') {
         const buffer = await readFile(abs);
         textResult = await activeParsers.extractDocx(buffer);
