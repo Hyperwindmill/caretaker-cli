@@ -96,6 +96,7 @@ export type ViewToHost =
   | { type: 'permission_response'; id: string; decision: ConfirmDecision }
   | { type: 'selectAgent'; agentId: string }
   | { type: 'selectSession'; sessionId: string }
+  | { type: 'deleteSession'; sessionId: string }
   | { type: 'createSession' }
   | { type: 'webviewReady' }
   | { type: 'getSettingsData' }
@@ -151,6 +152,8 @@ export function parseViewToHost(value: unknown): ViewToHost | null {
     case 'selectAgent':
       return typeof value.agentId === 'string' ? { type, agentId: value.agentId } : null;
     case 'selectSession':
+      return typeof value.sessionId === 'string' ? { type, sessionId: value.sessionId } : null;
+    case 'deleteSession':
       return typeof value.sessionId === 'string' ? { type, sessionId: value.sessionId } : null;
     case 'createSession':
       return { type };

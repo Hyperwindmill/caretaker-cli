@@ -42,7 +42,7 @@ import {
   readOAuthBlob,
 } from 'caretaker-cli/mcp';
 
-import { listForAgent, readSession, computeContextUsage } from 'caretaker-cli/session';
+import { listForAgent, readSession, deleteSession, computeContextUsage } from 'caretaker-cli/session';
 import type { AgentConfig, ProviderConfig, PluginsFile, McpServerConfig } from 'caretaker-cli/types';
 
 import {
@@ -335,6 +335,22 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
         this.currentSessionId = null;
         this.controller = null;
         this.post(webview, { type: 'contextUsage', usage: null });
+        return;
+      }
+      case 'deleteSession': {
+        try {
+          if (this.currentAgent) {
+            await deleteSession(this.currentAgent.id, msg.sessionId);
+            if (this.currentSessionId === msg.sessionId) {
+              this.currentSessionId = null;
+              this.controller = null;
+              this.post(webview, { type: 'contextUsage', usage: null });
+            }
+            await this.loadSessionsAndSend(webview, this.currentAgent.id);
+          }
+        } catch (err) {
+          vscode.window.showErrorMessage(`Failed to delete conversation: ${err}`);
+        }
         return;
       }
       case 'getSettingsData':

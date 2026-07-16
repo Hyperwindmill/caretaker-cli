@@ -33,7 +33,7 @@ import { Composer } from './Composer.js';
 import { ConfirmCard } from './ConfirmCard.js';
 import { SettingsPanel } from './SettingsPanel.js';
 import { ProjectsTab } from './ProjectsTab.js';
-import { ChatIcon, SettingsIcon, ChevronDownIcon, ChevronUpIcon, ProjectsIcon, WarningIcon } from './icons.js';
+import { ChatIcon, SettingsIcon, ChevronDownIcon, ChevronUpIcon, ProjectsIcon, WarningIcon, DeleteIcon } from './icons.js';
 import logo from './caretaker_cli.png';
 
 export interface UserItem {
@@ -448,6 +448,15 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
     dispatch({ kind: 'clear' });
   };
 
+  const onDeleteSession = (sessionId: string, title: string): void => {
+    if (!confirm(`Delete conversation "${title}"? This cannot be undone.`)) return;
+    if (selectedSessionId === sessionId) {
+      setSelectedSessionId(null);
+      dispatch({ kind: 'clear' });
+    }
+    postMessage({ type: 'deleteSession', sessionId });
+  };
+
   const onToggleSessions = (): void => {
     if (selectedAgentId) {
       setShowSessions(!showSessions);
@@ -602,14 +611,24 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
                     <div className="app__sidebar-empty-text">No conversations yet</div>
                   ) : (
                     sessions.map((session) => (
-                      <button
+                      <div
                         key={session.id}
                         className={`app__sidebar-session-item ${selectedSessionId === session.id ? 'app__sidebar-session-item--active' : ''}`}
                         onClick={() => onSelectSession(session.id)}
                       >
                         <span className="app__sidebar-session-icon"><ChatIcon size={13} /></span>
                         <span className="app__sidebar-session-title" title={session.title}>{session.title}</span>
-                      </button>
+                        <button
+                          className="app__sidebar-session-delete"
+                          title="Delete conversation"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteSession(session.id, session.title);
+                          }}
+                        >
+                          <DeleteIcon size={12} />
+                        </button>
+                      </div>
                     ))
                   )}
                 </div>
@@ -742,13 +761,23 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
           <div className="app__sessions-title">Conversations for {selectedAgentName}</div>
           <div className="app__sessions-list">
             {sessions.map((session) => (
-              <button
+              <div
                 key={session.id}
                 className={`app__session-item ${selectedSessionId === session.id ? 'app__session-item--active' : ''}`}
                 onClick={() => onSelectSession(session.id)}
               >
-                {session.title}
-              </button>
+                <span className="app__session-item-title">{session.title}</span>
+                <button
+                  className="app__session-item-delete"
+                  title="Delete conversation"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteSession(session.id, session.title);
+                  }}
+                >
+                  <DeleteIcon size={12} />
+                </button>
+              </div>
             ))}
           </div>
         </div>
