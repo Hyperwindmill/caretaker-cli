@@ -4,7 +4,7 @@ import { loadConfig, loadAgents } from '../../../store/json.js';
 import type { Tool, ToolResult } from '../types.js';
 import { discardWorktree } from '../../../lib/task_git.js';
 import { runningTasks } from '../../../cli/web/scheduler/locks.js';
-import { resolveReviewEnabled } from '../../../cli/web/scheduler/task_roles.js';
+import { resolveReviewEnabled, resolvePlanningEnabled, activationStatus } from '../../../cli/web/scheduler/task_roles.js';
 
 function ok(data: Record<string, unknown> = {}): ToolResult {
   return { content: JSON.stringify({ ok: true, ...data }) };
@@ -50,6 +50,10 @@ export const getTaskStateTool: Tool = {
         noProgressCount: task.noProgressCount,
         maxNoProgress: task.maxNoProgress,
         agentId: task.agentId || null,
+        plannerAgentId: task.plannerAgentId || null,
+        reviewerAgentId: task.reviewerAgentId || null,
+        planningEnabled: task.planningEnabled ?? null,
+        reviewEnabled: task.reviewEnabled ?? null,
         project: project
           ? {
               name: project.name,
@@ -336,6 +340,10 @@ export const taskCreateTool: Tool = {
         type: 'string',
         description: 'Optional agent ID to assign to this task. If omitted, the project default agent is used.',
       },
+      planner_agent_id: { type: 'string', description: 'Optional planner-role agent for this task.' },
+      reviewer_agent_id: { type: 'string', description: 'Optional reviewer-role agent for this task.' },
+      planning_enabled: { type: 'boolean', description: 'Override the project planning-phase default for this task.' },
+      review_enabled: { type: 'boolean', description: 'Override the project review-gate default for this task.' },
     },
     required: ['project_id', 'title', 'objective', 'checklist'],
   },
@@ -347,16 +355,23 @@ export const taskCreateTool: Tool = {
     const checklistInput = args.checklist as any[];
     const startActive = !!args.start_active;
     const agentId = args.agent_id ? String(args.agent_id) : null;
+    const plannerAgentId = args.planner_agent_id ? String(args.planner_agent_id) : null;
+    const reviewerAgentId = args.reviewer_agent_id ? String(args.reviewer_agent_id) : null;
+    const planningEnabled = typeof args.planning_enabled === 'boolean' ? args.planning_enabled : null;
+    const reviewEnabled = typeof args.review_enabled === 'boolean' ? args.review_enabled : null;
 
     const config = await loadConfig();
     const project = (config.projects || []).find((p) => p.id === projectId);
     if (!project) return err(`Project ${projectId} not found`);
 
-    // Validate that the specified agent exists (if provided).
-    if (agentId) {
+    // Validate that the specified agents exist (if provided).
+    const idsToValidate = [agentId, plannerAgentId, reviewerAgentId].filter(Boolean) as string[];
+    if (idsToValidate.length > 0) {
       const agents = await loadAgents();
-      if (!agents.some((a) => a.id === agentId)) {
-        return err(`Agent "${agentId}" not found. Available agents: ${agents.map((a) => a.id).join(', ') || '(none)'}`);
+      for (const id of idsToValidate) {
+        if (!agents.some((a) => a.id === id)) {
+          return err(`Agent "${id}" not found. Available agents: ${agents.map((a) => a.id).join(', ') || '(none)'}`);
+        }
       }
     }
 
@@ -367,17 +382,25 @@ export const taskCreateTool: Tool = {
       order: idx,
     }));
 
+    const startStatus = startActive
+      ? (resolvePlanningEnabled({ planningEnabled }, project) ? 'planning' : 'active')
+      : 'draft';
+
     const createdTask = await createTask({
       projectId,
       title,
       objective,
       checklist,
-      status: startActive ? 'active' : 'draft',
+      status: startStatus,
       blockedReason: null,
       noProgressCount: 0,
       maxNoProgress: 5,
       lockedAt: null,
       agentId,
+      plannerAgentId,
+      reviewerAgentId,
+      planningEnabled,
+      reviewEnabled,
     });
 
     if (startActive) {
@@ -385,7 +408,7 @@ export const taskCreateTool: Tool = {
         taskId: createdTask.id,
         role: 'assistant',
         messageType: 'system',
-        content: 'Task created and activated.',
+        content: startStatus === 'planning' ? 'Task created and activated (planning phase).' : 'Task created and activated.',
         agentId: null,
       });
     }
@@ -448,7 +471,9 @@ export const taskUnblockTool: Tool = {
 
     if (task.status !== 'blocked') return err(`Task ${taskId} is not blocked.`);
 
-    task.status = 'active';
+    const config = await loadConfig();
+    const project = (config.projects || []).find((p) => p.id === task.projectId);
+    task.status = await activationStatus(task, project);
     task.blockedReason = null;
     task.updatedAt = new Date().toISOString();
 
@@ -486,7 +511,9 @@ export const taskActivateTool: Tool = {
 
     if (task.status !== 'draft') return err(`Task ${taskId} is not a draft.`);
 
-    task.status = 'active';
+    const config = await loadConfig();
+    const project = (config.projects || []).find((p) => p.id === task.projectId);
+    task.status = await activationStatus(task, project);
     task.updatedAt = new Date().toISOString();
 
     await saveTask(task);
@@ -495,7 +522,7 @@ export const taskActivateTool: Tool = {
       taskId,
       role: 'assistant',
       messageType: 'system',
-      content: 'Task activated.',
+      content: task.status === 'planning' ? 'Task activated (planning phase).' : 'Task activated.',
       agentId: null,
     });
 
@@ -524,7 +551,9 @@ export const taskUnpauseTool: Tool = {
 
     if (task.status !== 'paused') return err(`Task ${taskId} is not paused.`);
 
-    task.status = 'active';
+    const config = await loadConfig();
+    const project = (config.projects || []).find((p) => p.id === task.projectId);
+    task.status = await activationStatus(task, project);
     task.noProgressCount = 0; // reset progress cap on manual unpause
     task.updatedAt = new Date().toISOString();
 
@@ -679,18 +708,24 @@ export const taskDeleteTool: Tool = {
 export const taskSetAgentTool: Tool = {
   name: 'mcp__task__task_set_agent',
   description:
-    'Assign a specific agent to a task, overriding the project default agent. Pass null or omit agent_id to clear the override and fall back to the project default.',
+    'Assign a specific agent to a task role, overriding the project default. role: developer (default, the main task agent), planner, or reviewer. Pass null or omit agent_id to clear the override and fall back to the project default.',
   parameters: {
     type: 'object',
     properties: {
       task_id: { type: 'number' },
       agent_id: { type: 'string', description: 'The agent ID to assign, or null to clear the override.' },
+      role: {
+        type: 'string',
+        enum: ['developer', 'planner', 'reviewer'],
+        description: 'Which role to assign. Defaults to developer (the main task agent).',
+      },
     },
     required: ['task_id'],
   },
   execute: async (args: any): Promise<ToolResult> => {
     const taskId = Number(args.task_id);
     const agentId = args.agent_id != null ? String(args.agent_id) : null;
+    const role = args.role === 'planner' || args.role === 'reviewer' ? args.role : 'developer';
 
     const task = await getTaskById(taskId);
     if (!task) return err(`Task ${taskId} not found`);
@@ -709,11 +744,14 @@ export const taskSetAgentTool: Tool = {
       }
     }
 
-    task.agentId = agentId;
+    if (role === 'planner') task.plannerAgentId = agentId;
+    else if (role === 'reviewer') task.reviewerAgentId = agentId;
+    else task.agentId = agentId;
+
     task.updatedAt = new Date().toISOString();
     await saveTask(task);
 
-    return ok({ agentId });
+    return ok({ role, agentId });
   },
 };
 
