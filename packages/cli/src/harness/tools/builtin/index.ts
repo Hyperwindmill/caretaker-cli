@@ -35,6 +35,7 @@ import {
   taskUnblockTool,
   taskActivateTool,
   taskUnpauseTool,
+  taskDiscardWorktreeTool,
 } from './task_tools.js';
 
 export function registerBuiltins(registry: ToolRegistry): void {
@@ -82,6 +83,7 @@ export function registerBuiltins(registry: ToolRegistry): void {
   registry.register(taskUnblockTool);
   registry.register(taskActivateTool);
   registry.register(taskUnpauseTool);
+  registry.register(taskDiscardWorktreeTool);
 }
 
 export {
@@ -116,4 +118,5 @@ export {
   taskUnblockTool,
   taskActivateTool,
   taskUnpauseTool,
+  taskDiscardWorktreeTool,
 };
