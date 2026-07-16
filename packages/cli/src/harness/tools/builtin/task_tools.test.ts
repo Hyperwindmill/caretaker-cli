@@ -11,7 +11,7 @@ const CT_HOME = await mkdtemp(join(tmpdir(), 'ct-tasktools-home-'));
 process.env.CARETAKER_HOME = CT_HOME;
 
 const { createTask, getTaskById, saveTask, deleteTask, addTaskMessage, runQuery } = await import('../../../store/db.js');
-const { completeTaskTool, taskArchiveTool, taskUnarchiveTool, taskDeleteTool, taskSearchTool, taskSetAgentTool, taskCreateTool } = await import('./task_tools.js');
+const { completeTaskTool, taskArchiveTool, taskUnarchiveTool, taskDeleteTool, taskSearchTool, taskSetAgentTool, taskCreateTool, submitPlanTool } = await import('./task_tools.js');
 const { runningTasks } = await import('../../../cli/web/scheduler/locks.js');
 const { saveConfig, saveAgents } = await import('../../../store/json.js');
 
@@ -248,6 +248,33 @@ test('task_set_agent rejects a non-existent agent_id', async () => {
   assert.ok(parsed.error.includes('not found'));
   // Agent should not have changed
   assert.equal((await getTaskById(t.id))!.agentId ?? null, null);
+});
+
+test('task_submit_plan on a planning task -> plan message persisted, status active', async () => {
+  const t = await createTask({ ...base, title: 'Plan Me', status: 'planning' });
+  const res = await submitPlanTool.execute({ task_id: t.id, plan: '1. do X\n2. do Y' }, ctx());
+  assert.equal(JSON.parse(res.content).ok, true);
+
+  const after = await getTaskById(t.id);
+  assert.equal(after!.status, 'active');
+  assert.equal(after!.noProgressCount, 0);
+
+  const msgs = (await runQuery(`SELECT * FROM task_messages WHERE taskId = ${t.id}`)) as any[];
+  const plan = msgs.find((m) => m.messageType === 'plan');
+  assert.ok(plan);
+  assert.equal(plan.content, '1. do X\n2. do Y');
+});
+
+test('task_submit_plan outside planning -> error', async () => {
+  const t = await createTask({ ...base, title: 'Not Planning' }); // status: active
+  const res = await submitPlanTool.execute({ task_id: t.id, plan: 'p' }, ctx());
+  assert.ok(JSON.parse(res.content).error.includes('not in planning'));
+});
+
+test('task_submit_plan with empty plan -> error', async () => {
+  const t = await createTask({ ...base, title: 'Empty Plan', status: 'planning' });
+  const res = await submitPlanTool.execute({ task_id: t.id, plan: '   ' }, ctx());
+  assert.ok(JSON.parse(res.content).error);
 });
 
 test.after(async () => {
