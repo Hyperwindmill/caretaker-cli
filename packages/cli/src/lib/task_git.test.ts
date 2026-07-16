@@ -55,7 +55,7 @@ test('ensureWorktree -> commitWip -> finalizeDone keeps branch, removes worktree
 
   // Commit is visible on the branch from the main repo.
   const log = await g(repo, ['log', '--oneline', branch]);
-  assert.match(log.stdout, /wip: Do the Thing!/);
+  assert.match(log.stdout, /chore\(auto\): Do the Thing!/);
 
   await finalizeDone(worktreePath);
 
@@ -77,7 +77,7 @@ test('discardWorktree commits pending work then removes the worktree', async () 
 
   await assert.rejects(() => stat(worktreePath));
   const log = await g(repo, ['log', '--oneline', branch]);
-  assert.match(log.stdout, /wip: Abandon me/); // pending work was committed, not lost
+  assert.match(log.stdout, /chore\(auto\): Abandon me/); // pending work was committed, not lost
   await rm(repo, { recursive: true, force: true });
 });
 
@@ -97,7 +97,7 @@ test('commitWip bypasses a failing pre-commit hook and works without configured 
   // Without --no-verify (hook) and without a fallback identity this commit would fail.
   assert.equal(await commitWip(worktreePath, 'Hook hostile'), true);
   const log = await g(repo, ['log', '--oneline', branch]);
-  assert.match(log.stdout, /wip: Hook hostile/);
+  assert.match(log.stdout, /chore\(auto\): Hook hostile/);
 
   await finalizeDone(worktreePath);
   await rm(repo, { recursive: true, force: true });
