@@ -163,7 +163,7 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
 
     // Map history to loop-compatible message records
     const historyRecords = historyMessages
-      .filter((m) => m.messageType === 'chat' || m.messageType === 'heartbeat' || m.messageType === 'tool_call')
+      .filter((m) => m.messageType === 'chat' || m.messageType === 'heartbeat' || m.messageType === 'tool_call' || m.messageType === 'review')
       .map((m) => ({
         id: randomUUID(),
         v: 1 as const,
