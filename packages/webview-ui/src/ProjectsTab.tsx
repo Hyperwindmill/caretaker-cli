@@ -26,7 +26,7 @@ interface Task {
   title: string;
   objective: string;
   checklist: ChecklistItem[];
-  status: 'draft' | 'active' | 'reviewing' | 'paused' | 'blocked' | 'done';
+  status: 'draft' | 'planning' | 'active' | 'reviewing' | 'paused' | 'blocked' | 'done';
   blockedReason: string | null;
   noProgressCount: number;
   maxNoProgress: number;
@@ -35,6 +35,10 @@ interface Task {
   worktreePath: string | null;
   archived?: boolean;
   agentId?: string | null;
+  plannerAgentId?: string | null;
+  reviewerAgentId?: string | null;
+  planningEnabled?: boolean | null;
+  reviewEnabled?: boolean | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -43,7 +47,7 @@ interface TaskMessage {
   id: number;
   taskId: number;
   role: 'user' | 'assistant' | 'tool';
-  messageType: 'chat' | 'heartbeat' | 'heartbeat_live' | 'system' | 'block' | 'tool_call' | 'yield' | 'review';
+  messageType: 'chat' | 'heartbeat' | 'heartbeat_live' | 'system' | 'block' | 'tool_call' | 'yield' | 'review' | 'plan';
   content: string;
   toolCallId?: string | null;
   createdAt: string;
@@ -117,6 +121,10 @@ function taskMessagesToChatItems(msgs: TaskMessage[]): ChatItem[] {
       items.push({ kind: 'tool', id: msg.toolCallId || String(msg.id), name, args, result: '' });
       continue;
     }
+    if (msg.messageType === 'plan') {
+      items.push({ kind: 'assistant', text: `**📋 Plan submitted**\n\n${msg.content}`, streaming: false });
+      continue;
+    }
     if (msg.role === 'user') {
       items.push({ kind: 'user', text: msg.content });
       continue;
@@ -165,6 +173,8 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
     checklistText: '',
     startActive: true,
     agentId: '',
+    plannerAgentId: '',
+    reviewerAgentId: '',
   });
 
   const [composerText, setComposerText] = useState('');
@@ -307,11 +317,13 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
           checklist: checklistItems,
           startActive: newTask.startActive,
           agentId: newTask.agentId || undefined,
+          plannerAgentId: newTask.plannerAgentId || undefined,
+          reviewerAgentId: newTask.reviewerAgentId || undefined,
         }),
       });
       if (res.ok) {
         setIsNewTaskOpen(false);
-        setNewTask({ title: '', objective: '', checklistText: '', startActive: true, agentId: '' });
+        setNewTask({ title: '', objective: '', checklistText: '', startActive: true, agentId: '', plannerAgentId: '', reviewerAgentId: '' });
         fetchTasks(selectedProjectId);
       }
     } catch (err) {
@@ -321,7 +333,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
   const handleToggleTaskStatus = async (task: Task) => {
     // Reviewing behaves like active for the toggle: the button pauses it.
     const newStatus =
-      task.status === 'active' || task.status === 'reviewing' ? 'paused' : 'active';
+      task.status === 'active' || task.status === 'reviewing' || task.status === 'planning' ? 'paused' : 'active';
     try {
       const res = await fetch(`/api/tasks/${task.id}/status`, {
         method: 'POST',
@@ -494,12 +506,12 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
   };
 
   // Reassign a task's agent (null = project default).
-  const handleSetTaskAgent = async (task: Task, agentId: string) => {
+  const handleSetTaskAgent = async (task: Task, role: 'developer' | 'planner' | 'reviewer', agentId: string) => {
     try {
       const res = await fetch(`/api/tasks/${task.id}/agent`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agentId: agentId || null }),
+        body: JSON.stringify({ agentId: agentId || null, role }),
       });
       if (res.ok) {
         if (selectedProjectId !== null) fetchTasks(selectedProjectId);
@@ -510,6 +522,25 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
     } catch (err) {
       console.error('Failed to set task agent:', err);
       setTaskError('Failed to reassign agent');
+    }
+  };
+
+  const handleSetTaskFlag = async (task: Task, flag: 'planningEnabled' | 'reviewEnabled', value: boolean | null) => {
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/flags`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [flag]: value }),
+      });
+      if (res.ok) {
+        if (selectedProjectId !== null) fetchTasks(selectedProjectId);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setTaskError(data.error || 'Failed to update task setting');
+      }
+    } catch (err) {
+      console.error('Failed to set task flag:', err);
+      setTaskError('Failed to update task setting');
     }
   };
 
@@ -529,7 +560,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
     ? taskMessages.filter((m) => m.messageType === 'review').length + 1
     : 1;
   const isActiveLike = selectedTask
-    ? selectedTask.status === 'active' || selectedTask.status === 'reviewing'
+    ? selectedTask.status === 'active' || selectedTask.status === 'reviewing' || selectedTask.status === 'planning'
     : false;
 
   // --- Status color helper (shared by list + log + edit views) ---
@@ -537,6 +568,8 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
     switch (status) {
       case 'active':
         return '#22c55e';
+      case 'planning':
+        return '#06b6d4';
       case 'reviewing':
         return '#a855f7';
       case 'paused':
@@ -611,6 +644,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
               onDelete={handleDeleteTask}
               onToggleChecklistItem={handleToggleChecklistItem}
               onSetAgent={handleSetTaskAgent}
+              onSetFlag={handleSetTaskFlag}
               onOpenLog={() => setView('log')}
               statusColor={statusColor}
             />
@@ -733,6 +767,54 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
                   }}
                 >
                   <option value="">Project default</option>
+                  {agents.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name} ({a.provider})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label style={{ fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                Planner Agent Override (optional)
+                <select
+                  value={newTask.plannerAgentId}
+                  onChange={(e) => setNewTask({ ...newTask, plannerAgentId: e.target.value })}
+                  style={{
+                    background: 'var(--vscode-input-background, #252526)',
+                    color: 'var(--vscode-input-foreground)',
+                    border: '1px solid var(--vscode-input-border, #3c3c3c)',
+                    borderRadius: '4px',
+                    padding: '6px 8px',
+                    fontSize: '12px',
+                    outline: 'none',
+                  }}
+                >
+                  <option value="">Same as developer</option>
+                  {agents.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name} ({a.provider})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label style={{ fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                Reviewer Agent Override (optional)
+                <select
+                  value={newTask.reviewerAgentId}
+                  onChange={(e) => setNewTask({ ...newTask, reviewerAgentId: e.target.value })}
+                  style={{
+                    background: 'var(--vscode-input-background, #252526)',
+                    color: 'var(--vscode-input-foreground)',
+                    border: '1px solid var(--vscode-input-border, #3c3c3c)',
+                    borderRadius: '4px',
+                    padding: '6px 8px',
+                    fontSize: '12px',
+                    outline: 'none',
+                  }}
+                >
+                  <option value="">Same as developer</option>
                   {agents.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.name} ({a.provider})
@@ -1086,10 +1168,12 @@ function TaskLogView({
             <span className="app__chat-header-status" style={{ fontSize: '10px' }}>
               <span
                 className={`agent-status-dot agent-status-dot--active ${isActiveLike ? 'agent-status-dot--pulsing' : ''}`}
-                style={task.status === 'reviewing' ? { background: '#a855f7' } : undefined}
+                style={task.status === 'reviewing' ? { background: '#a855f7' } : task.status === 'planning' ? { background: '#06b6d4' } : undefined}
               />
               {task.status === 'active'
                 ? 'Heartbeat loop active'
+                : task.status === 'planning'
+                ? 'Planning phase — read-only'
                 : task.status === 'reviewing'
                 ? `In review (round ${reviewRound}/3)`
                 : `Task status: ${task.status}`}
@@ -1219,7 +1303,8 @@ interface TaskEditViewProps {
   onArchiveToggle: (t: Task) => void;
   onDelete: (t: Task) => void;
   onToggleChecklistItem: (t: Task, item: ChecklistItem) => void;
-  onSetAgent: (t: Task, agentId: string) => void;
+  onSetAgent: (t: Task, role: 'developer' | 'planner' | 'reviewer', agentId: string) => void;
+  onSetFlag: (t: Task, flag: 'planningEnabled' | 'reviewEnabled', value: boolean | null) => void;
   onOpenLog: () => void;
   statusColor: (s: Task['status']) => string;
 }
@@ -1234,9 +1319,11 @@ function TaskEditView({
   onDelete,
   onToggleChecklistItem,
   onSetAgent,
+  onSetFlag,
   onOpenLog,
   statusColor,
 }: TaskEditViewProps) {
+  const isRunning = task.status === 'active' || task.status === 'reviewing' || task.status === 'planning';
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'auto' }}>
       {/* Header with back button + title + status actions */}
@@ -1330,8 +1417,8 @@ function TaskEditView({
           </h4>
           <select
             value={task.agentId || ''}
-            onChange={(e) => onSetAgent(task, e.target.value)}
-            disabled={task.status === 'active' || task.status === 'reviewing'}
+            onChange={(e) => onSetAgent(task, 'developer', e.target.value)}
+            disabled={isRunning}
             style={{
               background: 'var(--vscode-input-background, #252526)',
               color: 'var(--vscode-input-foreground)',
@@ -1341,11 +1428,11 @@ function TaskEditView({
               fontSize: '12px',
               outline: 'none',
               width: '100%',
-              cursor: (task.status === 'active' || task.status === 'reviewing') ? 'not-allowed' : 'pointer',
-              opacity: (task.status === 'active' || task.status === 'reviewing') ? 0.6 : 1,
+              cursor: isRunning ? 'not-allowed' : 'pointer',
+              opacity: isRunning ? 0.6 : 1,
             }}
             title={
-              task.status === 'active' || task.status === 'reviewing'
+              isRunning
                 ? 'Pause the task before changing its agent'
                 : 'Choose which agent runs this task'
             }
@@ -1357,6 +1444,69 @@ function TaskEditView({
               </option>
             ))}
           </select>
+        </div>
+
+        <div style={{ marginBottom: '16px' }}>
+          <h4 style={{ margin: '0 0 6px 0', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.6 }}>
+            Planner Agent
+          </h4>
+          <select
+            value={task.plannerAgentId || ''}
+            onChange={(e) => onSetAgent(task, 'planner', e.target.value)}
+            disabled={isRunning}
+            style={{ background: 'var(--vscode-input-background, #252526)', color: 'var(--vscode-input-foreground)', border: '1px solid var(--vscode-input-border, #3c3c3c)', borderRadius: '4px', padding: '6px 8px', fontSize: '12px', outline: 'none', width: '100%', cursor: isRunning ? 'not-allowed' : 'pointer', opacity: isRunning ? 0.6 : 1 }}
+            title={isRunning ? 'Pause the task before changing its planner' : 'Agent that runs the planning phase (read-only). Falls back to the developer agent.'}
+          >
+            <option value="">Same as developer</option>
+            {agents.map((a) => (
+              <option key={a.id} value={a.id}>{a.name} ({a.provider})</option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ marginBottom: '16px' }}>
+          <h4 style={{ margin: '0 0 6px 0', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.6 }}>
+            Reviewer Agent
+          </h4>
+          <select
+            value={task.reviewerAgentId || ''}
+            onChange={(e) => onSetAgent(task, 'reviewer', e.target.value)}
+            disabled={isRunning}
+            style={{ background: 'var(--vscode-input-background, #252526)', color: 'var(--vscode-input-foreground)', border: '1px solid var(--vscode-input-border, #3c3c3c)', borderRadius: '4px', padding: '6px 8px', fontSize: '12px', outline: 'none', width: '100%', cursor: isRunning ? 'not-allowed' : 'pointer', opacity: isRunning ? 0.6 : 1 }}
+            title={isRunning ? 'Pause the task before changing its reviewer' : 'Agent that reviews the branch at DONE. Falls back to the developer agent.'}
+          >
+            <option value="">Same as developer</option>
+            {agents.map((a) => (
+              <option key={a.id} value={a.id}>{a.name} ({a.provider})</option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ marginBottom: '16px' }}>
+          <h4 style={{ margin: '0 0 6px 0', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.6 }}>
+            Phases
+          </h4>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            {(
+              [
+                { flag: 'planningEnabled' as const, label: 'Planning phase', value: task.planningEnabled },
+                { flag: 'reviewEnabled' as const, label: 'Review at DONE', value: task.reviewEnabled },
+              ]
+            ).map(({ flag, label, value }) => (
+              <label key={flag} style={{ fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
+                {label}
+                <select
+                  value={value === true ? 'on' : value === false ? 'off' : 'inherit'}
+                  onChange={(e) => onSetFlag(task, flag, e.target.value === 'inherit' ? null : e.target.value === 'on')}
+                  style={{ background: 'var(--vscode-input-background, #252526)', color: 'var(--vscode-input-foreground)', border: '1px solid var(--vscode-input-border, #3c3c3c)', borderRadius: '4px', padding: '6px 8px', fontSize: '12px', outline: 'none' }}
+                >
+                  <option value="inherit">Project default</option>
+                  <option value="on">On</option>
+                  <option value="off">Off</option>
+                </select>
+              </label>
+            ))}
+          </div>
         </div>
 
         {task.status === 'blocked' && task.blockedReason && (
