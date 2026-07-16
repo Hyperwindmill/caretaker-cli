@@ -5,6 +5,8 @@ import { getDb, Task, Project, TaskMessage, getTaskById, saveTask, addTaskMessag
 import { runningTasks } from './locks.js';
 import { isGitRepo, ensureWorktree, agentDirIn, commitWip, finalizeDone } from '../../../lib/task_git.js';
 import { runDoneReview, MAX_REVIEW_ROUNDS } from './task_review.js';
+import type { AgentConfig, ProviderConfig } from '../../../types.js';
+import type { Tool } from '../../../harness/tools/types.js';
 
 function buildPrompt(
   systemPrompt: string,
@@ -57,7 +59,7 @@ TITLE: ${taskTitle}`;
 
 export async function runTaskHeartbeatTick(now: Date): Promise<void> {
   // 1. Pick one active, unlocked task (oldest updatedAt first)
-  const taskRows = (await runQuery(`SELECT * FROM tasks WHERE status = 'active' AND lockedAt IS NULL`)) as Task[];
+  const taskRows = (await runQuery(`SELECT * FROM tasks WHERE (status = 'active' OR status = 'reviewing') AND lockedAt IS NULL`)) as Task[];
   if (taskRows.length === 0) {
     return;
   }
@@ -127,6 +129,13 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
 
     // Resolve tools
     const tools = await harness.resolveAgentTools(effectiveAgent, harness.tools);
+
+    // Reviewing tasks run one independent review pass on their branch as their
+    // own heartbeat cycle (not the agent's task loop), then transition.
+    if (task.status === 'reviewing') {
+      await runReviewCycle({ task, agent: effectiveAgent, provider, tools, workingDir });
+      return; // the finally{} block still runs and releases the lock
+    }
 
     // Max turns: standard sonnet settings or maxTurns
     const maxTurns = agent.maxTurns || 30;
@@ -241,68 +250,13 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
       await saveTask(refreshedTask);
     }
 
-    // Git lifecycle: commit progress every cycle; on DONE remove the worktree, keep the branch.
+    // Git lifecycle: commit progress every cycle. When the agent has just
+    // completed the task it is now 'reviewing'; the review runs on the next
+    // tick as its own cycle (see runReviewCycle), not inline here.
     const gitTask = await getTaskById(task.id);
     if (gitTask && gitTask.worktreePath) {
       try {
-        if (gitTask.status === 'done') {
-          // Commit the agent's final work so the branch is complete before review.
-          await commitWip(gitTask.worktreePath, gitTask.title);
-
-          // Count prior review rounds from the message stream (no stored counter).
-          const priorReviews = (
-            (await runQuery(`SELECT * FROM task_messages WHERE taskId = ${task.id}`)) as TaskMessage[]
-          ).filter((m) => m.messageType === 'review').length;
-          const round = priorReviews + 1;
-
-          let verdict: 'pass' | 'changes' = 'pass';
-          try {
-            const review = await runDoneReview({
-              agent: effectiveAgent,
-              provider,
-              tools,
-              objective: gitTask.objective,
-              branch: gitTask.branch || '(unknown)',
-              workingDir,
-              round,
-            });
-            verdict = review.verdict;
-            await addTaskMessage({
-              taskId: task.id,
-              role: 'user',
-              messageType: 'review',
-              content: `[CODE REVIEW round ${round}/${MAX_REVIEW_ROUNDS}] verdict=${verdict}\n\n${review.text}`,
-            });
-            console.log(`[task_heartbeat] Task #${task.id} review round ${round}: ${verdict}`);
-          } catch (reviewErr) {
-            // A broken review must not trap the task in DONE — finalize as PASS.
-            console.error(`[task_heartbeat] Task #${task.id} review failed, finalizing:`, reviewErr);
-            verdict = 'pass';
-          }
-
-          if (verdict === 'changes' && round < MAX_REVIEW_ROUNDS) {
-            // Reopen: keep the worktree, let the agent read the review and fix next cycle.
-            gitTask.status = 'active';
-            gitTask.noProgressCount = 0;
-            gitTask.updatedAt = new Date().toISOString();
-            await saveTask(gitTask);
-            console.log(`[task_heartbeat] Task #${task.id} reopened by review (round ${round}).`);
-          } else {
-            if (verdict === 'changes') {
-              await addTaskMessage({
-                taskId: task.id,
-                role: 'assistant',
-                messageType: 'system',
-                content: `Finished as done despite outstanding review findings after ${MAX_REVIEW_ROUNDS} rounds.`,
-              });
-            }
-            await finalizeDone(gitTask.worktreePath);
-            gitTask.worktreePath = null;
-            gitTask.updatedAt = new Date().toISOString();
-            await saveTask(gitTask);
-            console.log(`[task_heartbeat] Task #${task.id} done: worktree removed, branch ${gitTask.branch} kept`);
-          }
-        } else if (await commitWip(gitTask.worktreePath, gitTask.title)) {
+        if (await commitWip(gitTask.worktreePath, gitTask.title)) {
           console.log(`[task_heartbeat] Task #${task.id} committed WIP to ${gitTask.branch}`);
         }
       } catch (gitErr) {
@@ -334,5 +288,86 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
     }
     runningTasks.delete(lockKey);
     console.log(`[task_heartbeat] Lock released for task #${task.id}`);
+  }
+}
+
+async function runReviewCycle(opts: {
+  task: Task;
+  agent: AgentConfig;
+  provider: ProviderConfig;
+  tools: Tool[];
+  workingDir: string;
+}): Promise<void> {
+  const { task, agent, provider, tools, workingDir } = opts;
+  if (!task.worktreePath) return; // reviewing implies a worktree; nothing to review otherwise
+
+  // Finalize the agent's last work so the branch is complete before review.
+  await commitWip(task.worktreePath, task.title);
+
+  // Round is derived from the review-message stream, never a stored counter.
+  const priorReviews = (
+    (await runQuery(`SELECT * FROM task_messages WHERE taskId = ${task.id}`)) as TaskMessage[]
+  ).filter((m) => m.messageType === 'review').length;
+  const round = priorReviews + 1;
+
+  let verdict: 'pass' | 'changes' = 'pass';
+  let reviewText = '';
+  try {
+    const review = await runDoneReview({
+      agent,
+      provider,
+      tools,
+      objective: task.objective,
+      branch: task.branch || '(unknown)',
+      workingDir,
+      round,
+    });
+    verdict = review.verdict;
+    reviewText = review.text;
+  } catch (reviewErr) {
+    // A broken review must not trap the task in reviewing — finalize as pass.
+    console.error(`[task_heartbeat] Task #${task.id} review failed, finalizing:`, reviewErr);
+    verdict = 'pass';
+  }
+
+  // Respect a Pause that arrived mid-review: only transition if still reviewing.
+  const current = await getTaskById(task.id);
+  if (!current || current.status !== 'reviewing') {
+    console.log(`[task_heartbeat] Task #${task.id} left reviewing mid-review (now ${current?.status}); skipping transition.`);
+    return;
+  }
+
+  if (reviewText) {
+    await addTaskMessage({
+      taskId: task.id,
+      role: 'user',
+      messageType: 'review',
+      content: `[CODE REVIEW round ${round}/${MAX_REVIEW_ROUNDS}] verdict=${verdict}\n\n${reviewText}`,
+    });
+  }
+  console.log(`[task_heartbeat] Task #${task.id} review round ${round}: ${verdict}`);
+
+  if (verdict === 'changes' && round < MAX_REVIEW_ROUNDS) {
+    // Reopen: keep the worktree; the review message is replayed to the agent next cycle.
+    current.status = 'active';
+    current.noProgressCount = 0;
+    current.updatedAt = new Date().toISOString();
+    await saveTask(current);
+    console.log(`[task_heartbeat] Task #${task.id} reopened by review (round ${round}).`);
+  } else {
+    if (verdict === 'changes') {
+      await addTaskMessage({
+        taskId: task.id,
+        role: 'assistant',
+        messageType: 'system',
+        content: `Finished as done despite outstanding review findings after ${MAX_REVIEW_ROUNDS} rounds.`,
+      });
+    }
+    await finalizeDone(current.worktreePath!);
+    current.status = 'done';
+    current.worktreePath = null;
+    current.updatedAt = new Date().toISOString();
+    await saveTask(current);
+    console.log(`[task_heartbeat] Task #${task.id} done: worktree removed, branch ${current.branch} kept`);
   }
 }

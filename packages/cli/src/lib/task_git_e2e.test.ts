@@ -15,7 +15,7 @@ process.env.CARETAKER_HOME = CT_HOME;
 
 // Imports
 const { saveConfig, saveAgents } = await import('../store/json.js');
-const { createTask, getTaskById, saveTask } = await import('../store/db.js');
+const { createTask, getTaskById, saveTask, getDb } = await import('../store/db.js');
 const { runTaskHeartbeatTick } = await import('../cli/web/scheduler/task_strategy.js');
 const { discardWorktree } = await import('./task_git.js');
 const { __setFetch, __resetFetch } = await import('../harness/loop.js');
@@ -53,7 +53,20 @@ function mockFetchResponse(content: string): Response {
   });
 }
 
+async function clearDb(db: any) {
+  const tasks = (await db.query('SELECT * FROM tasks')) as any[];
+  for (const t of tasks) {
+    await db.query(`DELETE FROM tasks WHERE id = ${t.id}`);
+  }
+  const messages = (await db.query('SELECT * FROM task_messages')) as any[];
+  for (const m of messages) {
+    await db.query(`DELETE FROM task_messages WHERE id = ${m.id}`);
+  }
+}
+
 test('End-to-end task heartbeat worktree lifecycle', async () => {
+  const db = getDb();
+  await clearDb(db);
   const repo = await makeRepo();
 
   // Setup config
@@ -150,6 +163,73 @@ test('End-to-end task heartbeat worktree lifecycle', async () => {
   } finally {
     __resetFetch();
     await rm(repo, { recursive: true, force: true });
-    await rm(CT_HOME, { recursive: true, force: true });
   }
 });
+
+async function seedReviewingTask(): Promise<{ repo: string; taskId: number }> {
+  const db = getDb();
+  await clearDb(db);
+  await rm(join(CT_HOME, 'worktrees'), { recursive: true, force: true });
+  const repo = await makeRepo();
+  await saveConfig({
+    port: 3000,
+    providers: [{ name: 'mock-provider', endpoint: 'http://localhost:8000', apiKey: 'test-key' }],
+    projects: [{ id: 202, name: 'Review Project', description: '', workingDir: repo, agentId: 'mock-agent', active: true }],
+  });
+  await saveAgents([{ id: 'mock-agent', name: 'Mock', systemPrompt: 'mock', provider: 'mock-provider', model: 'mock-model', allowedTools: [], maxTurns: 30 }]);
+
+  const task = await createTask({
+    projectId: 202, title: 'Review Task', objective: 'Do the thing',
+    checklist: [{ id: '1', text: 'Step 1', status: 'pending', order: 0 }],
+    status: 'active', blockedReason: null, noProgressCount: 0, maxNoProgress: 5, lockedAt: null,
+  });
+
+  // One active tick creates the worktree + branch (agent just writes a file).
+  __setFetch(async () => {
+    const wtPath = join(CT_HOME, 'worktrees', `202-${task.id}`);
+    await writeFile(join(wtPath, 'work.txt'), 'working');
+    return mockFetchResponse('working');
+  });
+  await runTaskHeartbeatTick(new Date());
+
+  // Advance to reviewing (as task_complete would for a git task).
+  const t = await getTaskById(task.id);
+  t!.status = 'reviewing';
+  t!.lockedAt = null;
+  await saveTask(t!);
+  return { repo, taskId: task.id };
+}
+
+test('reviewing tick: PASS verdict finalizes to done and removes the worktree', async () => {
+  const { repo, taskId } = await seedReviewingTask();
+  __setFetch(async () => mockFetchResponse('All good.\nREVIEW_RESULT: PASS'));
+  try {
+    await runTaskHeartbeatTick(new Date());
+    const after = await getTaskById(taskId);
+    assert.equal(after!.status, 'done');
+    assert.equal(after!.worktreePath, null);
+    assert.ok(after!.branch, 'branch is kept');
+  } finally {
+    __resetFetch();
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test('reviewing tick: CHANGES_REQUESTED reopens to active and keeps the worktree', async () => {
+  const { repo, taskId } = await seedReviewingTask();
+  __setFetch(async () => mockFetchResponse('Bug on line 4.\nREVIEW_RESULT: CHANGES_REQUESTED'));
+  try {
+    await runTaskHeartbeatTick(new Date());
+    const after = await getTaskById(taskId);
+    assert.equal(after!.status, 'active');
+    assert.ok(after!.worktreePath, 'worktree is kept for the fix cycle');
+  } finally {
+    __resetFetch();
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test.after(async () => {
+  await rm(CT_HOME, { recursive: true, force: true });
+});
+

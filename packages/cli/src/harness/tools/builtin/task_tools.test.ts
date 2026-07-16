@@ -4,12 +4,22 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import type { ToolContext } from '../types.js';
+
 // File-scope CARETAKER_HOME isolation (mutate at file scope, never inside describe).
 const CT_HOME = await mkdtemp(join(tmpdir(), 'ct-tasktools-home-'));
 process.env.CARETAKER_HOME = CT_HOME;
 
 const { createTask, getTaskById, saveTask } = await import('../../../store/db.js');
 const { completeTaskTool } = await import('./task_tools.js');
+
+function ctx(): ToolContext {
+  return {
+    signal: new AbortController().signal,
+    workingDir: '/work',
+    readPaths: new Set(),
+  };
+}
 
 const base = {
   projectId: 1,
@@ -30,7 +40,7 @@ test('task_complete on a git task (worktree set) -> reviewing', async () => {
   gt!.branch = 'caretaker/task-x';
   await saveTask(gt!);
 
-  await completeTaskTool.execute({ task_id: t.id });
+  await completeTaskTool.execute({ task_id: t.id }, ctx());
 
   const after = await getTaskById(t.id);
   assert.equal(after!.status, 'reviewing');
@@ -38,7 +48,7 @@ test('task_complete on a git task (worktree set) -> reviewing', async () => {
 
 test('task_complete on a non-git task (no worktree) -> done', async () => {
   const t = await createTask({ ...base, title: 'Non-Git Task' });
-  await completeTaskTool.execute({ task_id: t.id });
+  await completeTaskTool.execute({ task_id: t.id }, ctx());
   const after = await getTaskById(t.id);
   assert.equal(after!.status, 'done');
 });
