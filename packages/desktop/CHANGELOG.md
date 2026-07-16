@@ -1,5 +1,20 @@
 # caretaker-desktop
 
+## 0.6.0
+
+### Minor Changes
+
+- 61a0d81: Add task archive and delete: archived tasks are hidden by default with a "Show archived" toggle and are excluded from the scheduler heartbeat; delete permanently removes a task and its messages from the store. Both are available as MCP tools (task_archive, task_unarchive, task_delete), REST endpoints, and confirm-gated UI actions. A locked/running task cannot be deleted (409) to avoid zombie resurrection by the heartbeat.
+
+### Patch Changes
+
+- Updated dependencies [95dd100]
+- Updated dependencies [61a0d81]
+- Updated dependencies [ada15d2]
+- Updated dependencies [04c6f3e]
+  - webview-ui@0.6.0
+  - caretaker-cli@0.6.0
+
 ## 0.5.0
 
 ### Patch Changes

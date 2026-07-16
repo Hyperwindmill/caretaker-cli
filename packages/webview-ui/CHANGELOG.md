@@ -1,5 +1,26 @@
 # webview-ui
 
+## 0.6.0
+
+### Minor Changes
+
+- 61a0d81: Add task archive and delete: archived tasks are hidden by default with a "Show archived" toggle and are excluded from the scheduler heartbeat; delete permanently removes a task and its messages from the store. Both are available as MCP tools (task_archive, task_unarchive, task_delete), REST endpoints, and confirm-gated UI actions. A locked/running task cannot be deleted (409) to avoid zombie resurrection by the heartbeat.
+- 04c6f3e: Autonomous git tasks now enter a `reviewing` state between `active` and `done`.
+  `task_complete` sends a git-isolated task to `reviewing`; the DONE review runs
+  as its own heartbeat cycle (no longer inline), transitioning to `active` on
+  changes-requested or `done` on pass/max-rounds. The UI shows reviewing tasks as
+  active (purple, with a Pause control and an "In review" label) instead of
+  misleadingly inactive. Non-git tasks finalize directly to `done` as before.
+
+### Patch Changes
+
+- 95dd100: Fix conversation delete in VSCode sidebar mode by replacing the disabled
+  `window.confirm()` call with an inline React confirmation dialog. The
+  overlay supports Escape-key and backdrop-click dismissal and renders
+  correctly inside both the sidebar and chat layouts (fixes a JSX syntax
+  error that broke the build).
+- ada15d2: Task chat now reuses the normal chat renderer (MessageList): markdown, thinking, and tool blocks render consistently with the interactive chat instead of raw plain text.
+
 ## 0.5.0
 
 ### Minor Changes

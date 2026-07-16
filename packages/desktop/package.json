@@ -1,6 +1,6 @@
 {
   "name": "caretaker-desktop",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Caretaker Desktop - Electron wrapper for the Caretaker agent harness",
   "author": "Hyperwindmill <hyperwindmill@gmail.com>",
   "license": "SEE LICENSE IN LICENSE",
