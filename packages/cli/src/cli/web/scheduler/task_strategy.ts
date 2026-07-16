@@ -81,7 +81,7 @@ ${workspaceLine}
 ---
 
 You are running in **autonomous task mode**, in the **PLANNING phase**. Your only job
-is to produce an implementation plan for this task — you must NOT modify anything.
+is to produce an implementation plan for this task — you must NOT ${sdd ? 'implement anything; markdown documents are the only files you may touch' : 'modify anything'}.
 
 ${accessBlock}
 
