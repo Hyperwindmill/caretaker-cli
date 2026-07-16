@@ -24,6 +24,14 @@ export type ProjectConfig = {
   workingDir: string;
   agentId: string;
   active: boolean;
+  /** Optional planner-role agent; falls back to the developer chain when unset. */
+  plannerAgentId?: string | null;
+  /** Optional reviewer-role agent; falls back to the developer chain when unset. */
+  reviewerAgentId?: string | null;
+  /** Planning phase default for tasks in this project. Unset = enabled. */
+  planningEnabled?: boolean | null;
+  /** DONE-review gate default for tasks in this project. Unset = enabled. */
+  reviewEnabled?: boolean | null;
 };
 
 export type CaretakerConfig = {

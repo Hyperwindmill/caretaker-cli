@@ -18,6 +18,10 @@ export interface Project {
   workingDir: string;
   agentId: string;
   active: boolean;
+  plannerAgentId?: string | null;
+  reviewerAgentId?: string | null;
+  planningEnabled?: boolean | null;
+  reviewEnabled?: boolean | null;
 }
 
 export interface Task {
@@ -26,7 +30,7 @@ export interface Task {
   title: string;
   objective: string;
   checklist: ChecklistItem[];
-  status: 'draft' | 'active' | 'reviewing' | 'paused' | 'blocked' | 'done';
+  status: 'draft' | 'planning' | 'active' | 'reviewing' | 'paused' | 'blocked' | 'done';
   blockedReason: string | null;
   noProgressCount: number;
   maxNoProgress: number;
@@ -35,6 +39,10 @@ export interface Task {
   worktreePath?: string | null;
   archived?: boolean;
   agentId?: string | null;
+  plannerAgentId?: string | null;
+  reviewerAgentId?: string | null;
+  planningEnabled?: boolean | null;
+  reviewEnabled?: boolean | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -43,7 +51,7 @@ export interface TaskMessage {
   id: number;
   taskId: number;
   role: 'user' | 'assistant' | 'tool';
-  messageType: 'chat' | 'heartbeat' | 'heartbeat_live' | 'system' | 'block' | 'tool_call' | 'yield' | 'review';
+  messageType: 'chat' | 'heartbeat' | 'heartbeat_live' | 'system' | 'block' | 'tool_call' | 'yield' | 'review' | 'plan';
   content: string;
   toolCallId?: string | null;
   agentId?: string | null;
