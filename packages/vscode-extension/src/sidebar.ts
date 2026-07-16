@@ -42,8 +42,18 @@ import {
   readOAuthBlob,
 } from 'caretaker-cli/mcp';
 
-import { listForAgent, readSession, deleteSession, computeContextUsage } from 'caretaker-cli/session';
-import type { AgentConfig, ProviderConfig, PluginsFile, McpServerConfig } from 'caretaker-cli/types';
+import {
+  listForAgent,
+  readSession,
+  deleteSession,
+  computeContextUsage,
+} from 'caretaker-cli/session';
+import type {
+  AgentConfig,
+  ProviderConfig,
+  PluginsFile,
+  McpServerConfig,
+} from 'caretaker-cli/types';
 
 import {
   parseViewToHost,
@@ -208,7 +218,8 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
           const needsToolRefresh =
             freshAgent.allowedTools.join('|') !== this.currentAgent.allowedTools.join('|') ||
             (freshAgent.plugins ?? []).join('|') !== (this.currentAgent.plugins ?? []).join('|') ||
-            (freshAgent.mcpServers ?? []).join('|') !== (this.currentAgent.mcpServers ?? []).join('|');
+            (freshAgent.mcpServers ?? []).join('|') !==
+              (this.currentAgent.mcpServers ?? []).join('|');
 
           // Update currentAgent fields that may have changed
           this.currentAgent = { ...freshAgent };
@@ -216,7 +227,10 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
           if (needsToolRefresh && this.currentProvider) {
             // Re-resolve tools if allowedTools/plugins/mcpServers changed
             this.currentTools = await harness.resolveAgentTools(this.currentAgent, harness.tools);
-            this.post(webview, { type: 'contextUsage', usage: this.controller?.getContextUsage() ?? null });
+            this.post(webview, {
+              type: 'contextUsage',
+              usage: this.controller?.getContextUsage() ?? null,
+            });
           }
         }
       }
@@ -299,7 +313,7 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
         void this.initializeView(webview);
         return;
       case 'start':
-        await this.handleStart(webview, msg.prompt);
+        await this.handleStart(webview, msg.prompt, msg.attachments);
         return;
       case 'abort':
         this.resolveAllPending('reject');
@@ -471,7 +485,12 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
           void this.sendSettingsData(webview);
           this.post(webview, { type: 'mcpAuthOutcome', serverId: msg.serverId, ok: true });
         } catch (err) {
-          this.post(webview, { type: 'mcpAuthOutcome', serverId: msg.serverId, ok: false, error: String(err) });
+          this.post(webview, {
+            type: 'mcpAuthOutcome',
+            serverId: msg.serverId,
+            ok: false,
+            error: String(err),
+          });
         }
         return;
       case 'revokeMcpAuth':
@@ -481,11 +500,15 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
           void this.sendSettingsData(webview);
           this.post(webview, { type: 'mcpAuthOutcome', serverId: msg.serverId, ok: true });
         } catch (err) {
-          this.post(webview, { type: 'mcpAuthOutcome', serverId: msg.serverId, ok: false, error: String(err) });
+          this.post(webview, {
+            type: 'mcpAuthOutcome',
+            serverId: msg.serverId,
+            ok: false,
+            error: String(err),
+          });
         }
         return;
       case 'fetchModels':
-
         try {
           const result = await harness.fetchOpenAiStyleModels(msg.endpoint, msg.apiKey ?? null);
           this.post(webview, { type: 'modelsFetched', result });
@@ -496,7 +519,7 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
           });
         }
         return;
-      }
+    }
   }
 
   private resolveAllPending(decision: ConfirmDecision): void {
@@ -504,7 +527,11 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
     this.pendingConfirms.clear();
   }
 
-  private async handleStart(webview: vscode.Webview, prompt: string): Promise<void> {
+  private async handleStart(
+    webview: vscode.Webview,
+    prompt: string,
+    attachments?: Array<{ name: string; mime: string; base64: string }>,
+  ): Promise<void> {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (!workspaceFolder) {
       this.post(webview, {
@@ -532,34 +559,37 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
       });
     }
 
-    await this.controller.start(prompt, {
-      onChunk: (text) => this.post(webview, { type: 'chunk', text }),
-      onThinking: (text) => this.post(webview, { type: 'thinking', text }),
-      onToolCall: (id, name, args) => this.post(webview, { type: 'tool_call', id, name, args }),
-      onToolResult: (id, content) =>
-        this.post(webview, { type: 'tool_result', id, content }),
-      askConfirm: (id, toolName, args) =>
-        new Promise<ConfirmDecision>((resolve) => {
-          this.pendingConfirms.set(id, resolve);
-          this.post(webview, { type: 'permission_request', id, toolName, args });
-        }),
-      onError: (message) => {
-        this.resolveAllPending('reject');
-        this.post(webview, { type: 'error', message });
+    await this.controller.start(
+      prompt,
+      {
+        onChunk: (text) => this.post(webview, { type: 'chunk', text }),
+        onThinking: (text) => this.post(webview, { type: 'thinking', text }),
+        onToolCall: (id, name, args) => this.post(webview, { type: 'tool_call', id, name, args }),
+        onToolResult: (id, content) => this.post(webview, { type: 'tool_result', id, content }),
+        askConfirm: (id, toolName, args) =>
+          new Promise<ConfirmDecision>((resolve) => {
+            this.pendingConfirms.set(id, resolve);
+            this.post(webview, { type: 'permission_request', id, toolName, args });
+          }),
+        onError: (message) => {
+          this.resolveAllPending('reject');
+          this.post(webview, { type: 'error', message });
+        },
+        onDone: () => {
+          this.resolveAllPending('reject');
+          this.post(webview, { type: 'done' });
+          if (this.controller) {
+            const usage = this.controller.getContextUsage();
+            this.post(webview, { type: 'contextUsage', usage });
+          }
+        },
+        onSessionCreated: (sessionId: string) => {
+          this.currentSessionId = sessionId;
+          void this.loadSessionsAndSend(webview, this.currentAgent!.id);
+        },
       },
-      onDone: () => {
-        this.resolveAllPending('reject');
-        this.post(webview, { type: 'done' });
-        if (this.controller) {
-          const usage = this.controller.getContextUsage();
-          this.post(webview, { type: 'contextUsage', usage });
-        }
-      },
-      onSessionCreated: (sessionId: string) => {
-        this.currentSessionId = sessionId;
-        void this.loadSessionsAndSend(webview, this.currentAgent!.id);
-      },
-    });
+      attachments,
+    );
   }
 
   private post(webview: vscode.Webview, msg: HostToView): void {

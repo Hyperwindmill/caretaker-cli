@@ -26,7 +26,14 @@ function nowIso(): string {
 }
 
 function fakeUserMessage(text: string): MessageRecord {
-  return { v: 1, type: 'message', id: `u-${Math.random()}`, role: 'user', content: text, createdAt: nowIso() };
+  return {
+    v: 1,
+    type: 'message',
+    id: `u-${Math.random()}`,
+    role: 'user',
+    content: text,
+    createdAt: nowIso(),
+  };
 }
 
 function fakeAssistantMessage(text: string): MessageRecord {
@@ -82,6 +89,7 @@ function makeDeps(overrides: Partial<ChatDeps> = {}): {
       appendCalls.push({ meta, msg });
     },
     userMessage: fakeUserMessage,
+    saveAttachment: async () => 'att-unused',
     run: async () => ({
       text: '',
       toolCalls: 0,
@@ -145,6 +153,52 @@ test('reuses the session across subsequent starts', async () => {
   await ctl.start('second', cb);
 
   assert.equal(created.length, 1);
+});
+
+test('persists attachments and passes them to the harness run', async () => {
+  const saved: Array<{ sessionId: string; data: Buffer; extension: string }> = [];
+  const runCalls: Array<Parameters<ChatDeps['run']>[0]> = [];
+  const { deps, appendCalls } = makeDeps({
+    saveAttachment: async (sessionId, data, extension) => {
+      saved.push({ sessionId, data, extension });
+      return `att-${saved.length}${extension}`;
+    },
+    userMessage: (text, opts) => ({
+      ...fakeUserMessage(text),
+      ...(opts?.attachments ? { attachments: opts.attachments } : {}),
+    }),
+    run: async (opts) => {
+      runCalls.push(opts);
+      return { text: '', toolCalls: 0, usage: { input: 0, output: 0 }, stop: 'done' };
+    },
+  });
+  const ctl = new ChatSessionController({
+    agent: fakeAgent,
+    provider: fakeProvider,
+    tools: [],
+    workingDir: '/tmp',
+    deps,
+  });
+  const { cb } = makeCallbacks();
+
+  await ctl.start('read this pdf', cb, [
+    {
+      name: 'resume.pdf',
+      mime: 'application/pdf',
+      base64: Buffer.from('%PDF-fake').toString('base64'),
+    },
+  ]);
+
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0]!.sessionId, 'session-1');
+  assert.equal(saved[0]!.extension, '.pdf');
+  assert.equal(saved[0]!.data.toString(), '%PDF-fake');
+
+  const expected = [{ mime: 'application/pdf', id: 'att-1.pdf', name: 'resume.pdf' }];
+  assert.equal(runCalls.length, 1, 'harness run should be invoked');
+  assert.equal(runCalls[0]!.sessionId, 'session-1');
+  assert.deepEqual(runCalls[0]!.promptAttachments, expected);
+  assert.deepEqual(appendCalls[0]!.msg.attachments, expected);
 });
 
 test('forwards onChunk and onToolCall events from the harness', async () => {

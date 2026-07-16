@@ -7,10 +7,12 @@
 // Dependencies are injectable so tests can swap in a fake harness +
 // in-memory session store without touching CARETAKER_HOME.
 
+import * as path from 'node:path';
+
 import * as harness from 'caretaker-cli/harness';
 import * as session from 'caretaker-cli/session';
 import type { ConfirmDecision } from 'caretaker-cli/harness';
-import type { MessageRecord, SessionMetaRecord } from 'caretaker-cli/session';
+import type { MessageRecord, SessionMetaRecord, ToolAttachmentRecord } from 'caretaker-cli/session';
 import type { AgentConfig, ProviderConfig } from 'caretaker-cli/types';
 
 /** Called by the controller when a tool that requires confirmation
@@ -18,11 +20,7 @@ import type { AgentConfig, ProviderConfig } from 'caretaker-cli/types';
  * caller resolves with the user's decision. Returning `'always'`
  * tells the controller to skip future asks for the same tool name
  * within this controller's lifetime — same semantics as the TUI. */
-export type AskConfirm = (
-  id: string,
-  toolName: string,
-  args: unknown,
-) => Promise<ConfirmDecision>;
+export type AskConfirm = (id: string, toolName: string, args: unknown) => Promise<ConfirmDecision>;
 
 export interface ChatCallbacks {
   onChunk: (text: string) => void;
@@ -40,6 +38,7 @@ export interface ChatDeps {
   createSession: typeof session.createSession;
   appendMessage: typeof session.appendMessage;
   userMessage: typeof session.userMessage;
+  saveAttachment: typeof session.saveAttachment;
 }
 
 export const productionDeps: ChatDeps = {
@@ -47,7 +46,15 @@ export const productionDeps: ChatDeps = {
   createSession: session.createSession,
   appendMessage: session.appendMessage,
   userMessage: session.userMessage,
+  saveAttachment: session.saveAttachment,
 };
+
+/** Attachment as it arrives from the webview composer (base64-encoded). */
+export interface RawAttachment {
+  name: string;
+  mime: string;
+  base64: string;
+}
 
 export interface ChatSessionOptions {
   agent: AgentConfig;
@@ -85,7 +92,7 @@ export class ChatSessionController {
     return session.computeContextUsage(this.history, this.opts.agent.model);
   }
 
-  async start(prompt: string, cb: ChatCallbacks): Promise<void> {
+  async start(prompt: string, cb: ChatCallbacks, rawAttachments?: RawAttachment[]): Promise<void> {
     if (this.inflight) {
       cb.onError('A turn is already in progress.');
       return;
@@ -113,7 +120,19 @@ export class ChatSessionController {
       // At this point metaRecord is guaranteed to be set
       const meta = this.metaRecord!;
 
-      const userMsg = deps.userMessage(prompt);
+      const attachmentRecords: ToolAttachmentRecord[] = [];
+      if (rawAttachments && rawAttachments.length > 0) {
+        for (const att of rawAttachments) {
+          const buf = Buffer.from(att.base64, 'base64');
+          const ext = path.extname(att.name) || '';
+          const id = await deps.saveAttachment(meta.id, buf, ext);
+          attachmentRecords.push({ mime: att.mime, id, name: att.name });
+        }
+      }
+
+      const userMsg = deps.userMessage(prompt, {
+        attachments: attachmentRecords.length > 0 ? attachmentRecords : undefined,
+      });
       await deps.appendMessage(meta, userMsg);
       const priorHistory = [...this.history];
       this.history.push(userMsg);
@@ -127,6 +146,8 @@ export class ChatSessionController {
           history: priorHistory,
           signal: ac.signal,
           workingDir: this.opts.workingDir,
+          sessionId: meta.id,
+          promptAttachments: attachmentRecords.length > 0 ? attachmentRecords : undefined,
         },
         {
           onChunk: cb.onChunk,
