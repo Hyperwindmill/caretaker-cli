@@ -58,7 +58,12 @@ export interface ThinkingItem {
   kind: 'thinking';
   text: string;
 }
-export type ChatItem = UserItem | AssistantItem | ToolItem | ThinkingItem;
+export interface NoticeItem {
+  kind: 'notice';
+  text: string;
+  variant: 'system' | 'block';
+}
+export type ChatItem = UserItem | AssistantItem | ToolItem | ThinkingItem | NoticeItem;
 
 export interface PendingConfirm {
   id: string;

@@ -3,7 +3,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import type { ChatItem } from './App.js';
 import { MarkdownText } from './MarkdownText.js';
 import { prettyArgs, resultMetric, toolSummary } from './toolFormat.js';
-import { DocIcon, ThinkingIcon, ToolIcon, SpinnerIcon, ResultArrowIcon } from './icons.js';
+import { DocIcon, ThinkingIcon, ToolIcon, SpinnerIcon, ResultArrowIcon, WarningIcon, SettingsIcon } from './icons.js';
 import logo from './caretaker_cli.png';
 
 export interface MessageListProps {
@@ -150,7 +150,7 @@ function Item({ item, sessionId }: { item: ChatItem; sessionId: string | null })
             <span className="tool__status">
               {item.result === null ? (
                 <SpinnerIcon className="tool__spinner" size={14} />
-              ) : (
+              ) : item.result === '' ? null : (
                 resultMetric(item.result)
               )}
             </span>
@@ -158,7 +158,8 @@ function Item({ item, sessionId }: { item: ChatItem; sessionId: string | null })
           </summary>
           <div className="tool__body">
             {fullArgs && <pre className="tool__args-full">{fullArgs}</pre>}
-            {item.result !== null && (
+            {/* ponytail: '' result = no stored result (autonomous task tool calls); render args only */}
+            {item.result !== null && item.result !== '' && (
               <div className="tool__result">
                 <span className="tool__arrow"><ResultArrowIcon size={13} /></span>
                 <div className="tool__result-content">
@@ -170,5 +171,12 @@ function Item({ item, sessionId }: { item: ChatItem; sessionId: string | null })
         </details>
       );
     }
+    case 'notice':
+      return (
+        <div className={`notice${item.variant === 'block' ? ' notice--block' : ''}`}>
+          {item.variant === 'block' ? <WarningIcon size={12} /> : <SettingsIcon size={12} />}
+          <MarkdownText content={item.text} />
+        </div>
+      );
   }
 }

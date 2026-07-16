@@ -1320,6 +1320,30 @@ body.vscode-light .thinking__content {
   border-top-color: oklch(0 0 0 / 0.06);
 }
 
+.notice {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 90%;
+  margin: 4px auto;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  background: rgba(127, 127, 127, 0.08);
+  border: 1px solid rgba(127, 127, 127, 0.16);
+  text-align: center;
+}
+.notice .markdown-body {
+  font-size: 11px;
+}
+.notice--block {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
 /* ── Streaming Chat Loader ────────────────────────────────── */
 .messages__loading-indicator {
   display: flex;
