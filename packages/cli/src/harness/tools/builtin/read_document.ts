@@ -15,10 +15,38 @@ export interface DocumentParsers {
   extractXlsx(buffer: Buffer): Promise<string>;
   checkPandoc(): Promise<boolean>;
   runPandoc(filePath: string, signal?: AbortSignal): Promise<{ content: string; error?: string }>;
+  runPdftotext(
+    filePath: string,
+    signal?: AbortSignal,
+  ): Promise<{ content: string; error?: string; notInstalled?: boolean }>;
+}
+
+/**
+ * unpdf's bundled pdfjs runs `globalThis.navigator ??= {}` at import time.
+ * In plain Node the built-in navigator getter returns a real object so the
+ * assignment is skipped, but some hosts (VSCode extension host) expose
+ * `navigator` as a getter-only property that yields undefined — the strict-mode
+ * assignment then throws "Cannot set property navigator ... only a getter".
+ * Redefine it as a writable data property before unpdf loads.
+ */
+export function ensureWritableNavigator(): void {
+  if (globalThis.navigator != null) return;
+  const desc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  if (!desc || desc.set || desc.writable) return; // absent or assignable — unpdf's shim will work
+  try {
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {},
+      writable: true,
+      configurable: true,
+    });
+  } catch {
+    // Not configurable: nothing we can do; unpdf will surface its own error.
+  }
 }
 
 const realParsers: DocumentParsers = {
   async extractPdf(buffer: Buffer) {
+    ensureWritableNavigator();
     const doc = await getDocumentProxy(new Uint8Array(buffer));
     const { text } = await extractText(doc, { mergePages: true });
     return text;
@@ -73,46 +101,65 @@ const realParsers: DocumentParsers = {
     });
   },
   runPandoc(filePath: string, signal?: AbortSignal): Promise<{ content: string; error?: string }> {
-    return new Promise((resolve) => {
-      const child = spawn('pandoc', ['-t', 'markdown', filePath], {
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      let stdout = '';
-      let stderr = '';
-      child.stdout.on('data', (chunk) => {
-        stdout += chunk.toString();
-      });
-      child.stderr.on('data', (chunk) => {
-        stderr += chunk.toString();
-      });
-
-      const onAbort = () => {
-        child.kill('SIGTERM');
-      };
-      if (signal) {
-        signal.addEventListener('abort', onAbort, { once: true });
-      }
-
-      child.on('error', (err) => {
-        if (signal) signal.removeEventListener('abort', onAbort);
-        resolve({ content: '', error: err.message });
-      });
-
-      child.on('close', (code) => {
-        if (signal) signal.removeEventListener('abort', onAbort);
-        if (code === 0) {
-          resolve({ content: stdout });
-        } else {
-          resolve({ content: '', error: stderr.trim() || `Exit code ${code}` });
-        }
-      });
-    });
+    return runCommand('pandoc', ['-t', 'markdown', filePath], signal);
+  },
+  runPdftotext(
+    filePath: string,
+    signal?: AbortSignal,
+  ): Promise<{ content: string; error?: string; notInstalled?: boolean }> {
+    return runCommand('pdftotext', [filePath, '-'], signal);
   },
 };
 
+function runCommand(
+  cmd: string,
+  args: string[],
+  signal?: AbortSignal,
+): Promise<{ content: string; error?: string; notInstalled?: boolean }> {
+  return new Promise((resolve) => {
+    const child = spawn(cmd, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    const onAbort = () => {
+      child.kill('SIGTERM');
+    };
+    if (signal) {
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+
+    child.on('error', (err) => {
+      if (signal) signal.removeEventListener('abort', onAbort);
+      resolve({
+        content: '',
+        error: err.message,
+        notInstalled: (err as NodeJS.ErrnoException).code === 'ENOENT',
+      });
+    });
+
+    child.on('close', (code) => {
+      if (signal) signal.removeEventListener('abort', onAbort);
+      if (code === 0) {
+        resolve({ content: stdout });
+      } else {
+        resolve({ content: '', error: stderr.trim() || `Exit code ${code}` });
+      }
+    });
+  });
+}
+
 /**
  * Try unpdf first; if it throws on a PDF the bundled pdfjs cannot handle,
- * fall back to pandoc if installed. Requires the file path for pandoc invocation.
+ * fall back to pdftotext (poppler) if installed. Pandoc is not an option
+ * here: it can only write PDFs, not read them.
  */
 export async function extractPdfWithFallback(
   buffer: Buffer,
@@ -122,18 +169,13 @@ export async function extractPdfWithFallback(
   try {
     return await activeParsers.extractPdf(buffer);
   } catch (unpdfErr) {
-    const isPandoc = await activeParsers.checkPandoc();
-    if (isPandoc) {
-      const pandocRes = await activeParsers.runPandoc(filePath, signal);
-      if (pandocRes.error) {
-        throw new Error(
-          `unpdf failed (${unpdfErr instanceof Error ? unpdfErr.message : String(unpdfErr)})` +
-            ` and pandoc fallback also failed: ${pandocRes.error}`,
-        );
-      }
-      return pandocRes.content;
-    }
-    throw unpdfErr;
+    const res = await activeParsers.runPdftotext(filePath, signal);
+    if (!res.error) return res.content;
+    if (res.notInstalled) throw unpdfErr;
+    throw new Error(
+      `unpdf failed (${unpdfErr instanceof Error ? unpdfErr.message : String(unpdfErr)})` +
+        ` and pdftotext fallback also failed: ${res.error}`,
+    );
   }
 }
 
@@ -148,7 +190,7 @@ export const readDocumentTool: Tool = {
   name: 'read_document',
   description:
     'Read a PDF, DOCX (Word), or XLSX/XLS (Excel) file natively, extracting its text content. ' +
-    'For PDFs, falls back to pandoc if the native parser (unpdf/pdfjs) fails. ' +
+    'For PDFs, falls back to the system pdftotext (poppler) if the native parser (unpdf/pdfjs) fails. ' +
     'For other document formats (e.g. EPUB, ODT, RTF), it will try to use the system pandoc command if installed.',
   parameters: {
     type: 'object',
