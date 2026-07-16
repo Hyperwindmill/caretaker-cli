@@ -300,6 +300,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [showSessions, setShowSessions] = useState(false);
   const [showAllAgents, setShowAllAgents] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<{ sessionId: string; title: string } | null>(null);
 
   const [activeScreen, setActiveScreen] = useState<'chat' | 'settings' | 'projects'>('chat');
   const [settingsData, setSettingsData] = useState<{
@@ -454,13 +455,38 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
   };
 
   const onDeleteSession = (sessionId: string, title: string): void => {
-    if (!confirm(`Delete conversation "${title}"? This cannot be undone.`)) return;
+    // VSCode webviews disable window.confirm(); use an inline confirmation
+    // card instead so the feature works in both the web app and the sidebar.
+    setPendingDelete({ sessionId, title });
+  };
+
+  const confirmDeleteSession = (): void => {
+    if (!pendingDelete) return;
+    const { sessionId } = pendingDelete;
     if (selectedSessionId === sessionId) {
       setSelectedSessionId(null);
       dispatch({ kind: 'clear' });
     }
     postMessage({ type: 'deleteSession', sessionId });
+    setPendingDelete(null);
   };
+
+  const cancelDeleteSession = (): void => {
+    setPendingDelete(null);
+  };
+
+  // Dismiss the delete confirmation dialog on Escape (parity with the old
+  // window.confirm() behavior). Also dismiss on overlay click.
+  useEffect(() => {
+    if (!pendingDelete) return;
+    function handleKeyDown(event: KeyboardEvent): void {
+      if (event.key === 'Escape') {
+        setPendingDelete(null);
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [pendingDelete]);
 
   const onToggleSessions = (): void => {
     if (selectedAgentId) {
@@ -540,6 +566,21 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
       </div>
     );
   }
+
+  const deleteOverlay = pendingDelete && (
+    <div className="app__confirm-overlay" onClick={cancelDeleteSession}>
+      <div className="app__confirm-dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="app__confirm-title">Delete conversation</div>
+        <p className="app__confirm-message">
+          Delete conversation &ldquo;{pendingDelete.title}&rdquo;? This cannot be undone.
+        </p>
+        <div className="app__confirm-buttons">
+          <button className="app__confirm-btn" onClick={cancelDeleteSession}>Cancel</button>
+          <button className="app__confirm-btn app__confirm-btn--danger" onClick={confirmDeleteSession}>Delete</button>
+        </div>
+      </div>
+    </div>
+  );
 
   if (layout === 'sidebar') {
     return (
@@ -701,6 +742,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
             </div>
           )}
         </main>
+        {deleteOverlay}
       </div>
     );
   }
@@ -818,6 +860,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
         onAbort={onAbort}
         contextUsage={chatState.contextUsage}
       />
+      {deleteOverlay}
     </div>
   );
 }
