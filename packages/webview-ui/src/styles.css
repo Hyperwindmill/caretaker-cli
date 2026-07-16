@@ -2974,3 +2974,21 @@ body.vscode-light .composer__attachment {
 .app__confirm-btn--danger:hover {
   background: #dc2626;
 }
+
+.app__error-banner {
+  position: fixed;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: oklch(0.55 0.22 25 / 0.95);
+  color: #fff;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  padding: 8px 16px;
+  border-radius: var(--radius-sm, 4px);
+  z-index: 1001;
+  cursor: pointer;
+  max-width: calc(100% - 32px);
+  box-shadow: 0 4px 12px oklch(0 0 0 / 0.3);
+  animation: app__confirm-fade 0.12s ease-out;
+}

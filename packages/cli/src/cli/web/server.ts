@@ -8,8 +8,9 @@ import { serve } from '@hono/node-server';
 import { WebSocketServer, WebSocket } from 'ws';
 
 import * as harness from '../../harness/index.js';
-import { getDb, Task, getTaskById, saveTask, createTask, addTaskMessage, runQuery } from '../../store/db.js';
+import { getDb, Task, getTaskById, saveTask, createTask, addTaskMessage, deleteTask, runQuery } from '../../store/db.js';
 import { discardWorktree } from '../../lib/task_git.js';
+import { runningTasks } from './scheduler/locks.js';
 import {
   loadAgents,
   loadConfig,
@@ -295,6 +296,8 @@ export async function startServer(port: number, host: string): Promise<void> {
         config.projects = config.projects.filter((p) => p.id !== id);
         await saveConfig(config);
       }
+      // Delete task messages first, then tasks — avoids orphaned message rows.
+      await runQuery(`DELETE FROM task_messages WHERE taskId IN (SELECT id FROM tasks WHERE projectId = ${id})`);
       await runQuery(`DELETE FROM tasks WHERE projectId = ${id}`);
       return c.json({ ok: true });
     } catch (err) {
@@ -305,9 +308,11 @@ export async function startServer(port: number, host: string): Promise<void> {
   // Tasks REST endpoints
   app.get('/api/projects/:id/tasks', async (c) => {
     const id = Number(c.req.param('id'));
+    const includeArchived = c.req.query('archived') === 'true';
     try {
-      const rows = await runQuery(`SELECT * FROM tasks WHERE projectId = ${id}`);
-      return c.json(rows);
+      const rows = (await runQuery(`SELECT * FROM tasks WHERE projectId = ${id}`)) as Task[];
+      const filtered = includeArchived ? rows : rows.filter((t) => !t.archived);
+      return c.json(filtered);
     } catch (err) {
       return c.json([], 200);
     }
@@ -406,6 +411,73 @@ export async function startServer(port: number, host: string): Promise<void> {
     await saveTask(task);
 
     return c.json({ ok: true, branch: task.branch });
+  });
+
+  app.post('/api/tasks/:id/archive', async (c) => {
+    const taskId = Number(c.req.param('id'));
+    const task = await getTaskById(taskId);
+    if (!task) return c.json({ ok: false, error: 'not found' }, 404);
+
+    task.archived = true;
+    if (task.status === 'active' || task.status === 'reviewing') {
+      task.status = 'paused';
+    }
+    task.updatedAt = new Date().toISOString();
+    await saveTask(task);
+
+    await addTaskMessage({
+      taskId,
+      role: 'assistant',
+      messageType: 'system',
+      content: 'Task archived.',
+    });
+
+    return c.json({ ok: true });
+  });
+
+  app.post('/api/tasks/:id/unarchive', async (c) => {
+    const taskId = Number(c.req.param('id'));
+    const task = await getTaskById(taskId);
+    if (!task) return c.json({ ok: false, error: 'not found' }, 404);
+
+    task.archived = false;
+    task.updatedAt = new Date().toISOString();
+    await saveTask(task);
+
+    await addTaskMessage({
+      taskId,
+      role: 'assistant',
+      messageType: 'system',
+      content: 'Task unarchived.',
+    });
+
+    return c.json({ ok: true });
+  });
+
+  app.delete('/api/tasks/:id', async (c) => {
+    const taskId = Number(c.req.param('id'));
+    const task = await getTaskById(taskId);
+    if (!task) return c.json({ ok: false, error: 'not found' }, 404);
+
+    // Guard against deleting a task that is currently being processed by the
+    // scheduler heartbeat. Deleting mid-run would cause the heartbeat's
+    // finally block to resurrect the task as a zombie via saveTask.
+    const lockKey = `task_db_${taskId}`;
+    if (task.lockedAt || runningTasks.has(lockKey)) {
+      return c.json({ ok: false, error: 'Task is currently running. Wait for it to finish or pause it first.' }, 409);
+    }
+
+    // Clean up any active worktree before deleting the task record.
+    if (task.worktreePath) {
+      try {
+        await discardWorktree(task.worktreePath, task.title);
+      } catch {
+        // Best-effort: proceed with deletion even if worktree cleanup fails.
+      }
+    }
+
+    await deleteTask(taskId);
+    return c.json({ ok: true });
   });
 
   app.post('/api/tasks/:id/checklist-item', async (c) => {

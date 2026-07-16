@@ -33,6 +33,7 @@ export interface Task {
   lockedAt: string | null;
   branch?: string | null;
   worktreePath?: string | null;
+  archived?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -143,4 +144,11 @@ export async function updateTaskMessageContent(
   } else {
     await runQuery(`UPDATE task_messages SET content = '${cleaned}' WHERE id = ${id}`);
   }
+}
+
+// Permanently delete a task and all of its messages. Used by the delete
+// action (real deletion from the store); archiving is a soft flag, not this.
+export async function deleteTask(taskId: number): Promise<void> {
+  await runQuery(`DELETE FROM task_messages WHERE taskId = ${taskId}`);
+  await runQuery(`DELETE FROM tasks WHERE id = ${taskId}`);
 }
