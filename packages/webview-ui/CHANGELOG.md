@@ -1,5 +1,32 @@
 # webview-ui
 
+## 0.5.0
+
+### Minor Changes
+
+- 97d36f8: Autonomous tasks now run in a dedicated git worktree on a per-task branch (caretaker/task-<id>-<slug>). Progress is committed every heartbeat cycle; on completion the worktree is removed and the branch is left for review. Non-git projects run in place as before. Adds a "Discard worktree" action (web button + mcp**task**task_discard_worktree tool).
+- 699a67d: Add conversation delete to the web app and VSCode sidebar
+
+  The TUI already supported deleting chat sessions; the web GUI and the
+  VSCode sidebar did not. Wire a `deleteSession` message through the
+  host↔view bridge and handle it in both hosts (the local web server and
+  the VSCode sidebar), then expose a delete button (with a confirmation
+  prompt) on each conversation row in the sidebar sessions list and the
+  conversations dropdown. Deleting the active conversation clears the
+  chat view and refreshes the sessions list.
+
+- fb5020f: Autonomous tasks now run an independent code-review pass when they reach DONE. If the review requests changes, the task reopens (worktree kept) and the review is left in the task history for the agent to address next cycle; a PASS removes the worktree and keeps the branch. Capped at 3 review rounds.
+
+### Patch Changes
+
+- 0704fc5: Add folder picker to project creation modal
+
+  The "Register New Project" modal in the Projects tab used a plain text input
+  for the working directory path. It now uses the existing `FolderPicker`
+  component (already used in project settings, agents, and plugins tabs), giving
+  users a "Browse..." button to navigate the filesystem visually instead of
+  typing the absolute path by hand.
+
 ## 0.4.2
 
 ## 0.4.1
