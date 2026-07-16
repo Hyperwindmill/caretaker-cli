@@ -3,7 +3,8 @@ import * as harness from '../../../harness/index.js';
 import { loadAgents, loadConfig } from '../../../store/json.js';
 import { getDb, Task, Project, TaskMessage, getTaskById, saveTask, addTaskMessage, updateTaskMessageContent, runQuery } from '../../../store/db.js';
 import { runningTasks } from './locks.js';
-import { isGitRepo, ensureWorktree, agentDirIn, commitWip, discardWorktree } from '../../../lib/task_git.js';
+import { isGitRepo, ensureWorktree, agentDirIn, commitWip, finalizeDone } from '../../../lib/task_git.js';
+import { runDoneReview, MAX_REVIEW_ROUNDS } from './task_review.js';
 
 function buildPrompt(
   systemPrompt: string,
@@ -245,11 +246,62 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
     if (gitTask && gitTask.worktreePath) {
       try {
         if (gitTask.status === 'done') {
-          await discardWorktree(gitTask.worktreePath, gitTask.title);
-          gitTask.worktreePath = null;
-          gitTask.updatedAt = new Date().toISOString();
-          await saveTask(gitTask);
-          console.log(`[task_heartbeat] Task #${task.id} done: worktree removed, branch ${gitTask.branch} kept`);
+          // Commit the agent's final work so the branch is complete before review.
+          await commitWip(gitTask.worktreePath, gitTask.title);
+
+          // Count prior review rounds from the message stream (no stored counter).
+          const priorReviews = (
+            (await runQuery(`SELECT * FROM task_messages WHERE taskId = ${task.id}`)) as TaskMessage[]
+          ).filter((m) => m.messageType === 'review').length;
+          const round = priorReviews + 1;
+
+          let verdict: 'pass' | 'changes' = 'pass';
+          try {
+            const review = await runDoneReview({
+              agent: effectiveAgent,
+              provider,
+              tools,
+              objective: gitTask.objective,
+              branch: gitTask.branch || '(unknown)',
+              workingDir,
+              round,
+            });
+            verdict = review.verdict;
+            await addTaskMessage({
+              taskId: task.id,
+              role: 'user',
+              messageType: 'review',
+              content: `[CODE REVIEW round ${round}/${MAX_REVIEW_ROUNDS}] verdict=${verdict}\n\n${review.text}`,
+            });
+            console.log(`[task_heartbeat] Task #${task.id} review round ${round}: ${verdict}`);
+          } catch (reviewErr) {
+            // A broken review must not trap the task in DONE — finalize as PASS.
+            console.error(`[task_heartbeat] Task #${task.id} review failed, finalizing:`, reviewErr);
+            verdict = 'pass';
+          }
+
+          if (verdict === 'changes' && round < MAX_REVIEW_ROUNDS) {
+            // Reopen: keep the worktree, let the agent read the review and fix next cycle.
+            gitTask.status = 'active';
+            gitTask.noProgressCount = 0;
+            gitTask.updatedAt = new Date().toISOString();
+            await saveTask(gitTask);
+            console.log(`[task_heartbeat] Task #${task.id} reopened by review (round ${round}).`);
+          } else {
+            if (verdict === 'changes') {
+              await addTaskMessage({
+                taskId: task.id,
+                role: 'assistant',
+                messageType: 'system',
+                content: `Finished as done despite outstanding review findings after ${MAX_REVIEW_ROUNDS} rounds.`,
+              });
+            }
+            await finalizeDone(gitTask.worktreePath);
+            gitTask.worktreePath = null;
+            gitTask.updatedAt = new Date().toISOString();
+            await saveTask(gitTask);
+            console.log(`[task_heartbeat] Task #${task.id} done: worktree removed, branch ${gitTask.branch} kept`);
+          }
         } else if (await commitWip(gitTask.worktreePath, gitTask.title)) {
           console.log(`[task_heartbeat] Task #${task.id} committed WIP to ${gitTask.branch}`);
         }
