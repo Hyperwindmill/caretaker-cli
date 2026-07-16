@@ -192,7 +192,9 @@ export const completeTaskTool: Tool = {
     const task = await getTaskById(taskId);
     if (!task) return err(`Task ${taskId} not found`);
 
-    task.status = 'done';
+    // Git-isolated tasks enter review before finalizing; non-git tasks finalize
+    // directly (the review is git-diff based, so it needs a branch to inspect).
+    task.status = task.worktreePath ? 'reviewing' : 'done';
     task.lockedAt = null;
     task.updatedAt = new Date().toISOString();
 
