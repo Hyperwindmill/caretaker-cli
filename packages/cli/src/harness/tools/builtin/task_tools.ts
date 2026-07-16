@@ -4,6 +4,7 @@ import { loadConfig, loadAgents } from '../../../store/json.js';
 import type { Tool, ToolResult } from '../types.js';
 import { discardWorktree } from '../../../lib/task_git.js';
 import { runningTasks } from '../../../cli/web/scheduler/locks.js';
+import { resolveReviewEnabled } from '../../../cli/web/scheduler/task_roles.js';
 
 function ok(data: Record<string, unknown> = {}): ToolResult {
   return { content: JSON.stringify({ ok: true, ...data }) };
@@ -195,9 +196,19 @@ export const completeTaskTool: Tool = {
     const task = await getTaskById(taskId);
     if (!task) return err(`Task ${taskId} not found`);
 
-    // Git-isolated tasks enter review before finalizing; non-git tasks finalize
-    // directly (the review is git-diff based, so it needs a branch to inspect).
-    task.status = task.worktreePath ? 'reviewing' : 'done';
+    if (task.status === 'planning') {
+      return err(
+        `Task ${taskId} is in the planning phase. Submit a plan with task_submit_plan before completing.`,
+      );
+    }
+
+    // Git-isolated tasks enter review before finalizing — unless the review
+    // gate is disabled for this task/project. Non-git tasks always finalize
+    // directly (the review is git-diff based, it needs a branch to inspect).
+    const config = await loadConfig();
+    const project = (config.projects || []).find((p) => p.id === task.projectId);
+    const reviewOn = resolveReviewEnabled(task, project);
+    task.status = task.worktreePath && reviewOn ? 'reviewing' : 'done';
     task.lockedAt = null;
     task.updatedAt = new Date().toISOString();
 
