@@ -58,6 +58,7 @@ test('End-to-end task heartbeat worktree lifecycle', async () => {
 
   // Setup config
   await saveConfig({
+    port: 3000,
     providers: [
       {
         name: 'mock-provider',
@@ -85,6 +86,7 @@ test('End-to-end task heartbeat worktree lifecycle', async () => {
       provider: 'mock-provider',
       model: 'mock-model',
       allowedTools: [],
+      maxTurns: 30,
     },
   ]);
 
