@@ -22,6 +22,7 @@ export interface Project {
   reviewerAgentId?: string | null;
   planningEnabled?: boolean | null;
   reviewEnabled?: boolean | null;
+  sddEnabled?: boolean | null;
 }
 
 export interface Task {
@@ -43,6 +44,7 @@ export interface Task {
   reviewerAgentId?: string | null;
   planningEnabled?: boolean | null;
   reviewEnabled?: boolean | null;
+  sddEnabled?: boolean | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -12,6 +12,7 @@ const {
   resolveRoleAgent,
   resolvePlanningEnabled,
   resolveReviewEnabled,
+  resolveSddEnabled,
   activationStatus,
   filterPlannerTools,
 } = await import('./task_roles.js');
@@ -118,4 +119,53 @@ test('filterPlannerTools strips write/edit/multiedit/bash and keeps the rest', (
   const tools = ['read_file', 'glob', 'grep', 'write', 'edit', 'multiedit', 'bash', 'mcp__task__task_get_state'].map(mk);
   const filtered = filterPlannerTools(tools).map((t) => t.name);
   assert.deepEqual(filtered, ['read_file', 'glob', 'grep', 'mcp__task__task_get_state']);
+});
+
+test('resolveSddEnabled: task overrides project; default is OFF', () => {
+  assert.equal(resolveSddEnabled(makeTask(), makeProject()), false);
+  assert.equal(resolveSddEnabled(makeTask(), undefined), false);
+  assert.equal(resolveSddEnabled(makeTask({ sddEnabled: true }), makeProject()), true);
+  assert.equal(resolveSddEnabled(makeTask(), makeProject({ sddEnabled: true })), true);
+  assert.equal(resolveSddEnabled(makeTask({ sddEnabled: false }), makeProject({ sddEnabled: true })), false);
+});
+
+test('filterPlannerTools with sdd: bash stripped, write/edit/multiedit wrapped md-only', async () => {
+  const calls: string[] = [];
+  const mk = (name: string): Tool => ({
+    name,
+    description: 'd',
+    parameters: { type: 'object', properties: {} },
+    execute: async () => {
+      calls.push(name);
+      return { content: 'ok' };
+    },
+  });
+  const tools = filterPlannerTools(['write', 'edit', 'multiedit', 'bash', 'read_file'].map(mk), true);
+  assert.deepEqual(tools.map((t) => t.name), ['write', 'edit', 'multiedit', 'read_file']);
+
+  const ctx = { signal: new AbortController().signal, workingDir: '/w', readPaths: new Set<string>() } as any;
+  const write = tools.find((t) => t.name === 'write')!;
+
+  // Non-md path: denied without invoking the wrapped tool.
+  const denied = await write.execute({ path: 'src/a.ts', content: 'x' }, ctx);
+  assert.equal(denied.content, 'Error: planning phase (SDD mode): only markdown (.md) files may be written.');
+  assert.deepEqual(calls, []);
+
+  // Nested md path delegates; extension check is case-insensitive.
+  const ok1 = await write.execute({ path: 'docs/specs/plan.md', content: 'x' }, ctx);
+  assert.equal(ok1.content, 'ok');
+  const edit = tools.find((t) => t.name === 'edit')!;
+  const ok2 = await edit.execute({ path: 'SPEC.MD', oldString: 'a', newString: 'b' }, ctx);
+  assert.equal(ok2.content, 'ok');
+  assert.deepEqual(calls, ['write', 'edit']);
+
+  // Missing/invalid path arg is denied too.
+  const noPath = await write.execute({ content: 'x' }, ctx);
+  assert.ok(noPath.content.startsWith('Error:'));
+});
+
+test('filterPlannerTools without sdd still strips all four (regression)', () => {
+  const mk = (name: string): Tool => ({ name, description: '', parameters: { type: 'object', properties: {} }, execute: async () => ({ content: '' }) });
+  const filtered = filterPlannerTools(['write', 'edit', 'multiedit', 'bash', 'grep'].map(mk));
+  assert.deepEqual(filtered.map((t) => t.name), ['grep']);
 });
