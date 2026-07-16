@@ -1,5 +1,53 @@
 # webview-ui
 
+## 0.7.0
+
+### Minor Changes
+
+- f9a2f4e: Add per-task agent assignment, allowing a specific agent to be assigned to
+  a task to override the project's default agent.
+  - **Task schema**: the `Task` record gains an optional `agentId` field
+    (`string | null`). When `null` or unset, the project's default agent is
+    used (existing behaviour).
+  - **MCP tools**: `task_create` accepts a new optional `agent_id` parameter.
+    A new `task_set_agent` tool allows reassigning a task's agent at any time
+    (refused while the task is running).
+  - **REST API**: `POST /api/projects/:id/tasks` accepts `agentId` in the
+    request body. A new `PATCH /api/tasks/:id/agent` endpoint reassigns the
+    agent (409 if the task is currently running).
+  - **Scheduler heartbeat**: `runTaskHeartbeatTick` resolves the agent as
+    `task.agentId` → `project.agentId` → first agent in `agents.json`.
+  - **Web UI**: the New Task form has an agent selector dropdown ("Project
+    default" + all configured agents). The task list table has a new "Agent"
+    column. The task edit view has an agent selector that is disabled while
+    the task is active/reviewing (pause first to reassign).
+  - **`task_get_state`** now includes `agentId` in its response.
+
+- 5e6498d: Restructure the autonomous task page into a multi-view section with a paginated
+  tasks table, a dedicated task log route, and a dedicated task edit route.
+  - The task page is no longer an all-in-one 3-column layout. It now uses a
+    lightweight view-router with three routes: **list**, **log**, and **edit**.
+    The tasks table gets the full width of the pane.
+  - **Project filter**: the projects sidebar is replaced by a project filter
+    dropdown at the top of the list view. The selected project is persisted to
+    localStorage and remembered across sessions, defaulting to the first project
+    on first load. The "Show archived" toggle is also persisted.
+  - Project management (add / delete) is removed from this view — projects are
+    created and managed from the Settings panel instead.
+  - **List view**: a proper paginated tasks table (20 rows/page) with columns
+    for ID, title, status badge, checklist progress bar, branch, last-updated
+    timestamp, and an edit action. Row click opens the log view; the edit
+    button opens the edit view.
+  - **Log view**: the execution thread (messages + composer) is now its own
+    route with a back button and a status-aware header, keeping the live 3s
+    polling.
+  - **Edit view**: the objective, checklist, and status actions (pause /
+    activate / archive / delete / discard worktree) live in their own route
+    with a back button and a "View Log" shortcut.
+  - Back buttons reuse the existing `.settings-panel__back-btn` style. New
+    CSS classes (`.task-table`, `.task-table__pagination`, `.task-view__header`,
+    `.task-view__project-filter`) were added to `styles.css`.
+
 ## 0.6.2
 
 ## 0.6.1
