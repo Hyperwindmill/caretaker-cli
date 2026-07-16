@@ -3,6 +3,7 @@ import * as harness from '../../../harness/index.js';
 import { loadAgents, loadConfig } from '../../../store/json.js';
 import { getDb, Task, Project, TaskMessage, getTaskById, saveTask, addTaskMessage, updateTaskMessageContent, runQuery } from '../../../store/db.js';
 import { runningTasks } from './locks.js';
+import { isGitRepo, ensureWorktree, agentDirIn, commitWip, discardWorktree } from '../../../lib/task_git.js';
 
 function buildPrompt(
   systemPrompt: string,
@@ -100,7 +101,21 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
       throw new Error(`Provider "${agent.provider}" not found for agent "${agent.name}"`);
     }
 
-    const workingDir = project.workingDir || agent.workingDir || process.cwd();
+    const baseWorkingDir = project.workingDir || agent.workingDir || process.cwd();
+    let workingDir = baseWorkingDir;
+
+    // Worktree isolation for git projects: lazily create a dedicated branch + worktree.
+    if (task.worktreePath) {
+      workingDir = await agentDirIn(task.worktreePath, baseWorkingDir);
+    } else if (await isGitRepo(baseWorkingDir)) {
+      const wt = await ensureWorktree(baseWorkingDir, task.projectId, task.id, task.title);
+      task.branch = wt.branch;
+      task.worktreePath = wt.worktreePath;
+      await saveTask(task);
+      workingDir = wt.agentWorkingDir;
+      console.log(`[task_heartbeat] Task #${task.id} worktree ${wt.worktreePath} (branch ${wt.branch})`);
+    }
+    // Non-git projects fall through: workingDir stays baseWorkingDir (run in place).
 
     // Ensure mcp__task__* is in agent.allowedTools
     const baseTools = [...agent.allowedTools];
@@ -223,6 +238,24 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
       }
 
       await saveTask(refreshedTask);
+    }
+
+    // Git lifecycle: commit progress every cycle; on DONE remove the worktree, keep the branch.
+    const gitTask = await getTaskById(task.id);
+    if (gitTask && gitTask.worktreePath) {
+      try {
+        if (gitTask.status === 'done') {
+          await discardWorktree(gitTask.worktreePath, gitTask.title);
+          gitTask.worktreePath = null;
+          gitTask.updatedAt = new Date().toISOString();
+          await saveTask(gitTask);
+          console.log(`[task_heartbeat] Task #${task.id} done: worktree removed, branch ${gitTask.branch} kept`);
+        } else if (await commitWip(gitTask.worktreePath, gitTask.title)) {
+          console.log(`[task_heartbeat] Task #${task.id} committed WIP to ${gitTask.branch}`);
+        }
+      } catch (gitErr) {
+        console.error(`[task_heartbeat] Task #${task.id} git step failed:`, gitErr);
+      }
     }
 
   } catch (err: any) {
