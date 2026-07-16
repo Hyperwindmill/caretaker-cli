@@ -7,7 +7,7 @@ import { isGitRepo, ensureWorktree, agentDirIn, commitWip, finalizeDone } from '
 import { runDoneReview, MAX_REVIEW_ROUNDS } from './task_review.js';
 import type { AgentConfig, ProviderConfig, ProjectConfig } from '../../../types.js';
 import type { Tool } from '../../../harness/tools/types.js';
-import { resolveRoleAgent, resolveReviewEnabled, filterPlannerTools, TaskRole } from './task_roles.js';
+import { resolveRoleAgent, resolveReviewEnabled, resolveSddEnabled, filterPlannerTools, TaskRole } from './task_roles.js';
 
 function buildPrompt(
   systemPrompt: string,
@@ -64,11 +64,17 @@ function buildPlanningPrompt(
   taskTitle: string,
   maxRunSeconds: number,
   maxTurns: number,
-  workingDir?: string,
+  workingDir: string | undefined,
+  sdd: boolean,
 ): string {
   const workspaceLine = workingDir
     ? `\n**Your workspace is: \`${workingDir}\`** — operate exclusively inside this directory.\n`
     : '';
+
+  const accessBlock = sdd
+    ? `You are in **SDD mode**: you may create and edit **markdown (.md) documents only** — specs, plans, ADRs — and you MUST follow this project's own documentation conventions (see the project context / AGENTS.md). Everything else stays read-only: explore with \`read_file\`, \`glob\`, and \`grep\`; non-markdown files and \`bash\` are not available. Reference the documents you created in the plan you submit.`
+    : `You have read-only access to the workspace: explore it with \`read_file\`, \`glob\`, and
+\`grep\`. Write tools and \`bash\` are not available in this phase.`;
 
   return `${systemPrompt}
 ${workspaceLine}
@@ -77,8 +83,7 @@ ${workspaceLine}
 You are running in **autonomous task mode**, in the **PLANNING phase**. Your only job
 is to produce an implementation plan for this task — you must NOT modify anything.
 
-You have read-only access to the workspace: explore it with \`read_file\`, \`glob\`, and
-\`grep\`. Write tools and \`bash\` are not available in this phase.
+${accessBlock}
 
 You have no memory of previous invocations. Your only memory is in the task messages.
 You have **${maxRunSeconds} seconds** and at most **${maxTurns} turns** for this invocation.
@@ -190,10 +195,12 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
     }
 
     const planning = task.status === 'planning';
+    const sdd = planning && resolveSddEnabled(task, project);
     if (planning) {
       // Read-only phase: strip workspace-mutating tools (same post-filter
-      // mechanism the review uses to strip mcp__task__*).
-      tools = filterPlannerTools(tools);
+      // mechanism the review uses to strip mcp__task__*). In SDD mode the
+      // file writers survive, wrapped to markdown-only targets.
+      tools = filterPlannerTools(tools, sdd);
     }
 
     // Max turns: standard sonnet settings or maxTurns
@@ -202,7 +209,7 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
 
     // 5. Construct prompt
     const prompt = planning
-      ? buildPlanningPrompt(agent.systemPrompt, task.id, task.title, maxRunSeconds, maxTurns, workingDir)
+      ? buildPlanningPrompt(agent.systemPrompt, task.id, task.title, maxRunSeconds, maxTurns, workingDir, sdd)
       : buildPrompt(agent.systemPrompt, task.id, task.title, maxRunSeconds, maxTurns, workingDir);
 
     const checklistBefore = (task.checklist || []).filter((item) => item.status !== 'pending').length;
