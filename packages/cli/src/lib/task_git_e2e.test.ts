@@ -1,0 +1,153 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, writeFile, rm, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const exec = promisify(execFile);
+const g = (cwd: string, args: string[]) => exec('git', args, { cwd });
+
+// File-scope CARETAKER_HOME
+const CT_HOME = await mkdtemp(join(tmpdir(), 'ct-e2e-home-'));
+process.env.CARETAKER_HOME = CT_HOME;
+
+// Imports
+const { saveConfig, saveAgents } = await import('../store/json.js');
+const { createTask, getTaskById, saveTask } = await import('../store/db.js');
+const { runTaskHeartbeatTick } = await import('../cli/web/scheduler/task_strategy.js');
+const { discardWorktree } = await import('./task_git.js');
+const { __setFetch, __resetFetch } = await import('../harness/loop.js');
+
+async function makeRepo(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'ct-e2e-repo-'));
+  await g(dir, ['init', '-q', '-b', 'main']);
+  await g(dir, ['config', 'user.email', 'test@example.com']);
+  await g(dir, ['config', 'user.name', 'Test']);
+  await writeFile(join(dir, 'README.md'), '# repo\n');
+  await g(dir, ['add', '-A']);
+  await g(dir, ['commit', '-q', '-m', 'init']);
+  return dir;
+}
+
+function mockFetchResponse(content: string): Response {
+  const encoder = new TextEncoder();
+  const chunks = [
+    `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n`,
+    `data: [DONE]\n`
+  ];
+
+  const stream = new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) {
+        controller.enqueue(encoder.encode(chunk));
+      }
+      controller.close();
+    }
+  });
+
+  return new Response(stream, {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' }
+  });
+}
+
+test('End-to-end task heartbeat worktree lifecycle', async () => {
+  const repo = await makeRepo();
+
+  // Setup config
+  await saveConfig({
+    providers: [
+      {
+        name: 'mock-provider',
+        endpoint: 'http://localhost:8000',
+        apiKey: 'test-key',
+      },
+    ],
+    projects: [
+      {
+        id: 101,
+        name: 'E2E Git Project',
+        description: 'Test project',
+        workingDir: repo,
+        agentId: 'mock-agent',
+        active: true,
+      },
+    ],
+  });
+
+  await saveAgents([
+    {
+      id: 'mock-agent',
+      name: 'Mock Agent',
+      systemPrompt: 'You are a mock agent.',
+      provider: 'mock-provider',
+      model: 'mock-model',
+      allowedTools: [],
+    },
+  ]);
+
+  // Create a task
+  const task = await createTask({
+    projectId: 101,
+    title: 'E2E Task Title',
+    objective: 'Create a test file',
+    checklist: [
+      { id: '1', text: 'Step 1', status: 'pending', order: 0 },
+    ],
+    status: 'active',
+    blockedReason: null,
+    noProgressCount: 0,
+    maxNoProgress: 5,
+    lockedAt: null,
+  });
+
+  // Mock fetch to simulate agent behavior
+  __setFetch(async () => {
+    await writeFile(join(CT_HOME, 'worktrees', '101-1', 'work.txt'), 'done');
+    return mockFetchResponse('Mock agent output text.');
+  });
+
+  try {
+    // Run the heartbeat tick
+    await runTaskHeartbeatTick(new Date());
+
+    // Fetch refreshed task
+    const refreshed = await getTaskById(task.id);
+    assert.ok(refreshed, 'Task should exist');
+    assert.ok(refreshed.worktreePath, 'worktreePath should be set');
+    assert.ok(refreshed.branch, 'branch should be set');
+
+    // Verify worktree exists on filesystem
+    const wtStat = await stat(refreshed.worktreePath);
+    assert.ok(wtStat.isDirectory(), 'worktree path should be a directory');
+
+    // Verify worktree registered in git
+    const wts = await g(repo, ['worktree', 'list']);
+    assert.match(wts.stdout, new RegExp(refreshed.worktreePath));
+
+    // Verify the commit was made (because compile/wip commits on each heartbeat tick)
+    const log = await g(repo, ['log', '--oneline', refreshed.branch]);
+    assert.match(log.stdout, /wip: E2E Task Title/);
+
+    // Now, manually discard the worktree
+    await discardWorktree(refreshed.worktreePath, refreshed.title);
+
+    // Verify worktree path is gone
+    await assert.rejects(() => stat(refreshed!.worktreePath!));
+
+    // Verify git worktree list doesn't contain it
+    const wtsAfter = await g(repo, ['worktree', 'list']);
+    assert.ok(!wtsAfter.stdout.includes(refreshed.worktreePath!));
+
+    // Verify branch still exists
+    const branches = await g(repo, ['branch', '--list', refreshed.branch]);
+    assert.match(branches.stdout, new RegExp(refreshed.branch));
+
+  } finally {
+    __resetFetch();
+    await rm(repo, { recursive: true, force: true });
+    await rm(CT_HOME, { recursive: true, force: true });
+  }
+});
