@@ -251,7 +251,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
                 value={planningEnabled === true ? 'on' : planningEnabled === false ? 'off' : 'default'}
                 onChange={(e) => setPlanningEnabled(e.target.value === 'default' ? null : e.target.value === 'on')}
               >
-                <option value="default">Default (Off)</option>
+                <option value="default">Default (On)</option>
                 <option value="on">On</option>
                 <option value="off">Off</option>
               </select>
