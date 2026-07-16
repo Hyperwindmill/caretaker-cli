@@ -705,3 +705,44 @@ export const taskSetAgentTool: Tool = {
     return ok({ agentId });
   },
 };
+
+export const submitPlanTool: Tool = {
+  name: 'mcp__task__task_submit_plan',
+  description:
+    'Submit the implementation plan for a task in the planning phase and start execution. Persists the plan to the task thread and transitions the task from planning to active. Only valid while the task status is "planning".',
+  parameters: {
+    type: 'object',
+    properties: {
+      task_id: { type: 'number' },
+      plan: { type: 'string', description: 'The full implementation plan, markdown.' },
+    },
+    required: ['task_id', 'plan'],
+  },
+  execute: async (args: any): Promise<ToolResult> => {
+    const taskId = Number(args.task_id);
+    const plan = String(args.plan ?? '').trim();
+    if (!plan) return err('Plan must not be empty.');
+
+    const task = await getTaskById(taskId);
+    if (!task) return err(`Task ${taskId} not found`);
+    if (task.status !== 'planning') {
+      return err(`Task ${taskId} is not in planning (status: ${task.status}).`);
+    }
+
+    await addTaskMessage({
+      taskId,
+      role: 'assistant',
+      messageType: 'plan',
+      content: plan,
+      agentId: null,
+    });
+
+    task.status = 'active';
+    task.noProgressCount = 0;
+    task.lockedAt = null;
+    task.updatedAt = new Date().toISOString();
+    await saveTask(task);
+
+    return ok({ status: 'active' });
+  },
+};

@@ -40,6 +40,7 @@ import {
   taskUnarchiveTool,
   taskDeleteTool,
   taskSetAgentTool,
+  submitPlanTool,
 } from './task_tools.js';
 
 export function registerBuiltins(registry: ToolRegistry): void {
@@ -92,6 +93,7 @@ export function registerBuiltins(registry: ToolRegistry): void {
   registry.register(taskUnarchiveTool);
   registry.register(taskDeleteTool);
   registry.register(taskSetAgentTool);
+  registry.register(submitPlanTool);
 }
 
 export {
@@ -131,4 +133,5 @@ export {
   taskUnarchiveTool,
   taskDeleteTool,
   taskSetAgentTool,
+  submitPlanTool,
 };
