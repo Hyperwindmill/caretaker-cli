@@ -277,6 +277,44 @@ test('task_submit_plan with empty plan -> error', async () => {
   assert.ok(JSON.parse(res.content).error);
 });
 
+test('task_complete in planning -> error pointing to task_submit_plan', async () => {
+  const t = await createTask({ ...base, title: 'Planning Complete Guard', status: 'planning' });
+  const res = await completeTaskTool.execute({ task_id: t.id }, ctx());
+  const parsed = JSON.parse(res.content);
+  assert.ok(parsed.error);
+  assert.ok(parsed.error.includes('task_submit_plan'));
+  assert.equal((await getTaskById(t.id))!.status, 'planning');
+});
+
+test('task_complete on a git task with reviewEnabled=false on the task -> done directly', async () => {
+  const t = await createTask({ ...base, title: 'Review Off', reviewEnabled: false });
+  const gt = await getTaskById(t.id);
+  gt!.worktreePath = join(CT_HOME, 'worktrees', 'ro');
+  gt!.branch = 'caretaker/task-ro';
+  await saveTask(gt!);
+
+  await completeTaskTool.execute({ task_id: t.id }, ctx());
+  assert.equal((await getTaskById(t.id))!.status, 'done');
+});
+
+test('task_complete on a git task with reviewEnabled=false on the project -> done directly', async () => {
+  await saveConfig({
+    port: 3000,
+    providers: [],
+    projects: [{ id: 77, name: 'NoReview', description: '', workingDir: '/w', agentId: 'a', active: true, reviewEnabled: false }],
+  } as any);
+  const t = await createTask({ ...base, projectId: 77, title: 'Project Review Off' });
+  const gt = await getTaskById(t.id);
+  gt!.worktreePath = join(CT_HOME, 'worktrees', 'pro');
+  gt!.branch = 'caretaker/task-pro';
+  await saveTask(gt!);
+
+  await completeTaskTool.execute({ task_id: t.id }, ctx());
+  assert.equal((await getTaskById(t.id))!.status, 'done');
+  // Restore a config without projects so earlier-file tests never see project 1.
+  await saveConfig({ port: 3000, providers: [] } as any);
+});
+
 test.after(async () => {
   await rm(CT_HOME, { recursive: true, force: true });
 });
