@@ -26,7 +26,7 @@ export interface Task {
   title: string;
   objective: string;
   checklist: ChecklistItem[];
-  status: 'draft' | 'active' | 'paused' | 'blocked' | 'done';
+  status: 'draft' | 'active' | 'reviewing' | 'paused' | 'blocked' | 'done';
   blockedReason: string | null;
   noProgressCount: number;
   maxNoProgress: number;
