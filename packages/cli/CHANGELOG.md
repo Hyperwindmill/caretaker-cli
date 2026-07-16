@@ -1,5 +1,28 @@
 # caretaker-cli
 
+## 0.8.0
+
+### Minor Changes
+
+- 308a369: Task agent roles and planning phase: assign a distinct PLANNER, DEVELOPER, and REVIEWER agent per project or per task (planner/reviewer degrade onto the developer chain). New default-on PLANNING phase: activated tasks start in `planning`, where the planner agent runs read-only (write/edit/multiedit/bash stripped), iterates across heartbeat cycles, and starts execution explicitly via the new `task_submit_plan` tool — the plan is persisted to the task thread and replayed to the executing agent. The DONE review gate is now toggleable per project/task (`reviewEnabled`, default on) and runs under the reviewer-role agent. New/extended APIs: `PATCH /api/tasks/:id/agent` (role param), `PATCH /api/tasks/:id/flags`, role/flag fields on task and project creation; task tools gain `task_submit_plan`, a `role` param on `task_set_agent`, and role/flag params on `task_create`.
+
+### Patch Changes
+
+- defe86c: Fix tasks page UX: restore one-click archive, fix "not found" after archiving, and bring the checklist back into the task log view.
+  - Fix archive navigation: after archiving/unarchiving from the edit view, navigate back to the list (previously left the user on a "Task not found" screen when "Show archived" was off).
+  - Add an inline Archive button on each task row in the list view (with a confirm dialog), restoring the one-click archive flow.
+  - Restore the checklist sidebar on the left side of the task log view, with live progress count and toggleable items.
+
+- 28bce1c: Hide Projects settings tab from the VSCode extension
+
+  Completes the gating introduced in 59d3703: the VSCode sidebar no longer shows the "Projects" tab in Settings either. Projects (autonomous tasks) is scheduler-driven, and the VSCode surface never boots the scheduler, so the tab was misleading there. The "Projects" settings tab and the Projects screen are now both gated to the `sidebar` layout (web/desktop) only — matching the Scheduler settings tab. Web and desktop surfaces keep full Projects functionality unchanged.
+
+- Updated dependencies [308a369]
+- Updated dependencies [defe86c]
+- Updated dependencies [28bce1c]
+  - caretaker-types@0.8.0
+  - webview-ui@0.8.0
+
 ## 0.7.0
 
 ### Minor Changes
