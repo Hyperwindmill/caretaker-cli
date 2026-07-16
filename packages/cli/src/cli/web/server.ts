@@ -49,6 +49,7 @@ import type { AgentConfig, ProviderConfig, PluginsFile, McpServerConfig } from '
 import type { ConfirmDecision, HostToView, ViewToHost } from 'webview-ui/bridge';
 import { startBackgroundScheduler, loadTaskRuns } from './scheduler.js';
 import { fsRouter } from './fs.js';
+import { activationStatus, resolvePlanningEnabled } from './scheduler/task_roles.js';
 
 // Resolve Webview static files path
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -266,7 +267,7 @@ export async function startServer(port: number, host: string): Promise<void> {
   app.post('/api/projects', async (c) => {
     try {
       const body = await c.req.json();
-      const { name, description, workingDir, agentId } = body;
+      const { name, description, workingDir, agentId, plannerAgentId, reviewerAgentId, planningEnabled, reviewEnabled } = body;
       const config = await loadConfig();
       if (!config.projects) {
         config.projects = [];
@@ -279,6 +280,10 @@ export async function startServer(port: number, host: string): Promise<void> {
         workingDir,
         agentId,
         active: true,
+        plannerAgentId: plannerAgentId || null,
+        reviewerAgentId: reviewerAgentId || null,
+        planningEnabled: typeof planningEnabled === 'boolean' ? planningEnabled : null,
+        reviewEnabled: typeof reviewEnabled === 'boolean' ? reviewEnabled : null,
       };
       config.projects.push(project);
       await saveConfig(config);
@@ -321,13 +326,16 @@ export async function startServer(port: number, host: string): Promise<void> {
   app.post('/api/projects/:id/tasks', async (c) => {
     const projectId = Number(c.req.param('id'));
     const body = await c.req.json();
-    const { title, objective, checklist, startActive, agentId } = body;
+    const { title, objective, checklist, startActive, agentId, plannerAgentId, reviewerAgentId, planningEnabled, reviewEnabled } = body;
 
-    // Validate that the specified agent exists (if provided).
-    if (agentId) {
+    // Validate that the specified agents exist (if provided).
+    const idsToValidate = [agentId, plannerAgentId, reviewerAgentId].filter(Boolean) as string[];
+    if (idsToValidate.length > 0) {
       const agents = await loadAgents();
-      if (!agents.some((a) => a.id === agentId)) {
-        return c.json({ ok: false, error: `Agent "${agentId}" not found.` }, 400);
+      for (const id of idsToValidate) {
+        if (!agents.some((a) => a.id === id)) {
+          return c.json({ ok: false, error: `Agent "${id}" not found.` }, 400);
+        }
       }
     }
 
@@ -338,17 +346,28 @@ export async function startServer(port: number, host: string): Promise<void> {
       order: idx,
     }));
 
+    const config = await loadConfig();
+    const project = (config.projects || []).find((p) => p.id === projectId);
+    const taskPlanning = typeof planningEnabled === 'boolean' ? planningEnabled : null;
+    const startStatus = startActive
+      ? (resolvePlanningEnabled({ planningEnabled: taskPlanning }, project) ? 'planning' : 'active')
+      : 'draft';
+
     await createTask({
       projectId,
       title,
       objective,
       checklist: checklistItems,
-      status: startActive ? 'active' : 'draft',
+      status: startStatus,
       blockedReason: null,
       noProgressCount: 0,
       maxNoProgress: 5,
       lockedAt: null,
       agentId: agentId || null,
+      plannerAgentId: plannerAgentId || null,
+      reviewerAgentId: reviewerAgentId || null,
+      planningEnabled: taskPlanning,
+      reviewEnabled: typeof reviewEnabled === 'boolean' ? reviewEnabled : null,
     });
     return c.json({ ok: true });
   });
@@ -379,7 +398,9 @@ export async function startServer(port: number, host: string): Promise<void> {
     // Wake up/unpause/unblock the task so it runs on next scheduler tick
     const task = await getTaskById(taskId);
     if (task) {
-      task.status = 'active';
+      const config = await loadConfig();
+      const project = (config.projects || []).find((p) => p.id === task.projectId);
+      task.status = await activationStatus(task, project);
       task.blockedReason = null;
       task.noProgressCount = 0;
       task.updatedAt = new Date().toISOString();
@@ -396,10 +417,14 @@ export async function startServer(port: number, host: string): Promise<void> {
 
     const task = await getTaskById(taskId);
     if (task) {
-      task.status = status;
       if (status === 'active') {
+        const config = await loadConfig();
+        const project = (config.projects || []).find((p) => p.id === task.projectId);
+        task.status = await activationStatus(task, project);
         task.noProgressCount = 0;
         task.blockedReason = null;
+      } else {
+        task.status = status;
       }
       task.updatedAt = new Date().toISOString();
       await saveTask(task);
@@ -509,7 +534,7 @@ export async function startServer(port: number, host: string): Promise<void> {
   app.patch('/api/tasks/:id/agent', async (c) => {
     const taskId = Number(c.req.param('id'));
     const body = await c.req.json();
-    const { agentId } = body;
+    const { agentId, role } = body;
 
     const task = await getTaskById(taskId);
     if (!task) return c.json({ ok: false, error: 'not found' }, 404);
@@ -528,11 +553,34 @@ export async function startServer(port: number, host: string): Promise<void> {
       }
     }
 
-    task.agentId = agentId || null;
+    const targetRole = role === 'planner' || role === 'reviewer' ? role : 'developer';
+    if (targetRole === 'planner') task.plannerAgentId = agentId || null;
+    else if (targetRole === 'reviewer') task.reviewerAgentId = agentId || null;
+    else task.agentId = agentId || null;
+
     task.updatedAt = new Date().toISOString();
     await saveTask(task);
 
-    return c.json({ ok: true, agentId: task.agentId });
+    return c.json({ ok: true, role: targetRole, agentId: agentId || null });
+  });
+
+  app.patch('/api/tasks/:id/flags', async (c) => {
+    const taskId = Number(c.req.param('id'));
+    const body = await c.req.json();
+
+    const task = await getTaskById(taskId);
+    if (!task) return c.json({ ok: false, error: 'not found' }, 404);
+
+    if ('planningEnabled' in body) {
+      task.planningEnabled = typeof body.planningEnabled === 'boolean' ? body.planningEnabled : null;
+    }
+    if ('reviewEnabled' in body) {
+      task.reviewEnabled = typeof body.reviewEnabled === 'boolean' ? body.reviewEnabled : null;
+    }
+    task.updatedAt = new Date().toISOString();
+    await saveTask(task);
+
+    return c.json({ ok: true, planningEnabled: task.planningEnabled ?? null, reviewEnabled: task.reviewEnabled ?? null });
   });
 
   const nodeServer = serve({
