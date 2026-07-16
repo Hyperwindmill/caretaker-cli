@@ -23,6 +23,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
   const [reviewerAgentId, setReviewerAgentId] = useState('');
   const [planningEnabled, setPlanningEnabled] = useState<boolean | null>(null);
   const [reviewEnabled, setReviewEnabled] = useState<boolean | null>(null);
+  const [sddEnabled, setSddEnabled] = useState<boolean | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const projects = config.projects || [];
@@ -38,6 +39,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
     setReviewerAgentId(proj.reviewerAgentId || '');
     setPlanningEnabled(proj.planningEnabled !== undefined ? proj.planningEnabled : null);
     setReviewEnabled(proj.reviewEnabled !== undefined ? proj.reviewEnabled : null);
+    setSddEnabled(proj.sddEnabled !== undefined ? proj.sddEnabled : null);
     setErrorMsg(null);
   };
 
@@ -52,6 +54,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
     setReviewerAgentId('');
     setPlanningEnabled(null);
     setReviewEnabled(null);
+    setSddEnabled(null);
     setErrorMsg(null);
   };
 
@@ -94,6 +97,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
         reviewerAgentId: reviewerAgentId || null,
         planningEnabled,
         reviewEnabled,
+        sddEnabled,
       };
       updatedProjects.push(newProj);
     } else if (editingProject) {
@@ -109,6 +113,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
           reviewerAgentId: reviewerAgentId || null,
           planningEnabled,
           reviewEnabled,
+          sddEnabled,
         };
       }
     }
@@ -268,7 +273,24 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
                 <option value="off">Off</option>
               </select>
             </div>
+            <div style={{ flex: 1 }}>
+              <label htmlFor="project-sdd-enabled">SDD Mode</label>
+              <select
+                id="project-sdd-enabled"
+                value={sddEnabled === true ? 'on' : sddEnabled === false ? 'off' : 'default'}
+                onChange={(e) => setSddEnabled(e.target.value === 'default' ? null : e.target.value === 'on')}
+              >
+                <option value="default">Default (Off)</option>
+                <option value="on">On</option>
+                <option value="off">Off</option>
+              </select>
+            </div>
           </div>
+          <p style={{ fontSize: '11px', opacity: 0.65, margin: '6px 0 0 0' }}>
+            SDD mode lets the planner write markdown documents (specs, plans) during the planning
+            phase. How and where they are written is up to this project's own conventions
+            (AGENTS.md, agent prompt — e.g. superpowers specs). Everything else stays read-only.
+          </p>
 
           <div className="form-actions">
             <button className="btn btn--secondary" onClick={cancelForm}>

@@ -39,6 +39,7 @@ interface Task {
   reviewerAgentId?: string | null;
   planningEnabled?: boolean | null;
   reviewEnabled?: boolean | null;
+  sddEnabled?: boolean | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -525,7 +526,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
     }
   };
 
-  const handleSetTaskFlag = async (task: Task, flag: 'planningEnabled' | 'reviewEnabled', value: boolean | null) => {
+  const handleSetTaskFlag = async (task: Task, flag: 'planningEnabled' | 'reviewEnabled' | 'sddEnabled', value: boolean | null) => {
     try {
       const res = await fetch(`/api/tasks/${task.id}/flags`, {
         method: 'PATCH',
@@ -1304,7 +1305,7 @@ interface TaskEditViewProps {
   onDelete: (t: Task) => void;
   onToggleChecklistItem: (t: Task, item: ChecklistItem) => void;
   onSetAgent: (t: Task, role: 'developer' | 'planner' | 'reviewer', agentId: string) => void;
-  onSetFlag: (t: Task, flag: 'planningEnabled' | 'reviewEnabled', value: boolean | null) => void;
+  onSetFlag: (t: Task, flag: 'planningEnabled' | 'reviewEnabled' | 'sddEnabled', value: boolean | null) => void;
   onOpenLog: () => void;
   statusColor: (s: Task['status']) => string;
 }
@@ -1491,6 +1492,7 @@ function TaskEditView({
               [
                 { flag: 'planningEnabled' as const, label: 'Planning phase', value: task.planningEnabled },
                 { flag: 'reviewEnabled' as const, label: 'Review at DONE', value: task.reviewEnabled },
+                { flag: 'sddEnabled' as const, label: 'SDD mode (.md specs)', value: task.sddEnabled },
               ]
             ).map(({ flag, label, value }) => (
               <label key={flag} style={{ fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
