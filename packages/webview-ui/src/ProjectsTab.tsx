@@ -275,9 +275,10 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
       console.error('Failed to create task:', err);
     }
   };
-
   const handleToggleTaskStatus = async (task: Task) => {
-    const newStatus = task.status === 'active' ? 'paused' : 'active';
+    // Reviewing behaves like active for the toggle: the button pauses it.
+    const newStatus =
+      task.status === 'active' || task.status === 'reviewing' ? 'paused' : 'active';
     try {
       const res = await fetch(`/api/tasks/${task.id}/status`, {
         method: 'POST',
@@ -350,6 +351,13 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
   const selectedProject = projects.find((p) => p.id === selectedProjectId);
   const selectedTask = tasks.find((t) => t.id === selectedTaskId);
   const selectedProjectAgentName = agents.find((a) => a.id === selectedProject?.agentId)?.name || 'Default Agent';
+
+  const reviewRound = selectedTask
+    ? taskMessages.filter((m) => m.messageType === 'review').length + 1
+    : 1;
+  const isActiveLike = selectedTask
+    ? selectedTask.status === 'active' || selectedTask.status === 'reviewing'
+    : false;
 
   return (
     <div className="app app--with-sidebar" style={{ height: '100%' }}>
@@ -474,6 +482,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
                       
                       let statusColor = '#64748b'; // draft
                       if (task.status === 'active') statusColor = '#22c55e';
+                      if (task.status === 'reviewing') statusColor = '#a855f7';
                       if (task.status === 'paused') statusColor = '#eab308';
                       if (task.status === 'blocked') statusColor = '#f97316';
                       if (task.status === 'done') statusColor = '#3b82f6';
@@ -570,7 +579,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
                         onClick={() => handleToggleTaskStatus(selectedTask)}
                         style={{ padding: '3px 10px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                       >
-                        {selectedTask.status === 'active' ? (
+                        {selectedTask.status === 'active' || selectedTask.status === 'reviewing' ? (
                           <>
                             <PauseIcon size={12} /> Pause
                           </>
@@ -661,8 +670,15 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
                     <div className="app__chat-header-info">
                       <h3 className="app__chat-header-title" style={{ fontSize: '13px', margin: 0 }}>Execution Thread</h3>
                       <span className="app__chat-header-status" style={{ fontSize: '10px' }}>
-                        <span className={`agent-status-dot agent-status-dot--active ${selectedTask.status === 'active' ? 'agent-status-dot--pulsing' : ''}`} />
-                        {selectedTask.status === 'active' ? 'Heartbeat loop active' : `Task status: ${selectedTask.status}`}
+                        <span
+                          className={`agent-status-dot agent-status-dot--active ${isActiveLike ? 'agent-status-dot--pulsing' : ''}`}
+                          style={selectedTask.status === 'reviewing' ? { background: '#a855f7' } : undefined}
+                        />
+                        {selectedTask.status === 'active'
+                          ? 'Heartbeat loop active'
+                          : selectedTask.status === 'reviewing'
+                          ? `In review (round ${reviewRound}/3)`
+                          : `Task status: ${selectedTask.status}`}
                       </span>
                     </div>
                   </header>
