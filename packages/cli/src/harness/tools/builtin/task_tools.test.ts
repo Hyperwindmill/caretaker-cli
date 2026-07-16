@@ -11,7 +11,7 @@ const CT_HOME = await mkdtemp(join(tmpdir(), 'ct-tasktools-home-'));
 process.env.CARETAKER_HOME = CT_HOME;
 
 const { createTask, getTaskById, saveTask, deleteTask, addTaskMessage, runQuery } = await import('../../../store/db.js');
-const { completeTaskTool, taskArchiveTool, taskUnarchiveTool, taskDeleteTool, taskSearchTool, taskSetAgentTool, taskCreateTool, submitPlanTool } = await import('./task_tools.js');
+const { completeTaskTool, taskArchiveTool, taskUnarchiveTool, taskDeleteTool, taskSearchTool, taskSetAgentTool, taskCreateTool, submitPlanTool, taskActivateTool, taskUnpauseTool } = await import('./task_tools.js');
 const { runningTasks } = await import('../../../cli/web/scheduler/locks.js');
 const { saveConfig, saveAgents } = await import('../../../store/json.js');
 
@@ -313,6 +313,74 @@ test('task_complete on a git task with reviewEnabled=false on the project -> don
   assert.equal((await getTaskById(t.id))!.status, 'done');
   // Restore a config without projects so earlier-file tests never see project 1.
   await saveConfig({ port: 3000, providers: [] } as any);
+});
+
+test('task_activate: draft -> planning by default; -> active when task disables planning', async () => {
+  const t1 = await createTask({ ...base, title: 'Activate Plans', status: 'draft' });
+  await taskActivateTool.execute({ task_id: t1.id }, ctx());
+  assert.equal((await getTaskById(t1.id))!.status, 'planning');
+
+  const t2 = await createTask({ ...base, title: 'Activate No Plan', status: 'draft', planningEnabled: false });
+  await taskActivateTool.execute({ task_id: t2.id }, ctx());
+  assert.equal((await getTaskById(t2.id))!.status, 'active');
+});
+
+test('task_unpause: returns to planning when no plan exists; to active once planned', async () => {
+  const t = await createTask({ ...base, title: 'Unpause Phase', status: 'paused' });
+  await taskUnpauseTool.execute({ task_id: t.id }, ctx());
+  assert.equal((await getTaskById(t.id))!.status, 'planning');
+
+  const t2 = await createTask({ ...base, title: 'Unpause Planned', status: 'paused' });
+  await addTaskMessage({ taskId: t2.id, role: 'assistant', messageType: 'plan', content: 'plan' });
+  await taskUnpauseTool.execute({ task_id: t2.id }, ctx());
+  assert.equal((await getTaskById(t2.id))!.status, 'active');
+});
+
+test('task_create with start_active and default planning -> status planning; role fields persisted', async () => {
+  await saveAgents([
+    { id: 'a-dev', name: 'a-dev', systemPrompt: 'x', provider: 'p', model: 'm', allowedTools: [], maxTurns: 5 },
+    { id: 'a-plan', name: 'a-plan', systemPrompt: 'x', provider: 'p', model: 'm', allowedTools: [], maxTurns: 5 },
+  ] as any);
+  await saveConfig({
+    port: 3000, providers: [],
+    projects: [{ id: 9, name: 'RoleProj', description: '', workingDir: '/w', agentId: 'a-dev', active: true }],
+  } as any);
+
+  const res = await taskCreateTool.execute(
+    {
+      project_id: 9, title: 'Roles', objective: 'o', checklist: [{ text: 's1' }],
+      start_active: true, agent_id: 'a-dev', planner_agent_id: 'a-plan', review_enabled: false,
+    },
+    ctx(),
+  );
+  const parsed = JSON.parse(res.content);
+  assert.equal(parsed.ok, true);
+
+  const created = await getTaskById(parsed.task_id);
+  assert.equal(created!.status, 'planning');
+  assert.equal(created!.plannerAgentId, 'a-plan');
+  assert.equal(created!.reviewEnabled, false);
+  await saveConfig({ port: 3000, providers: [] } as any);
+});
+
+test('task_set_agent with role planner/reviewer sets the role fields', async () => {
+  await saveAgents([
+    { id: 'a-x', name: 'a-x', systemPrompt: 'x', provider: 'p', model: 'm', allowedTools: [], maxTurns: 5 },
+  ] as any);
+  const t = await createTask({ ...base, title: 'Set Roles', status: 'paused' });
+
+  await taskSetAgentTool.execute({ task_id: t.id, agent_id: 'a-x', role: 'planner' }, ctx());
+  assert.equal((await getTaskById(t.id))!.plannerAgentId, 'a-x');
+
+  await taskSetAgentTool.execute({ task_id: t.id, agent_id: 'a-x', role: 'reviewer' }, ctx());
+  assert.equal((await getTaskById(t.id))!.reviewerAgentId, 'a-x');
+
+  // Clear the planner override.
+  await taskSetAgentTool.execute({ task_id: t.id, role: 'planner' }, ctx());
+  assert.equal((await getTaskById(t.id))!.plannerAgentId, null);
+  // Default role still targets the developer field.
+  await taskSetAgentTool.execute({ task_id: t.id, agent_id: 'a-x' }, ctx());
+  assert.equal((await getTaskById(t.id))!.agentId, 'a-x');
 });
 
 test.after(async () => {
