@@ -1,5 +1,14 @@
 # caretaker-vscode
 
+## 0.7.0
+
+### Patch Changes
+
+- Updated dependencies [f9a2f4e]
+- Updated dependencies [5e6498d]
+  - caretaker-cli@0.7.0
+  - webview-ui@0.7.0
+
 ## 0.6.2
 
 ### Patch Changes
