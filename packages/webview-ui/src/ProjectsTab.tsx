@@ -34,6 +34,7 @@ interface Task {
   branch: string | null;
   worktreePath: string | null;
   archived?: boolean;
+  agentId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -163,6 +164,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
     objective: '',
     checklistText: '',
     startActive: true,
+    agentId: '',
   });
 
   const [composerText, setComposerText] = useState('');
@@ -304,11 +306,12 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
           objective: newTask.objective,
           checklist: checklistItems,
           startActive: newTask.startActive,
+          agentId: newTask.agentId || undefined,
         }),
       });
       if (res.ok) {
         setIsNewTaskOpen(false);
-        setNewTask({ title: '', objective: '', checklistText: '', startActive: true });
+        setNewTask({ title: '', objective: '', checklistText: '', startActive: true, agentId: '' });
         fetchTasks(selectedProjectId);
       }
     } catch (err) {
@@ -473,6 +476,26 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
     setView('edit');
   };
 
+  // Reassign a task's agent (null = project default).
+  const handleSetTaskAgent = async (task: Task, agentId: string) => {
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/agent`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentId: agentId || null }),
+      });
+      if (res.ok) {
+        if (selectedProjectId !== null) fetchTasks(selectedProjectId);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setTaskError(data.error || 'Failed to reassign agent');
+      }
+    } catch (err) {
+      console.error('Failed to set task agent:', err);
+      setTaskError('Failed to reassign agent');
+    }
+  };
+
   // Back to the list view (keeps selected project).
   const backToList = () => {
     setView('list');
@@ -532,6 +555,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
               onProjectChange={setSelectedProjectId}
               project={selectedProject}
               agentName={selectedProjectAgentName}
+              agents={agents}
               tasks={pageTasks}
               allTasksCount={tasks.length}
               page={safePage}
@@ -560,12 +584,14 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
           ) : view === 'edit' && selectedTask ? (
             <TaskEditView
               task={selectedTask}
+              agents={agents}
               onBack={backToList}
               onToggleStatus={handleToggleTaskStatus}
               onDiscardWorktree={handleDiscardWorktree}
               onArchiveToggle={handleArchiveToggle}
               onDelete={handleDeleteTask}
               onToggleChecklistItem={handleToggleChecklistItem}
+              onSetAgent={handleSetTaskAgent}
               onOpenLog={() => setView('log')}
               statusColor={statusColor}
             />
@@ -672,6 +698,30 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
                 />
               </label>
 
+              <label style={{ fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                Assigned Agent (optional — overrides project default)
+                <select
+                  value={newTask.agentId}
+                  onChange={(e) => setNewTask({ ...newTask, agentId: e.target.value })}
+                  style={{
+                    background: 'var(--vscode-input-background, #252526)',
+                    color: 'var(--vscode-input-foreground)',
+                    border: '1px solid var(--vscode-input-border, #3c3c3c)',
+                    borderRadius: '4px',
+                    padding: '6px 8px',
+                    fontSize: '12px',
+                    outline: 'none',
+                  }}
+                >
+                  <option value="">Project default</option>
+                  {agents.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name} ({a.provider})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
               <label style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', marginTop: '4px' }}>
                 <input
                   type="checkbox"
@@ -738,6 +788,7 @@ interface TaskListViewProps {
   onProjectChange: (id: number) => void;
   project: Project;
   agentName: string;
+  agents: AgentSummary[];
   tasks: Task[];
   allTasksCount: number;
   page: number;
@@ -757,6 +808,7 @@ function TaskListView({
   onProjectChange,
   project,
   agentName,
+  agents,
   tasks,
   allTasksCount,
   page,
@@ -827,6 +879,7 @@ function TaskListView({
                 <th className="task-table__th" style={{ width: '60px' }}>#</th>
                 <th className="task-table__th">Title</th>
                 <th className="task-table__th" style={{ width: '90px' }}>Status</th>
+                <th className="task-table__th" style={{ width: '100px' }}>Agent</th>
                 <th className="task-table__th" style={{ width: '120px' }}>Checklist</th>
                 <th className="task-table__th" style={{ width: '180px' }}>Branch</th>
                 <th className="task-table__th" style={{ width: '150px' }}>Updated</th>
@@ -862,6 +915,11 @@ function TaskListView({
                       >
                         {task.status}
                       </span>
+                    </td>
+                    <td className="task-table__td" style={{ fontSize: '11px' }}>
+                      {task.agentId
+                        ? (agents.find((a) => a.id === task.agentId)?.name || task.agentId)
+                        : <span style={{ opacity: 0.4 }}>default</span>}
                     </td>
                     <td className="task-table__td">
                       {totalCount > 0 ? (
@@ -1043,24 +1101,28 @@ function TaskLogView({
 
 interface TaskEditViewProps {
   task: Task;
+  agents: AgentSummary[];
   onBack: () => void;
   onToggleStatus: (t: Task) => void;
   onDiscardWorktree: (t: Task) => void;
   onArchiveToggle: (t: Task) => void;
   onDelete: (t: Task) => void;
   onToggleChecklistItem: (t: Task, item: ChecklistItem) => void;
+  onSetAgent: (t: Task, agentId: string) => void;
   onOpenLog: () => void;
   statusColor: (s: Task['status']) => string;
 }
 
 function TaskEditView({
   task,
+  agents,
   onBack,
   onToggleStatus,
   onDiscardWorktree,
   onArchiveToggle,
   onDelete,
   onToggleChecklistItem,
+  onSetAgent,
   onOpenLog,
   statusColor,
 }: TaskEditViewProps) {
@@ -1149,6 +1211,41 @@ function TaskEditView({
           <div style={{ fontSize: '12px', background: 'rgba(255,255,255,0.02)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)', whiteSpace: 'pre-wrap' }}>
             {task.objective}
           </div>
+        </div>
+
+        <div style={{ marginBottom: '16px' }}>
+          <h4 style={{ margin: '0 0 6px 0', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.6 }}>
+            Assigned Agent
+          </h4>
+          <select
+            value={task.agentId || ''}
+            onChange={(e) => onSetAgent(task, e.target.value)}
+            disabled={task.status === 'active' || task.status === 'reviewing'}
+            style={{
+              background: 'var(--vscode-input-background, #252526)',
+              color: 'var(--vscode-input-foreground)',
+              border: '1px solid var(--vscode-input-border, #3c3c3c)',
+              borderRadius: '4px',
+              padding: '6px 8px',
+              fontSize: '12px',
+              outline: 'none',
+              width: '100%',
+              cursor: (task.status === 'active' || task.status === 'reviewing') ? 'not-allowed' : 'pointer',
+              opacity: (task.status === 'active' || task.status === 'reviewing') ? 0.6 : 1,
+            }}
+            title={
+              task.status === 'active' || task.status === 'reviewing'
+                ? 'Pause the task before changing its agent'
+                : 'Choose which agent runs this task'
+            }
+          >
+            <option value="">Project default</option>
+            {agents.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name} ({a.provider})
+              </option>
+            ))}
+          </select>
         </div>
 
         {task.status === 'blocked' && task.blockedReason && (

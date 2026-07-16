@@ -34,6 +34,7 @@ export interface Task {
   branch?: string | null;
   worktreePath?: string | null;
   archived?: boolean;
+  agentId?: string | null;
   createdAt: string;
   updatedAt: string;
 }

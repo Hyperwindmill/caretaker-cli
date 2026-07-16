@@ -11,8 +11,9 @@ const CT_HOME = await mkdtemp(join(tmpdir(), 'ct-tasktools-home-'));
 process.env.CARETAKER_HOME = CT_HOME;
 
 const { createTask, getTaskById, saveTask, deleteTask, addTaskMessage, runQuery } = await import('../../../store/db.js');
-const { completeTaskTool, taskArchiveTool, taskUnarchiveTool, taskDeleteTool, taskSearchTool } = await import('./task_tools.js');
+const { completeTaskTool, taskArchiveTool, taskUnarchiveTool, taskDeleteTool, taskSearchTool, taskSetAgentTool, taskCreateTool } = await import('./task_tools.js');
 const { runningTasks } = await import('../../../cli/web/scheduler/locks.js');
+const { saveConfig } = await import('../../../store/json.js');
 
 function ctx(): ToolContext {
   return {
@@ -162,6 +163,60 @@ test('task_search excludes archived tasks by default', async () => {
   const ids2 = matches2.map((m: any) => m.id);
   assert.ok(ids2.includes(t1.id));
   assert.ok(ids2.includes(t2.id));
+});
+
+test('task_set_agent assigns an agent to a task', async () => {
+  const t = await createTask({ ...base, title: 'Set Agent Task' });
+  assert.equal((await getTaskById(t.id))!.agentId ?? null, null);
+
+  await taskSetAgentTool.execute({ task_id: t.id, agent_id: 'agent-xyz' }, ctx());
+  assert.equal((await getTaskById(t.id))!.agentId, 'agent-xyz');
+});
+
+test('task_set_agent clears the override with null', async () => {
+  const t = await createTask({ ...base, title: 'Clear Agent Task', agentId: 'agent-abc' });
+  assert.equal((await getTaskById(t.id))!.agentId, 'agent-abc');
+
+  await taskSetAgentTool.execute({ task_id: t.id, agent_id: null }, ctx());
+  assert.equal((await getTaskById(t.id))!.agentId, null);
+});
+
+test('task_set_agent refuses on a running task', async () => {
+  const t = await createTask({ ...base, title: 'Running Agent Task' });
+  const task = await getTaskById(t.id);
+  task!.lockedAt = new Date().toISOString();
+  await saveTask(task!);
+
+  try {
+    const result = await taskSetAgentTool.execute({ task_id: t.id, agent_id: 'agent-x' }, ctx());
+    const parsed = JSON.parse(result.content);
+    assert.ok(parsed.error);
+    assert.ok(parsed.error.includes('running'));
+
+    // Agent should not have changed
+    assert.equal((await getTaskById(t.id))!.agentId ?? null, null);
+  } finally {
+    task!.lockedAt = null;
+    await saveTask(task!);
+  }
+});
+
+test('task_create stores agentId when provided', async () => {
+  // Set up a project in config so task_create can find it
+  await saveConfig({
+    port: 3000,
+    providers: [],
+    projects: [{ id: 1, name: 'Test', description: '', workingDir: '/work', agentId: '', active: true }],
+  });
+
+  const result = await taskCreateTool.execute(
+    { project_id: 1, title: 'Task With Agent', objective: 'test', checklist: [{ text: 'do it' }], agent_id: 'agent-special' },
+    ctx(),
+  );
+  const parsed = JSON.parse(result.content);
+  assert.ok(parsed.ok);
+  const task = await getTaskById(parsed.task_id);
+  assert.equal(task!.agentId, 'agent-special');
 });
 
 test.after(async () => {

@@ -48,6 +48,7 @@ export const getTaskStateTool: Tool = {
         blockedReason: task.blockedReason,
         noProgressCount: task.noProgressCount,
         maxNoProgress: task.maxNoProgress,
+        agentId: task.agentId || null,
         project: project
           ? {
               name: project.name,
@@ -320,6 +321,10 @@ export const taskCreateTool: Tool = {
         items: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
       },
       start_active: { type: 'boolean' },
+      agent_id: {
+        type: 'string',
+        description: 'Optional agent ID to assign to this task. If omitted, the project default agent is used.',
+      },
     },
     required: ['project_id', 'title', 'objective', 'checklist'],
   },
@@ -330,6 +335,7 @@ export const taskCreateTool: Tool = {
     const objective = String(args.objective);
     const checklistInput = args.checklist as any[];
     const startActive = !!args.start_active;
+    const agentId = args.agent_id ? String(args.agent_id) : null;
 
     const config = await loadConfig();
     const project = (config.projects || []).find((p) => p.id === projectId);
@@ -352,6 +358,7 @@ export const taskCreateTool: Tool = {
       noProgressCount: 0,
       maxNoProgress: 5,
       lockedAt: null,
+      agentId,
     });
 
     if (startActive) {
@@ -647,5 +654,38 @@ export const taskDeleteTool: Tool = {
 
     await deleteTask(taskId);
     return ok();
+  },
+};
+
+export const taskSetAgentTool: Tool = {
+  name: 'mcp__task__task_set_agent',
+  description:
+    'Assign a specific agent to a task, overriding the project default agent. Pass null or omit agent_id to clear the override and fall back to the project default.',
+  parameters: {
+    type: 'object',
+    properties: {
+      task_id: { type: 'number' },
+      agent_id: { type: 'string', description: 'The agent ID to assign, or null to clear the override.' },
+    },
+    required: ['task_id'],
+  },
+  execute: async (args: any): Promise<ToolResult> => {
+    const taskId = Number(args.task_id);
+    const agentId = args.agent_id != null ? String(args.agent_id) : null;
+
+    const task = await getTaskById(taskId);
+    if (!task) return err(`Task ${taskId} not found`);
+
+    // Guard against reassigning a task that is currently running.
+    const lockKey = `task_db_${taskId}`;
+    if (task.lockedAt || runningTasks.has(lockKey)) {
+      return err(`Task ${taskId} is currently running. Wait for it to finish or pause it first.`);
+    }
+
+    task.agentId = agentId;
+    task.updatedAt = new Date().toISOString();
+    await saveTask(task);
+
+    return ok({ agentId });
   },
 };

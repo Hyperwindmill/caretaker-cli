@@ -93,9 +93,12 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
       throw new Error(`Project with ID ${task.projectId} not found for task #${task.id}`);
     }
 
-    // 3. Load Agent
+    // 3. Load Agent — per-task override takes priority over project default.
     const agents = await loadAgents();
-    const agent = agents.find((a) => a.id === project.agentId) || agents[0];
+    const agent =
+      (task.agentId && agents.find((a) => a.id === task.agentId)) ||
+      agents.find((a) => a.id === project.agentId) ||
+      agents[0];
     if (!agent) {
       throw new Error(`No agent configured in agents.json for project "${project.name}"`);
     }

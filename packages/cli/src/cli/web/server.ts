@@ -321,7 +321,7 @@ export async function startServer(port: number, host: string): Promise<void> {
   app.post('/api/projects/:id/tasks', async (c) => {
     const projectId = Number(c.req.param('id'));
     const body = await c.req.json();
-    const { title, objective, checklist, startActive } = body;
+    const { title, objective, checklist, startActive, agentId } = body;
 
     const checklistItems = (checklist || []).map((item: any, idx: number) => ({
       id: randomUUID(),
@@ -340,6 +340,7 @@ export async function startServer(port: number, host: string): Promise<void> {
       noProgressCount: 0,
       maxNoProgress: 5,
       lockedAt: null,
+      agentId: agentId || null,
     });
     return c.json({ ok: true });
   });
@@ -495,6 +496,27 @@ export async function startServer(port: number, host: string): Promise<void> {
     }
 
     return c.json({ ok: true });
+  });
+
+  app.patch('/api/tasks/:id/agent', async (c) => {
+    const taskId = Number(c.req.param('id'));
+    const body = await c.req.json();
+    const { agentId } = body;
+
+    const task = await getTaskById(taskId);
+    if (!task) return c.json({ ok: false, error: 'not found' }, 404);
+
+    // Guard against reassigning a task that is currently running.
+    const lockKey = `task_db_${taskId}`;
+    if (task.lockedAt || runningTasks.has(lockKey)) {
+      return c.json({ ok: false, error: 'Task is currently running. Wait for it to finish or pause it first.' }, 409);
+    }
+
+    task.agentId = agentId || null;
+    task.updatedAt = new Date().toISOString();
+    await saveTask(task);
+
+    return c.json({ ok: true, agentId: task.agentId });
   });
 
   const nodeServer = serve({
