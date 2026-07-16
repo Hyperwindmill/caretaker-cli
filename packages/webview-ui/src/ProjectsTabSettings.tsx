@@ -19,6 +19,10 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
   const [description, setDescription] = useState('');
   const [workingDir, setWorkingDir] = useState('');
   const [agentId, setAgentId] = useState('');
+  const [plannerAgentId, setPlannerAgentId] = useState('');
+  const [reviewerAgentId, setReviewerAgentId] = useState('');
+  const [planningEnabled, setPlanningEnabled] = useState<boolean | null>(null);
+  const [reviewEnabled, setReviewEnabled] = useState<boolean | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const projects = config.projects || [];
@@ -30,6 +34,10 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
     setDescription(proj.description || '');
     setWorkingDir(proj.workingDir);
     setAgentId(proj.agentId);
+    setPlannerAgentId(proj.plannerAgentId || '');
+    setReviewerAgentId(proj.reviewerAgentId || '');
+    setPlanningEnabled(proj.planningEnabled !== undefined ? proj.planningEnabled : null);
+    setReviewEnabled(proj.reviewEnabled !== undefined ? proj.reviewEnabled : null);
     setErrorMsg(null);
   };
 
@@ -40,6 +48,10 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
     setDescription('');
     setWorkingDir('');
     setAgentId(agents[0]?.id || '');
+    setPlannerAgentId('');
+    setReviewerAgentId('');
+    setPlanningEnabled(null);
+    setReviewEnabled(null);
     setErrorMsg(null);
   };
 
@@ -78,6 +90,10 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
         workingDir: trimmedDir,
         agentId,
         active: true,
+        plannerAgentId: plannerAgentId || null,
+        reviewerAgentId: reviewerAgentId || null,
+        planningEnabled,
+        reviewEnabled,
       };
       updatedProjects.push(newProj);
     } else if (editingProject) {
@@ -89,6 +105,10 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
           description: trimmedDesc,
           workingDir: trimmedDir,
           agentId,
+          plannerAgentId: plannerAgentId || null,
+          reviewerAgentId: reviewerAgentId || null,
+          planningEnabled,
+          reviewEnabled,
         };
       }
     }
@@ -189,6 +209,65 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
                 </option>
               ))}
             </select>
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="project-planner">Planner Agent Override (optional)</label>
+            <select
+              id="project-planner"
+              value={plannerAgentId}
+              onChange={(e) => setPlannerAgentId(e.target.value)}
+            >
+              <option value="">Same as developer</option>
+              {agents.map((agent) => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="project-reviewer">Reviewer Agent Override (optional)</label>
+            <select
+              id="project-reviewer"
+              value={reviewerAgentId}
+              onChange={(e) => setReviewerAgentId(e.target.value)}
+            >
+              <option value="">Same as developer</option>
+              {agents.map((agent) => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-group" style={{ display: 'flex', gap: '16px' }}>
+            <div style={{ flex: 1 }}>
+              <label htmlFor="project-planning-enabled">Planning Phase</label>
+              <select
+                id="project-planning-enabled"
+                value={planningEnabled === true ? 'on' : planningEnabled === false ? 'off' : 'default'}
+                onChange={(e) => setPlanningEnabled(e.target.value === 'default' ? null : e.target.value === 'on')}
+              >
+                <option value="default">Default (Off)</option>
+                <option value="on">On</option>
+                <option value="off">Off</option>
+              </select>
+            </div>
+            <div style={{ flex: 1 }}>
+              <label htmlFor="project-review-enabled">Review at DONE</label>
+              <select
+                id="project-review-enabled"
+                value={reviewEnabled === true ? 'on' : reviewEnabled === false ? 'off' : 'default'}
+                onChange={(e) => setReviewEnabled(e.target.value === 'default' ? null : e.target.value === 'on')}
+              >
+                <option value="default">Default (On)</option>
+                <option value="on">On</option>
+                <option value="off">Off</option>
+              </select>
+            </div>
           </div>
 
           <div className="form-actions">
