@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import type { AgentSummary } from './bridge.js';
-import { FolderIcon, DeleteIcon, WarningIcon, ToolIcon, PauseIcon, ActivateIcon, GitIcon } from './icons.js';
+import { FolderIcon, DeleteIcon, WarningIcon, ToolIcon, PauseIcon, ActivateIcon, GitIcon, ArchiveIcon } from './icons.js';
 import FolderPicker from './FolderPicker.js';
 import { MessageList } from './MessageList.js';
 import type { ChatItem } from './App.js';
@@ -34,6 +34,7 @@ interface Task {
   lockedAt: string | null;
   branch: string | null;
   worktreePath: string | null;
+  archived?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -128,6 +129,13 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
 
   const [composerText, setComposerText] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  // Inline confirm dialog (VSCode webviews disable window.confirm()).
+  const [pendingConfirm, setPendingConfirm] = useState<{
+    type: 'delete' | 'discard';
+    task: Task;
+  } | null>(null);
+  const [taskError, setTaskError] = useState<string | null>(null);
 
   const threadIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -145,7 +153,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
       setTaskMessages([]);
       stopThreadPolling();
     }
-  }, [selectedProjectId]);
+  }, [selectedProjectId, showArchived]);
 
   useEffect(() => {
     if (selectedTaskId !== null) {
@@ -170,7 +178,8 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
 
   const fetchTasks = async (projectId: number) => {
     try {
-      const res = await fetch(`/api/projects/${projectId}/tasks`);
+      const qs = showArchived ? '?archived=true' : '';
+      const res = await fetch(`/api/projects/${projectId}/tasks${qs}`);
       if (res.ok) {
         const data = await res.json();
         setTasks(data);
@@ -294,21 +303,93 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
   };
 
   const handleDiscardWorktree = async (task: Task) => {
-    if (!window.confirm(`Discard the worktree for task #${task.id}? Pending changes are committed to branch ${task.branch}; the branch is kept.`)) {
-      return;
-    }
+    // VSCode webviews disable window.confirm(); use an inline overlay instead.
+    setPendingConfirm({ type: 'discard', task });
+  };
+
+  const handleArchiveToggle = async (task: Task) => {
+    const isArchived = !!task.archived;
+    const action = isArchived ? 'unarchive' : 'archive';
     try {
-      const res = await fetch(`/api/tasks/${task.id}/discard-worktree`, { method: 'POST' });
-      if (res.ok) {
+      const res = await fetch(`/api/tasks/${task.id}/${action}`, { method: 'POST' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setTaskError(body.error || `Failed to ${action} task`);
+      } else {
         fetchTasks(task.projectId);
-        if (selectedTaskId === task.id) {
-          fetchTaskMessages(task.id);
-        }
       }
     } catch (err) {
-      console.error('Failed to discard worktree:', err);
+      setTaskError(`Failed to ${action} task: ${String(err)}`);
     }
   };
+
+  const handleDeleteTask = async (task: Task) => {
+    // VSCode webviews disable window.confirm(); use an inline overlay instead.
+    setPendingConfirm({ type: 'delete', task });
+  };
+
+  const confirmPendingAction = async (): Promise<void> => {
+    if (!pendingConfirm) return;
+    const { type, task } = pendingConfirm;
+    setPendingConfirm(null);
+
+    if (type === 'delete') {
+      try {
+        const res = await fetch(`/api/tasks/${task.id}`, { method: 'DELETE' });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          setTaskError(body.error || 'Failed to delete task');
+        } else {
+          if (selectedTaskId === task.id) {
+            setSelectedTaskId(null);
+            setTaskMessages([]);
+            stopThreadPolling();
+          }
+          fetchTasks(task.projectId);
+        }
+      } catch (err) {
+        setTaskError(`Failed to delete task: ${String(err)}`);
+      }
+    } else if (type === 'discard') {
+      try {
+        const res = await fetch(`/api/tasks/${task.id}/discard-worktree`, { method: 'POST' });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          setTaskError(body.error || 'Failed to discard worktree');
+        } else {
+          fetchTasks(task.projectId);
+          if (selectedTaskId === task.id) {
+            fetchTaskMessages(task.id);
+          }
+        }
+      } catch (err) {
+        setTaskError(`Failed to discard worktree: ${String(err)}`);
+      }
+    }
+  };
+
+  const cancelPendingAction = (): void => {
+    setPendingConfirm(null);
+  };
+
+  // Dismiss the confirm dialog on Escape (parity with window.confirm()).
+  useEffect(() => {
+    if (!pendingConfirm) return;
+    function handleKeyDown(event: KeyboardEvent): void {
+      if (event.key === 'Escape') {
+        setPendingConfirm(null);
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [pendingConfirm]);
+
+  // Auto-dismiss error banner after 5 seconds.
+  useEffect(() => {
+    if (!taskError) return;
+    const t = setTimeout(() => setTaskError(null), 5000);
+    return () => clearTimeout(t);
+  }, [taskError]);
 
   const handleToggleChecklistItem = async (task: Task, item: ChecklistItem) => {
     const newStatus = item.status === 'done' ? 'pending' : 'done';
@@ -466,9 +547,20 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
               </div>
 
               <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
-                <h4 style={{ margin: '0 0 8px 0', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.6 }}>
-                  Tasks
-                </h4>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <h4 style={{ margin: 0, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.6 }}>
+                    Tasks
+                  </h4>
+                  <label style={{ fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', opacity: 0.7 }}>
+                    <input
+                      type="checkbox"
+                      checked={showArchived}
+                      onChange={(e) => setShowArchived(e.target.checked)}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    Show archived
+                  </label>
+                </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {tasks.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '20px', color: 'var(--vscode-descriptionForeground)', fontStyle: 'italic', fontSize: '12px' }}>
@@ -479,6 +571,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
                       const isSelected = selectedTaskId === task.id;
                       const completedCount = task.checklist.filter((c) => c.status === 'done').length;
                       const totalCount = task.checklist.length;
+                      const isArchived = !!task.archived;
                       
                       let statusColor = '#64748b'; // draft
                       if (task.status === 'active') statusColor = '#22c55e';
@@ -498,25 +591,44 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
                             border: `1px solid ${isSelected ? 'var(--primary-blue)' : 'var(--vscode-panel-border, rgba(255,255,255,0.05))'}`,
                             cursor: 'pointer',
                             transition: 'all 0.2s ease',
+                            opacity: isArchived ? 0.55 : 1,
                           }}
                         >
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
-                            <span style={{ fontWeight: 600, fontSize: '12px', color: 'var(--vscode-foreground)' }}>
+                            <span style={{ fontWeight: 600, fontSize: '12px', color: 'var(--vscode-foreground)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              {isArchived && <ArchiveIcon size={11} />}
                               {task.title}
                             </span>
-                            <span
-                              style={{
-                                fontSize: '9px',
-                                fontWeight: 'bold',
-                                color: '#ffffff',
-                                background: statusColor,
-                                padding: '1px 5px',
-                                borderRadius: '4px',
-                                textTransform: 'uppercase',
-                              }}
-                            >
-                              {task.status}
-                            </span>
+                            <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
+                              {isArchived && (
+                                <span
+                                  style={{
+                                    fontSize: '9px',
+                                    fontWeight: 'bold',
+                                    color: '#ffffff',
+                                    background: '#78716c',
+                                    padding: '1px 5px',
+                                    borderRadius: '4px',
+                                    textTransform: 'uppercase',
+                                  }}
+                                >
+                                  archived
+                                </span>
+                              )}
+                              <span
+                                style={{
+                                  fontSize: '9px',
+                                  fontWeight: 'bold',
+                                  color: '#ffffff',
+                                  background: statusColor,
+                                  padding: '1px 5px',
+                                  borderRadius: '4px',
+                                  textTransform: 'uppercase',
+                                }}
+                              >
+                                {task.status}
+                              </span>
+                            </div>
                           </div>
                           <div style={{ fontSize: '11px', opacity: 0.7, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', marginBottom: '6px' }}>
                             {task.objective}
@@ -575,6 +687,14 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
                         </button>
                       )}
                       <button
+                        className="confirm__btn"
+                        onClick={() => handleArchiveToggle(selectedTask)}
+                        title={selectedTask.archived ? 'Unarchive this task' : 'Archive this task (hides it from the list, excludes from scheduler)'}
+                        style={{ padding: '3px 10px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        <ArchiveIcon size={12} /> {selectedTask.archived ? 'Unarchive' : 'Archive'}
+                      </button>
+                      <button
                         className="confirm__btn confirm__btn--primary"
                         onClick={() => handleToggleTaskStatus(selectedTask)}
                         style={{ padding: '3px 10px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
@@ -588,6 +708,14 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
                             <ActivateIcon size={12} /> Activate
                           </>
                         )}
+                      </button>
+                      <button
+                        className="confirm__btn"
+                        onClick={() => handleDeleteTask(selectedTask)}
+                        title="Permanently delete this task and all its messages"
+                        style={{ padding: '3px 10px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#ef4444' }}
+                      >
+                        <DeleteIcon size={12} /> Delete
                       </button>
                     </div>
                   </div>
@@ -962,6 +1090,36 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
               </button>
             </div>
           </form>
+        </div>
+      )}
+      {/* Inline confirmation dialog (VSCode webviews disable window.confirm()) */}
+      {pendingConfirm && (
+        <div className="app__confirm-overlay" onClick={cancelPendingAction}>
+          <div className="app__confirm-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="app__confirm-title">
+              {pendingConfirm.type === 'delete' ? 'Delete task' : 'Discard worktree'}
+            </div>
+            <p className="app__confirm-message">
+              {pendingConfirm.type === 'delete'
+                ? `Permanently delete task #${pendingConfirm.task.id} "${pendingConfirm.task.title}"? This removes the task and all its messages from the store. This action cannot be undone.`
+                : `Discard the worktree for task #${pendingConfirm.task.id}? Pending changes are committed to branch ${pendingConfirm.task.branch}; the branch is kept.`}
+            </p>
+            <div className="app__confirm-buttons">
+              <button className="app__confirm-btn" onClick={cancelPendingAction}>Cancel</button>
+              <button
+                className={`app__confirm-btn ${pendingConfirm.type === 'delete' ? 'app__confirm-btn--danger' : ''}`}
+                onClick={confirmPendingAction}
+              >
+                {pendingConfirm.type === 'delete' ? 'Delete' : 'Discard'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Error banner for failed task actions (auto-dismisses after 5s) */}
+      {taskError && (
+        <div className="app__error-banner" onClick={() => setTaskError(null)} title="Click to dismiss">
+          {taskError}
         </div>
       )}
     </div>

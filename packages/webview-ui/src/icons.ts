@@ -37,4 +37,5 @@ export {
   Pause as PauseIcon,
   Play as ActivateIcon,
   Circle as StatusIcon,
+  Archive as ArchiveIcon,
 } from 'lucide-react';

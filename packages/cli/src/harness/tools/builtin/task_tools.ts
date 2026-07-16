@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { getDb, ChecklistItem, Project, Task, TaskMessage, getTaskById, saveTask, createTask, addTaskMessage } from '../../../store/db.js';
+import { getDb, ChecklistItem, Project, Task, TaskMessage, getTaskById, saveTask, createTask, addTaskMessage, deleteTask } from '../../../store/db.js';
 import { loadConfig } from '../../../store/json.js';
 import type { Tool, ToolResult } from '../types.js';
 import { discardWorktree } from '../../../lib/task_git.js';
+import { runningTasks } from '../../../cli/web/scheduler/locks.js';
 
 function ok(data: Record<string, unknown> = {}): ToolResult {
   return { content: JSON.stringify({ ok: true, ...data }) };
@@ -43,6 +44,7 @@ export const getTaskStateTool: Tool = {
         objective: task.objective,
         checklist: task.checklist,
         status: task.status,
+        archived: !!task.archived,
         blockedReason: task.blockedReason,
         noProgressCount: task.noProgressCount,
         maxNoProgress: task.maxNoProgress,
@@ -368,12 +370,14 @@ export const taskCreateTool: Tool = {
 
 export const taskSearchTool: Tool = {
   name: 'mcp__task__task_search',
-  description: 'Search tasks by query matching title or objective.',
+  description:
+    'Search tasks by query matching title or objective. By default archived tasks are excluded; set include_archived to true to search them too.',
   parameters: {
     type: 'object',
     properties: {
       query: { type: 'string' },
       limit: { type: 'number' },
+      include_archived: { type: 'boolean' },
     },
     required: ['query'],
   },
@@ -381,9 +385,11 @@ export const taskSearchTool: Tool = {
     const db = getDb();
     const query = String(args.query).toLowerCase();
     const limit = args.limit ? Number(args.limit) : 5;
+    const includeArchived = args.include_archived === true;
 
     const allTasks = (await db.query(`SELECT * FROM tasks`)) as Task[];
-    const matches = allTasks.filter(
+    const filtered = includeArchived ? allTasks : allTasks.filter((t) => !t.archived);
+    const matches = filtered.filter(
       (t) =>
         t.title.toLowerCase().includes(query) ||
         t.objective.toLowerCase().includes(query),
@@ -534,5 +540,112 @@ export const taskDiscardWorktreeTool: Tool = {
     await saveTask(task);
 
     return ok({ branch: task.branch });
+  },
+};
+
+export const taskArchiveTool: Tool = {
+  name: 'mcp__task__task_archive',
+  description:
+    'Archive a task. Archived tasks are hidden from the default task list and excluded from the scheduler heartbeat, but remain in the store and can be unarchived.',
+  parameters: {
+    type: 'object',
+    properties: {
+      task_id: { type: 'number' },
+    },
+    required: ['task_id'],
+  },
+  execute: async (args: any): Promise<ToolResult> => {
+    const taskId = Number(args.task_id);
+    const task = await getTaskById(taskId);
+    if (!task) return err(`Task ${taskId} not found`);
+
+    task.archived = true;
+    // An archived task stops running: pause it so the heartbeat won't pick it up.
+    if (task.status === 'active' || task.status === 'reviewing') {
+      task.status = 'paused';
+    }
+    task.updatedAt = new Date().toISOString();
+    await saveTask(task);
+
+    await addTaskMessage({
+      taskId,
+      role: 'assistant',
+      messageType: 'system',
+      content: 'Task archived.',
+      agentId: null,
+    });
+
+    return ok();
+  },
+};
+
+export const taskUnarchiveTool: Tool = {
+  name: 'mcp__task__task_unarchive',
+  description:
+    'Unarchive a previously archived task, making it visible in the default task list again. The task status is not changed — use task_activate or task_unpause to resume work.',
+  parameters: {
+    type: 'object',
+    properties: {
+      task_id: { type: 'number' },
+    },
+    required: ['task_id'],
+  },
+  execute: async (args: any): Promise<ToolResult> => {
+    const taskId = Number(args.task_id);
+    const task = await getTaskById(taskId);
+    if (!task) return err(`Task ${taskId} not found`);
+
+    task.archived = false;
+    task.updatedAt = new Date().toISOString();
+    await saveTask(task);
+
+    await addTaskMessage({
+      taskId,
+      role: 'assistant',
+      messageType: 'system',
+      content: 'Task unarchived.',
+      agentId: null,
+    });
+
+    return ok();
+  },
+};
+
+export const taskDeleteTool: Tool = {
+  name: 'mcp__task__task_delete',
+  description:
+    'Permanently delete a task and all of its messages from the store. This is irreversible. If the task has an active git worktree, it is discarded first (branch kept).',
+  parameters: {
+    type: 'object',
+    properties: {
+      task_id: { type: 'number' },
+    },
+    required: ['task_id'],
+  },
+  execute: async (args: any): Promise<ToolResult> => {
+    const taskId = Number(args.task_id);
+    const task = await getTaskById(taskId);
+    if (!task) return err(`Task ${taskId} not found`);
+
+    // Guard against deleting a task that is currently being processed by the
+    // scheduler heartbeat. The heartbeat holds an in-process lock and a DB
+    // lockedAt timestamp; deleting mid-run would cause the finally block to
+    // resurrect the task as a zombie via saveTask.
+    const lockKey = `task_db_${taskId}`;
+    if (task.lockedAt || runningTasks.has(lockKey)) {
+      return err(`Task ${taskId} is currently running (locked). Wait for it to finish or pause it first.`);
+    }
+
+    // Clean up any active worktree before deleting the task record.
+    if (task.worktreePath) {
+      try {
+        await discardWorktree(task.worktreePath, task.title);
+      } catch {
+        // Best-effort: proceed with deletion even if worktree cleanup fails.
+      }
+    }
+
+    await deleteTask(taskId);
+    return ok();
   },
 };

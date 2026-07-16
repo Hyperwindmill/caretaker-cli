@@ -123,4 +123,78 @@ describe('database store', () => {
     assert.ok(found);
     assert.equal(found.title, 'Multi Where Task');
   });
+
+  it('permanently deletes a task and its messages', async () => {
+    const task = await db.createTask({
+      projectId: 4,
+      title: 'Delete Task',
+      objective: 'To be deleted',
+      checklist: [],
+      status: 'active',
+      blockedReason: null,
+      noProgressCount: 0,
+      maxNoProgress: 5,
+      lockedAt: null,
+    });
+
+    await db.addTaskMessage({
+      taskId: task.id,
+      role: 'assistant',
+      messageType: 'chat',
+      content: 'message 1',
+    });
+    await db.addTaskMessage({
+      taskId: task.id,
+      role: 'assistant',
+      messageType: 'chat',
+      content: 'message 2',
+    });
+
+    // Verify task and messages exist
+    assert.ok(await db.getTaskById(task.id));
+    const msgsBefore = await db.runQuery(`SELECT * FROM task_messages WHERE taskId = ${task.id}`);
+    assert.equal(msgsBefore.length, 2);
+
+    // Delete
+    await db.deleteTask(task.id);
+
+    // Task should be gone
+    assert.equal(await db.getTaskById(task.id), null);
+
+    // Messages should be gone
+    const msgsAfter = await db.runQuery(`SELECT * FROM task_messages WHERE taskId = ${task.id}`);
+    assert.equal(msgsAfter.length, 0);
+  });
+
+  it('saves and retrieves the archived flag', async () => {
+    const task = await db.createTask({
+      projectId: 5,
+      title: 'Archive Flag Task',
+      objective: 'Test archived flag persistence',
+      checklist: [],
+      status: 'active',
+      blockedReason: null,
+      noProgressCount: 0,
+      maxNoProgress: 5,
+      lockedAt: null,
+    });
+
+    // Archived defaults to undefined/falsy for new tasks
+    const before = await db.getTaskById(task.id);
+    assert.ok(!before!.archived);
+
+    // Set archived = true and save
+    before!.archived = true;
+    await db.saveTask(before!);
+
+    const after = await db.getTaskById(task.id);
+    assert.equal(after!.archived, true);
+
+    // Set archived = false and save
+    after!.archived = false;
+    await db.saveTask(after!);
+
+    const final = await db.getTaskById(task.id);
+    assert.equal(final!.archived, false);
+  });
 });
