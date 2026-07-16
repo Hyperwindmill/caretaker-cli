@@ -144,7 +144,7 @@ test('End-to-end task heartbeat worktree lifecycle', async () => {
 
     // Verify the commit was made (because compile/wip commits on each heartbeat tick)
     const log = await g(repo, ['log', '--oneline', refreshed.branch]);
-    assert.match(log.stdout, /wip: E2E Task Title/);
+    assert.match(log.stdout, /chore\(auto\): E2E Task Title/);
 
     // Now, manually discard the worktree
     await discardWorktree(refreshed.worktreePath, refreshed.title);

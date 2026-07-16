@@ -84,7 +84,9 @@ export async function commitWip(worktreePath: string, title: string): Promise<bo
   const idArgs = (await hasGitIdentity(worktreePath))
     ? []
     : ['-c', 'user.name=Caretaker', '-c', 'user.email=caretaker@localhost'];
-  await git(worktreePath, [...idArgs, 'commit', '--no-verify', '-m', `wip: ${title}`]);
+  // "chore(auto):" instead of "wip:" — wip is not a conventional-commits type,
+  // so commitlint-style hooks and wip-detecting tools warn on it downstream.
+  await git(worktreePath, [...idArgs, 'commit', '--no-verify', '-m', `chore(auto): ${title}`]);
   return true;
 }
 
