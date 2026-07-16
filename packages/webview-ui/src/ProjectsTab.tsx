@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import type { AgentSummary } from './bridge.js';
-import { FolderIcon, DeleteIcon, WarningIcon, ToolIcon, SettingsIcon, PauseIcon, ActivateIcon } from './icons.js';
+import { FolderIcon, DeleteIcon, WarningIcon, ToolIcon, SettingsIcon, PauseIcon, ActivateIcon, GitIcon } from './icons.js';
 
 interface Project {
   id: number;
@@ -29,6 +29,8 @@ interface Task {
   noProgressCount: number;
   maxNoProgress: number;
   lockedAt: string | null;
+  branch: string | null;
+  worktreePath: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -257,6 +259,23 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
       }
     } catch (err) {
       console.error('Failed to toggle status:', err);
+    }
+  };
+
+  const handleDiscardWorktree = async (task: Task) => {
+    if (!window.confirm(`Discard the worktree for task #${task.id}? Pending changes are committed to branch ${task.branch}; the branch is kept.`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/discard-worktree`, { method: 'POST' });
+      if (res.ok) {
+        fetchTasks(task.projectId);
+        if (selectedTaskId === task.id) {
+          fetchTaskMessages(task.id);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to discard worktree:', err);
     }
   };
 
@@ -505,21 +524,33 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
                 >
                   <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>Task #{selectedTask.id}</h3>
-                    <button
-                      className="confirm__btn confirm__btn--primary"
-                      onClick={() => handleToggleTaskStatus(selectedTask)}
-                      style={{ padding: '3px 10px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                    >
-                      {selectedTask.status === 'active' ? (
-                        <>
-                          <PauseIcon size={12} /> Pause
-                        </>
-                      ) : (
-                        <>
-                          <ActivateIcon size={12} /> Activate
-                        </>
+                    <div style={{ display: 'inline-flex', gap: '6px' }}>
+                      {selectedTask.worktreePath && (
+                        <button
+                          className="confirm__btn"
+                          onClick={() => handleDiscardWorktree(selectedTask)}
+                          title={`Commit pending changes to ${selectedTask.branch} and remove the worktree`}
+                          style={{ padding: '3px 10px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                        >
+                          <GitIcon size={12} /> Discard worktree
+                        </button>
                       )}
-                    </button>
+                      <button
+                        className="confirm__btn confirm__btn--primary"
+                        onClick={() => handleToggleTaskStatus(selectedTask)}
+                        style={{ padding: '3px 10px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        {selectedTask.status === 'active' ? (
+                          <>
+                            <PauseIcon size={12} /> Pause
+                          </>
+                        ) : (
+                          <>
+                            <ActivateIcon size={12} /> Activate
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
 
                   <div style={{ marginBottom: '16px' }}>

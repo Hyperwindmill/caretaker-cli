@@ -9,6 +9,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 
 import * as harness from '../../harness/index.js';
 import { getDb, Task, getTaskById, saveTask, createTask, addTaskMessage, runQuery } from '../../store/db.js';
+import { discardWorktree } from '../../lib/task_git.js';
 import {
   loadAgents,
   loadConfig,
@@ -391,6 +392,20 @@ export async function startServer(port: number, host: string): Promise<void> {
     }
 
     return c.json({ ok: true });
+  });
+
+  app.post('/api/tasks/:id/discard-worktree', async (c) => {
+    const taskId = Number(c.req.param('id'));
+    const task = await getTaskById(taskId);
+    if (!task) return c.json({ ok: false, error: 'not found' }, 404);
+    if (!task.worktreePath) return c.json({ ok: false, error: 'no worktree' }, 400);
+
+    await discardWorktree(task.worktreePath, task.title);
+    task.worktreePath = null;
+    task.updatedAt = new Date().toISOString();
+    await saveTask(task);
+
+    return c.json({ ok: true, branch: task.branch });
   });
 
   app.post('/api/tasks/:id/checklist-item', async (c) => {
