@@ -82,7 +82,9 @@ Recursion is capped at depth 5. The confirm gate is plumbed all the way through,
 
 ### Autonomous task/project system
 
-Beyond one-shot chats, caretaker ships a task/project system backed by the `@morphql/store` folder database under `~/.caretaker/store/`. It models **Projects**, **Tasks** (draft / active / paused / blocked / done, with checklist items and no-progress guards), and **TaskMessages**. A family of built-in `mcp__task__*` tools (`task_create`, `task_get_state`, `task_update_checklist_item`, `task_add_message`, `task_complete`, `task_block`, `task_unblock`, `task_yield`, `task_activate`, `task_unpause`, `task_search`, `project_list`) lets agents advance long-running objectives one step per invocation. A dedicated scheduler tick drives active tasks autonomously with per-invocation time and turn budgets.
+Beyond one-shot chats, caretaker ships a task/project system backed by the `@morphql/store` folder database under `~/.caretaker/store/`. It models **Projects**, **Tasks** (draft / active / paused / blocked / done, with checklist items and no-progress guards), and **TaskMessages**. A family of built-in `mcp__task__*` tools (`task_create`, `task_get_state`, `task_update_checklist_item`, `task_add_message`, `task_complete`, `task_block`, `task_unblock`, `task_yield`, `task_activate`, `task_unpause`, `task_search`, `project_list`, `task_discard_worktree`) lets agents advance long-running objectives one step per invocation. A dedicated scheduler tick drives active tasks autonomously with per-invocation time and turn budgets.
+
+When a task's project lives in a git repo, the harness gives it a **dedicated worktree on its own branch** (`caretaker/task-<id>-<slug>`): the autonomous agent works in isolation instead of your live tree, each cycle's progress is committed as a WIP commit, and when the task is done the worktree is removed while the branch stays behind for you to review or merge — nothing autonomous ever lands on `main`. Before a task is finalized, it goes through a **review gate**: an independent review pass inspects the branch and, if it requests changes, reopens the task so the agent addresses the feedback next cycle (capped at three rounds). Projects that aren't git repos simply run in place, unchanged.
 
 ### Scheduler
 
@@ -90,7 +92,7 @@ The web server boots an in-process background scheduler that ticks every 15 s. I
 
 - **Cron heartbeat** — a standard 5-field cron expression (`* * * * *`, lists, ranges, step patterns) fires a one-shot run of the agent with a fixed prompt. Tool calls auto-approve (it's unattended).
 - **Telegram poller** — polls Telegram `getUpdates` and routes incoming messages to the agent as an interactive conversation. The bot token is encrypted at rest; the offset is committed atomically before processing to prevent duplicate runs; messages from the same chat are serialised so a rapid second message never gets dropped. The **Allowed Chat IDs** whitelist is the only access boundary — without it, anyone who knows the token can execute every tool the agent has enabled, which the UI calls out explicitly.
-- **Autonomous task heartbeat** — advances the task/project system described above, independent of any configured scheduled task.
+- **Autonomous task heartbeat** — advances the task/project system described above, independent of any configured scheduled task. Git-backed tasks run in a dedicated worktree/branch, commit progress each cycle, and pass through a review gate before the worktree is cleaned up at DONE.
 
 Each task gets its own JSONL execution log under `~/.caretaker/scheduler-logs/`; the web GUI's Execution Console shows past runs with full message rendering. Remember: the scheduler only runs where the web server runs (`caretaker-cli web` or the desktop app), never under the bare TUI or VSCode.
 
@@ -149,9 +151,9 @@ packages/cli/                the Caretaker CLI/TUI, headless `run`, and the Hono
   │   └── web/                 local Hono server + WebSocket bridge to the webview
   │       ├── server.ts            HTTP/WS routes, harness invocation, scheduler boot
   │       ├── scheduler.ts         tick loop, daemon lifecycle, public re-exports
-  │       └── scheduler/           strategy pattern: heartbeat, telegram, task, locks, logs
+  │       └── scheduler/           strategy pattern: heartbeat, telegram, task, task_review, locks, logs
   ├── store/                 atomic JSON writes + @morphql/store task/project DB
-  ├── lib/encryption.ts      AES-256-GCM helpers used by every secret at rest
+  ├── lib/                   AES-256-GCM encryption + task_git (worktree lifecycle)
   ├── harness/               loop, provider, prelude, context_files, runtime_info
   ├── harness/tools/         built-in tools (sandboxed) + registry + resolver
   ├── plugins/               source manager, fetchers (git/path), manifest, loader
