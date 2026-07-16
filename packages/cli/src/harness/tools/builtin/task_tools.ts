@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { getDb, ChecklistItem, Project, Task, TaskMessage, getTaskById, saveTask, createTask, addTaskMessage } from '../../../store/db.js';
 import { loadConfig } from '../../../store/json.js';
 import type { Tool, ToolResult } from '../types.js';
+import { discardWorktree } from '../../../lib/task_git.js';
 
 function ok(data: Record<string, unknown> = {}): ToolResult {
   return { content: JSON.stringify({ ok: true, ...data }) };
@@ -505,5 +506,31 @@ export const taskUnpauseTool: Tool = {
     });
 
     return ok();
+  },
+};
+
+export const taskDiscardWorktreeTool: Tool = {
+  name: 'mcp__task__task_discard_worktree',
+  description:
+    'Commit any pending changes on the task branch, then remove its git worktree (the branch is kept). Use to clean up a task worktree manually when a task is done or abandoned.',
+  parameters: {
+    type: 'object',
+    properties: {
+      task_id: { type: 'number' },
+    },
+    required: ['task_id'],
+  },
+  execute: async (args: any): Promise<ToolResult> => {
+    const taskId = Number(args.task_id);
+    const task = await getTaskById(taskId);
+    if (!task) return err(`Task ${taskId} not found`);
+    if (!task.worktreePath) return err(`Task ${taskId} has no active worktree`);
+
+    await discardWorktree(task.worktreePath, task.title);
+    task.worktreePath = null;
+    task.updatedAt = new Date().toISOString();
+    await saveTask(task);
+
+    return ok({ branch: task.branch });
   },
 };
