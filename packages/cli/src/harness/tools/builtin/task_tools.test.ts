@@ -13,7 +13,7 @@ process.env.CARETAKER_HOME = CT_HOME;
 const { createTask, getTaskById, saveTask, deleteTask, addTaskMessage, runQuery } = await import('../../../store/db.js');
 const { completeTaskTool, taskArchiveTool, taskUnarchiveTool, taskDeleteTool, taskSearchTool, taskSetAgentTool, taskCreateTool } = await import('./task_tools.js');
 const { runningTasks } = await import('../../../cli/web/scheduler/locks.js');
-const { saveConfig } = await import('../../../store/json.js');
+const { saveConfig, saveAgents } = await import('../../../store/json.js');
 
 function ctx(): ToolContext {
   return {
@@ -166,6 +166,7 @@ test('task_search excludes archived tasks by default', async () => {
 });
 
 test('task_set_agent assigns an agent to a task', async () => {
+  await saveAgents([{ id: 'agent-xyz', name: 'XYZ', systemPrompt: '', provider: 'p', model: 'm', allowedTools: [], maxTurns: 10 }]);
   const t = await createTask({ ...base, title: 'Set Agent Task' });
   assert.equal((await getTaskById(t.id))!.agentId ?? null, null);
 
@@ -202,12 +203,13 @@ test('task_set_agent refuses on a running task', async () => {
 });
 
 test('task_create stores agentId when provided', async () => {
-  // Set up a project in config so task_create can find it
+  // Set up a project in config and an agent in agents.json so task_create can validate.
   await saveConfig({
     port: 3000,
     providers: [],
     projects: [{ id: 1, name: 'Test', description: '', workingDir: '/work', agentId: '', active: true }],
   });
+  await saveAgents([{ id: 'agent-special', name: 'Special', systemPrompt: '', provider: 'p', model: 'm', allowedTools: [], maxTurns: 10 }]);
 
   const result = await taskCreateTool.execute(
     { project_id: 1, title: 'Task With Agent', objective: 'test', checklist: [{ text: 'do it' }], agent_id: 'agent-special' },
@@ -217,6 +219,35 @@ test('task_create stores agentId when provided', async () => {
   assert.ok(parsed.ok);
   const task = await getTaskById(parsed.task_id);
   assert.equal(task!.agentId, 'agent-special');
+});
+
+test('task_create rejects a non-existent agent_id', async () => {
+  await saveConfig({
+    port: 3000,
+    providers: [],
+    projects: [{ id: 1, name: 'Test', description: '', workingDir: '/work', agentId: '', active: true }],
+  });
+  await saveAgents([{ id: 'agent-real', name: 'Real', systemPrompt: '', provider: 'p', model: 'm', allowedTools: [], maxTurns: 10 }]);
+
+  const result = await taskCreateTool.execute(
+    { project_id: 1, title: 'Bad Agent', objective: 'test', checklist: [{ text: 'do it' }], agent_id: 'agent-nonexistent' },
+    ctx(),
+  );
+  const parsed = JSON.parse(result.content);
+  assert.ok(parsed.error);
+  assert.ok(parsed.error.includes('not found'));
+});
+
+test('task_set_agent rejects a non-existent agent_id', async () => {
+  const t = await createTask({ ...base, title: 'Set Bad Agent' });
+  await saveAgents([{ id: 'agent-real', name: 'Real', systemPrompt: '', provider: 'p', model: 'm', allowedTools: [], maxTurns: 10 }]);
+
+  const result = await taskSetAgentTool.execute({ task_id: t.id, agent_id: 'agent-nonexistent' }, ctx());
+  const parsed = JSON.parse(result.content);
+  assert.ok(parsed.error);
+  assert.ok(parsed.error.includes('not found'));
+  // Agent should not have changed
+  assert.equal((await getTaskById(t.id))!.agentId ?? null, null);
 });
 
 test.after(async () => {

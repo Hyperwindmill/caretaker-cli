@@ -323,6 +323,14 @@ export async function startServer(port: number, host: string): Promise<void> {
     const body = await c.req.json();
     const { title, objective, checklist, startActive, agentId } = body;
 
+    // Validate that the specified agent exists (if provided).
+    if (agentId) {
+      const agents = await loadAgents();
+      if (!agents.some((a) => a.id === agentId)) {
+        return c.json({ ok: false, error: `Agent "${agentId}" not found.` }, 400);
+      }
+    }
+
     const checklistItems = (checklist || []).map((item: any, idx: number) => ({
       id: randomUUID(),
       text: item.text,
@@ -510,6 +518,14 @@ export async function startServer(port: number, host: string): Promise<void> {
     const lockKey = `task_db_${taskId}`;
     if (task.lockedAt || runningTasks.has(lockKey)) {
       return c.json({ ok: false, error: 'Task is currently running. Wait for it to finish or pause it first.' }, 409);
+    }
+
+    // Validate that the specified agent exists (if provided and non-null).
+    if (agentId) {
+      const agents = await loadAgents();
+      if (!agents.some((a) => a.id === agentId)) {
+        return c.json({ ok: false, error: `Agent "${agentId}" not found.` }, 400);
+      }
     }
 
     task.agentId = agentId || null;
