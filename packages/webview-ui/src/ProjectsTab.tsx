@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import type { AgentSummary } from './bridge.js';
-import { FolderIcon, DeleteIcon, WarningIcon, ToolIcon, PauseIcon, ActivateIcon, GitIcon, ArchiveIcon } from './icons.js';
+import { FolderIcon, DeleteIcon, WarningIcon, ToolIcon, PauseIcon, ActivateIcon, GitIcon, ArchiveIcon, EditIcon, BackIcon } from './icons.js';
 import FolderPicker from './FolderPicker.js';
 import { MessageList } from './MessageList.js';
 import type { ChatItem } from './App.js';
@@ -53,6 +53,46 @@ interface ProjectsTabProps {
   agents: AgentSummary[];
 }
 
+// --- localStorage persistence keys for the task view ---
+const LS_PROJECT_KEY = 'caretaker.taskView.selectedProjectId';
+const LS_ARCHIVED_KEY = 'caretaker.taskView.showArchived';
+
+function loadSavedProjectId(): number | null {
+  try {
+    const raw = localStorage.getItem(LS_PROJECT_KEY);
+    if (raw === null) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveProjectId(id: number | null): void {
+  try {
+    if (id === null) localStorage.removeItem(LS_PROJECT_KEY);
+    else localStorage.setItem(LS_PROJECT_KEY, String(id));
+  } catch {
+    /* ignore */
+  }
+}
+
+function loadShowArchived(): boolean {
+  try {
+    return localStorage.getItem(LS_ARCHIVED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function saveShowArchived(v: boolean): void {
+  try {
+    localStorage.setItem(LS_ARCHIVED_KEY, v ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}
+
 // Adapt stored TaskMessages to the shared ChatItem shape so the task thread
 // reuses the normal chat renderer (MessageList) instead of bespoke inline JSX.
 function taskMessagesToChatItems(msgs: TaskMessage[]): ChatItem[] {
@@ -103,12 +143,19 @@ function taskMessagesToChatItems(msgs: TaskMessage[]): ChatItem[] {
   return items;
 }
 
+const PAGE_SIZE = 20;
+
 export function ProjectsTab({ agents }: ProjectsTabProps) {
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(loadSavedProjectId);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [taskMessages, setTaskMessages] = useState<TaskMessage[]>([]);
+
+  // View router: which route is active in the main pane.
+  const [view, setView] = useState<'list' | 'log' | 'edit'>('list');
+  // Pagination for the list/table view.
+  const [page, setPage] = useState(0);
 
   // Modals / forms
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
@@ -129,7 +176,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
 
   const [composerText, setComposerText] = useState('');
   const [isSending, setIsSending] = useState(false);
-  const [showArchived, setShowArchived] = useState(false);
+  const [showArchived, setShowArchived] = useState<boolean>(loadShowArchived);
   // Inline confirm dialog (VSCode webviews disable window.confirm()).
   const [pendingConfirm, setPendingConfirm] = useState<{
     type: 'delete' | 'discard';
@@ -146,12 +193,40 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
     };
   }, []);
 
+  // When projects first load and no saved project is selected, default to the first.
+  useEffect(() => {
+    if (projects.length > 0 && selectedProjectId === null) {
+      setSelectedProjectId(projects[0].id);
+    }
+    // If the saved project no longer exists, fall back to the first.
+    if (projects.length > 0 && selectedProjectId !== null && !projects.some((p) => p.id === selectedProjectId)) {
+      setSelectedProjectId(projects[0].id);
+    }
+    if (projects.length === 0) {
+      setSelectedProjectId(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projects]);
+
+  // Persist selected project + show-archived preference.
+  useEffect(() => {
+    saveProjectId(selectedProjectId);
+  }, [selectedProjectId]);
+  useEffect(() => {
+    saveShowArchived(showArchived);
+  }, [showArchived]);
+
   useEffect(() => {
     if (selectedProjectId !== null) {
       fetchTasks(selectedProjectId);
+      // Switching project returns to the list view and clears any open task.
+      setView('list');
       setSelectedTaskId(null);
       setTaskMessages([]);
+      setPage(0);
       stopThreadPolling();
+    } else {
+      setTasks([]);
     }
   }, [selectedProjectId, showArchived]);
 
@@ -344,6 +419,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
             setSelectedTaskId(null);
             setTaskMessages([]);
             stopThreadPolling();
+            setView('list');
           }
           fetchTasks(task.projectId);
         }
@@ -429,6 +505,26 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
     }
   };
 
+  // Open a task in the log view.
+  const openTaskLog = (task: Task) => {
+    setSelectedTaskId(task.id);
+    setView('log');
+  };
+
+  // Open a task in the edit view.
+  const openTaskEdit = (task: Task) => {
+    setSelectedTaskId(task.id);
+    setView('edit');
+  };
+
+  // Back to the list view (keeps selected project).
+  const backToList = () => {
+    setView('list');
+    setSelectedTaskId(null);
+    setTaskMessages([]);
+    stopThreadPolling();
+  };
+
   const selectedProject = projects.find((p) => p.id === selectedProjectId);
   const selectedTask = tasks.find((t) => t.id === selectedTaskId);
   const selectedProjectAgentName = agents.find((a) => a.id === selectedProject?.agentId)?.name || 'Default Agent';
@@ -439,6 +535,30 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
   const isActiveLike = selectedTask
     ? selectedTask.status === 'active' || selectedTask.status === 'reviewing'
     : false;
+
+  // --- Status color helper (shared by list + log + edit views) ---
+  const statusColor = (status: Task['status']): string => {
+    switch (status) {
+      case 'active':
+        return '#22c55e';
+      case 'reviewing':
+        return '#a855f7';
+      case 'paused':
+        return '#eab308';
+      case 'blocked':
+        return '#f97316';
+      case 'done':
+        return '#3b82f6';
+      default:
+        return '#64748b'; // draft
+    }
+  };
+
+  // --- Pagination for the list view ---
+  const totalPages = Math.max(1, Math.ceil(tasks.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages - 1);
+  const pageStart = safePage * PAGE_SIZE;
+  const pageTasks = tasks.slice(pageStart, pageStart + PAGE_SIZE);
 
   return (
     <div className="app app--with-sidebar" style={{ height: '100%' }}>
@@ -510,348 +630,58 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
         </div>
       </aside>
 
-      {/* MIDDLE & RIGHT PANEL */}
-      <main className="app__chat-pane" style={{ flex: 1, display: 'flex', flexDirection: 'row', background: 'var(--vscode-editor-background)' }}>
+      {/* MAIN PANE — view router */}
+      <main className="app__chat-pane" style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--vscode-editor-background)' }}>
         {selectedProject ? (
-          <>
-            {/* TASKS COLUMN */}
-            <div
-              style={{
-                width: '300px',
-                borderRight: '1px solid var(--vscode-panel-border, rgba(255,255,255,0.08))',
-                display: 'flex',
-                flexDirection: 'column',
-                height: '100%',
-              }}
-            >
-              <div
-                style={{
-                  padding: '12px 14px',
-                  borderBottom: '1px solid var(--vscode-panel-border, rgba(255,255,255,0.08))',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                }}
-              >
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 700 }}>{selectedProject.name}</h3>
-                  <span style={{ fontSize: '10px', opacity: 0.6 }}>Agent: {selectedProjectAgentName}</span>
-                </div>
-                <button
-                  className="app__new-chat-btn"
-                  onClick={() => setIsNewTaskOpen(true)}
-                  style={{ padding: '4px 8px', fontSize: '11px' }}
-                >
-                  + New Task
-                </button>
-              </div>
-
-              <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <h4 style={{ margin: 0, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.6 }}>
-                    Tasks
-                  </h4>
-                  <label style={{ fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', opacity: 0.7 }}>
-                    <input
-                      type="checkbox"
-                      checked={showArchived}
-                      onChange={(e) => setShowArchived(e.target.checked)}
-                      style={{ cursor: 'pointer' }}
-                    />
-                    Show archived
-                  </label>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {tasks.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '20px', color: 'var(--vscode-descriptionForeground)', fontStyle: 'italic', fontSize: '12px' }}>
-                      No tasks created.
-                    </div>
-                  ) : (
-                    tasks.map((task) => {
-                      const isSelected = selectedTaskId === task.id;
-                      const completedCount = task.checklist.filter((c) => c.status === 'done').length;
-                      const totalCount = task.checklist.length;
-                      const isArchived = !!task.archived;
-                      
-                      let statusColor = '#64748b'; // draft
-                      if (task.status === 'active') statusColor = '#22c55e';
-                      if (task.status === 'reviewing') statusColor = '#a855f7';
-                      if (task.status === 'paused') statusColor = '#eab308';
-                      if (task.status === 'blocked') statusColor = '#f97316';
-                      if (task.status === 'done') statusColor = '#3b82f6';
-
-                      return (
-                        <div
-                          key={task.id}
-                          onClick={() => setSelectedTaskId(task.id)}
-                          style={{
-                            padding: '10px',
-                            borderRadius: '8px',
-                            background: isSelected ? 'rgba(255,255,255,0.05)' : 'transparent',
-                            border: `1px solid ${isSelected ? 'var(--primary-blue)' : 'var(--vscode-panel-border, rgba(255,255,255,0.05))'}`,
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease',
-                            opacity: isArchived ? 0.55 : 1,
-                          }}
-                        >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
-                            <span style={{ fontWeight: 600, fontSize: '12px', color: 'var(--vscode-foreground)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              {isArchived && <ArchiveIcon size={11} />}
-                              {task.title}
-                            </span>
-                            <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
-                              {isArchived && (
-                                <span
-                                  style={{
-                                    fontSize: '9px',
-                                    fontWeight: 'bold',
-                                    color: '#ffffff',
-                                    background: '#78716c',
-                                    padding: '1px 5px',
-                                    borderRadius: '4px',
-                                    textTransform: 'uppercase',
-                                  }}
-                                >
-                                  archived
-                                </span>
-                              )}
-                              <span
-                                style={{
-                                  fontSize: '9px',
-                                  fontWeight: 'bold',
-                                  color: '#ffffff',
-                                  background: statusColor,
-                                  padding: '1px 5px',
-                                  borderRadius: '4px',
-                                  textTransform: 'uppercase',
-                                }}
-                              >
-                                {task.status}
-                              </span>
-                            </div>
-                          </div>
-                          <div style={{ fontSize: '11px', opacity: 0.7, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', marginBottom: '6px' }}>
-                            {task.objective}
-                          </div>
-                          {totalCount > 0 && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', opacity: 0.6 }}>
-                              <span style={{ flex: 1, height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
-                                <span
-                                  style={{
-                                    display: 'block',
-                                    height: '100%',
-                                    width: `${(completedCount / totalCount) * 100}%`,
-                                    background: 'var(--accent-cyan)',
-                                  }}
-                                />
-                              </span>
-                              <span>
-                                {completedCount}/{totalCount}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
+          view === 'list' ? (
+            <TaskListView
+              project={selectedProject}
+              agentName={selectedProjectAgentName}
+              tasks={pageTasks}
+              allTasksCount={tasks.length}
+              page={safePage}
+              totalPages={totalPages}
+              onPageChange={setPage}
+              showArchived={showArchived}
+              onToggleArchived={() => setShowArchived(!showArchived)}
+              onNewTask={() => setIsNewTaskOpen(true)}
+              onOpenLog={openTaskLog}
+              onOpenEdit={openTaskEdit}
+              statusColor={statusColor}
+            />
+          ) : view === 'log' && selectedTask ? (
+            <TaskLogView
+              task={selectedTask}
+              taskMessages={taskMessages}
+              isActiveLike={isActiveLike}
+              reviewRound={reviewRound}
+              composerText={composerText}
+              onComposerChange={setComposerText}
+              onSend={handleSendMessage}
+              isSending={isSending}
+              onBack={backToList}
+              statusColor={statusColor}
+            />
+          ) : view === 'edit' && selectedTask ? (
+            <TaskEditView
+              task={selectedTask}
+              onBack={backToList}
+              onToggleStatus={handleToggleTaskStatus}
+              onDiscardWorktree={handleDiscardWorktree}
+              onArchiveToggle={handleArchiveToggle}
+              onDelete={handleDeleteTask}
+              onToggleChecklistItem={handleToggleChecklistItem}
+              onOpenLog={() => setView('log')}
+              statusColor={statusColor}
+            />
+          ) : (
+            <div className="app__empty-state">
+              <p>Task not found. Go back to the list.</p>
+              <button className="settings-panel__back-btn" onClick={backToList} style={{ marginTop: '12px' }}>
+                ← Back to list
+              </button>
             </div>
-
-            {/* DETAIL & CHAT PANE */}
-            {selectedTask ? (
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'row', height: '100%' }}>
-                {/* TASK METADATA & CHECKLIST (LEFT COLUMN) */}
-                <div
-                  style={{
-                    width: '320px',
-                    borderRight: '1px solid var(--vscode-panel-border, rgba(255,255,255,0.08))',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    height: '100%',
-                    padding: '16px',
-                    overflowY: 'auto',
-                  }}
-                >
-                  <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>Task #{selectedTask.id}</h3>
-                    <div style={{ display: 'inline-flex', gap: '6px' }}>
-                      {selectedTask.worktreePath && (
-                        <button
-                          className="confirm__btn"
-                          onClick={() => handleDiscardWorktree(selectedTask)}
-                          title={`Commit pending changes to ${selectedTask.branch} and remove the worktree`}
-                          style={{ padding: '3px 10px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                        >
-                          <GitIcon size={12} /> Discard worktree
-                        </button>
-                      )}
-                      <button
-                        className="confirm__btn"
-                        onClick={() => handleArchiveToggle(selectedTask)}
-                        title={selectedTask.archived ? 'Unarchive this task' : 'Archive this task (hides it from the list, excludes from scheduler)'}
-                        style={{ padding: '3px 10px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                      >
-                        <ArchiveIcon size={12} /> {selectedTask.archived ? 'Unarchive' : 'Archive'}
-                      </button>
-                      <button
-                        className="confirm__btn confirm__btn--primary"
-                        onClick={() => handleToggleTaskStatus(selectedTask)}
-                        style={{ padding: '3px 10px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                      >
-                        {selectedTask.status === 'active' || selectedTask.status === 'reviewing' ? (
-                          <>
-                            <PauseIcon size={12} /> Pause
-                          </>
-                        ) : (
-                          <>
-                            <ActivateIcon size={12} /> Activate
-                          </>
-                        )}
-                      </button>
-                      <button
-                        className="confirm__btn"
-                        onClick={() => handleDeleteTask(selectedTask)}
-                        title="Permanently delete this task and all its messages"
-                        style={{ padding: '3px 10px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#ef4444' }}
-                      >
-                        <DeleteIcon size={12} /> Delete
-                      </button>
-                    </div>
-                  </div>
-
-                  {selectedTask.branch && (
-                    <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', opacity: 0.75 }}>
-                      <GitIcon size={12} />
-                      <code style={{ fontFamily: 'monospace' }}>{selectedTask.branch}</code>
-                      {!selectedTask.worktreePath && <span style={{ opacity: 0.6 }}>(worktree removed)</span>}
-                    </div>
-                  )}
-
-                  <div style={{ marginBottom: '16px' }}>
-                    <h4 style={{ margin: '0 0 6px 0', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.6 }}>
-                      Objective
-                    </h4>
-                    <div style={{ fontSize: '12px', background: 'rgba(255,255,255,0.02)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)', whiteSpace: 'pre-wrap' }}>
-                      {selectedTask.objective}
-                    </div>
-                  </div>
-
-                  {selectedTask.status === 'blocked' && selectedTask.blockedReason && (
-                    <div
-                      style={{
-                        marginBottom: '16px',
-                        padding: '10px',
-                        background: 'rgba(239, 68, 68, 0.1)',
-                        border: '1px solid rgba(239, 68, 68, 0.3)',
-                        borderRadius: '6px',
-                        color: '#ef4444',
-                        fontSize: '12px',
-                      }}
-                    >
-                      <strong><WarningIcon size={13} /> Blocked Reason:</strong>
-                      <p style={{ margin: '4px 0 0 0' }}>{selectedTask.blockedReason}</p>
-                    </div>
-                  )}
-
-                  <div>
-                    <h4 style={{ margin: '0 0 8px 0', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.6 }}>
-                      Checklist
-                    </h4>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      {(selectedTask.checklist || []).map((item) => {
-                        const isDone = item.status === 'done';
-                        return (
-                          <label
-                            key={item.id}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'flex-start',
-                              gap: '8px',
-                              fontSize: '12px',
-                              padding: '6px 8px',
-                              background: 'rgba(255,255,255,0.01)',
-                              border: '1px solid rgba(255,255,255,0.03)',
-                              borderRadius: '6px',
-                              cursor: 'pointer',
-                              textDecoration: isDone ? 'line-through' : 'none',
-                              opacity: isDone ? 0.6 : 1,
-                            }}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isDone}
-                              onChange={() => handleToggleChecklistItem(selectedTask, item)}
-                              style={{ marginTop: '2px', cursor: 'pointer' }}
-                            />
-                            <span>{item.text}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-
-                {/* TASK INTERACTIVE CHAT (RIGHT COLUMN) */}
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}>
-                  <header className="app__chat-header" style={{ padding: '12px 14px' }}>
-                    <div className="app__chat-header-info">
-                      <h3 className="app__chat-header-title" style={{ fontSize: '13px', margin: 0 }}>Execution Thread</h3>
-                      <span className="app__chat-header-status" style={{ fontSize: '10px' }}>
-                        <span
-                          className={`agent-status-dot agent-status-dot--active ${isActiveLike ? 'agent-status-dot--pulsing' : ''}`}
-                          style={selectedTask.status === 'reviewing' ? { background: '#a855f7' } : undefined}
-                        />
-                        {selectedTask.status === 'active'
-                          ? 'Heartbeat loop active'
-                          : selectedTask.status === 'reviewing'
-                          ? `In review (round ${reviewRound}/3)`
-                          : `Task status: ${selectedTask.status}`}
-                      </span>
-                    </div>
-                  </header>
-
-                  <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-                    {taskMessages.length === 0 ? (
-                      <div className="messages messages--empty">No messages in this execution yet. Agent will start on next tick.</div>
-                    ) : (
-                      <MessageList items={taskMessagesToChatItems(taskMessages)} sessionId={null} />
-                    )}
-                  </div>
-
-                  <form className="composer" onSubmit={handleSendMessage}>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
-                      <textarea
-                        className="composer__input"
-                        placeholder="Provide feedback or ask the agent to resume..."
-                        value={composerText}
-                        onChange={(e) => setComposerText(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault();
-                            handleSendMessage(e);
-                          }
-                        }}
-                        style={{ flex: 1, minHeight: '44px' }}
-                      />
-                      <button
-                        type="submit"
-                        className="app__new-chat-btn"
-                        disabled={!composerText.trim() || isSending}
-                        style={{ height: '40px', padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                      >
-                        {isSending ? 'Sending...' : 'Send'}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </div>
-            ) : (
-              <div className="app__empty-state">
-                <p>Select a task or create a new one to view objective, checklist, and execution stream</p>
-              </div>
-            )}
-          </>
+          )
         ) : (
           <div className="app__empty-state">
             <p>Select a project from the sidebar to view tasks and coordinate autonomous iterations</p>
@@ -1122,6 +952,460 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
           {taskError}
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// VIEW: LIST (paginated tasks table)
+// ---------------------------------------------------------------------------
+
+interface TaskListViewProps {
+  project: Project;
+  agentName: string;
+  tasks: Task[];
+  allTasksCount: number;
+  page: number;
+  totalPages: number;
+  onPageChange: (p: number) => void;
+  showArchived: boolean;
+  onToggleArchived: () => void;
+  onNewTask: () => void;
+  onOpenLog: (t: Task) => void;
+  onOpenEdit: (t: Task) => void;
+  statusColor: (s: Task['status']) => string;
+}
+
+function TaskListView({
+  project,
+  agentName,
+  tasks,
+  allTasksCount,
+  page,
+  totalPages,
+  onPageChange,
+  showArchived,
+  onToggleArchived,
+  onNewTask,
+  onOpenLog,
+  onOpenEdit,
+  statusColor,
+}: TaskListViewProps) {
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Header: project name, agent, + New Task, Show archived */}
+      <div className="task-view__header">
+        <div>
+          <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 700 }}>{project.name}</h3>
+          <span style={{ fontSize: '10px', opacity: 0.6 }}>Agent: {agentName}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <label className="task-view__archived-toggle">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={onToggleArchived}
+              style={{ cursor: 'pointer' }}
+            />
+            Show archived
+          </label>
+          <button className="app__new-chat-btn" onClick={onNewTask} style={{ padding: '4px 10px', fontSize: '11px' }}>
+            + New Task
+          </button>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 16px' }}>
+        {allTasksCount === 0 ? (
+          <div className="app__empty-state">
+            <p>No tasks created. Click "+ New Task" to start.</p>
+          </div>
+        ) : (
+          <table className="task-table">
+            <thead>
+              <tr>
+                <th className="task-table__th" style={{ width: '60px' }}>#</th>
+                <th className="task-table__th">Title</th>
+                <th className="task-table__th" style={{ width: '90px' }}>Status</th>
+                <th className="task-table__th" style={{ width: '120px' }}>Checklist</th>
+                <th className="task-table__th" style={{ width: '180px' }}>Branch</th>
+                <th className="task-table__th" style={{ width: '150px' }}>Updated</th>
+                <th className="task-table__th" style={{ width: '70px' }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {tasks.map((task) => {
+                const completedCount = task.checklist.filter((c) => c.status === 'done').length;
+                const totalCount = task.checklist.length;
+                const isArchived = !!task.archived;
+                const updated = new Date(task.updatedAt);
+                const updatedStr = isNaN(updated.getTime())
+                  ? task.updatedAt
+                  : updated.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                return (
+                  <tr
+                    key={task.id}
+                    className={`task-table__row${isArchived ? ' task-table__row--archived' : ''}`}
+                    onClick={() => onOpenLog(task)}
+                  >
+                    <td className="task-table__td task-table__td--mono">{task.id}</td>
+                    <td className="task-table__td">
+                      <span className="task-table__title">
+                        {isArchived && <ArchiveIcon size={11} />}
+                        {task.title}
+                      </span>
+                    </td>
+                    <td className="task-table__td">
+                      <span
+                        className="task-table__badge"
+                        style={{ background: statusColor(task.status) }}
+                      >
+                        {task.status}
+                      </span>
+                    </td>
+                    <td className="task-table__td">
+                      {totalCount > 0 ? (
+                        <div className="task-table__progress">
+                          <span className="task-table__progress-bar">
+                            <span
+                              className="task-table__progress-fill"
+                              style={{ width: `${(completedCount / totalCount) * 100}%` }}
+                            />
+                          </span>
+                          <span className="task-table__progress-text">{completedCount}/{totalCount}</span>
+                        </div>
+                      ) : (
+                        <span style={{ opacity: 0.4, fontSize: '11px' }}>—</span>
+                      )}
+                    </td>
+                    <td className="task-table__td">
+                      {task.branch ? (
+                        <span className="task-table__branch">
+                          <GitIcon size={11} />
+                          <code>{task.branch}</code>
+                        </span>
+                      ) : (
+                        <span style={{ opacity: 0.4, fontSize: '11px' }}>—</span>
+                      )}
+                    </td>
+                    <td className="task-table__td task-table__td--muted">{updatedStr}</td>
+                    <td className="task-table__td">
+                      <button
+                        className="task-table__edit-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenEdit(task);
+                        }}
+                        title="Edit task"
+                        aria-label="Edit task"
+                      >
+                        <EditIcon size={13} />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Pagination footer */}
+      {totalPages > 1 && (
+        <div className="task-table__pagination">
+          <button
+            className="task-table__page-btn"
+            disabled={page === 0}
+            onClick={() => onPageChange(page - 1)}
+          >
+            ‹ Prev
+          </button>
+          <span className="task-table__page-info">
+            Page {page + 1} of {totalPages}
+          </span>
+          <button
+            className="task-table__page-btn"
+            disabled={page >= totalPages - 1}
+            onClick={() => onPageChange(page + 1)}
+          >
+            Next ›
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// VIEW: LOG (task execution thread + composer)
+// ---------------------------------------------------------------------------
+
+interface TaskLogViewProps {
+  task: Task;
+  taskMessages: TaskMessage[];
+  isActiveLike: boolean;
+  reviewRound: number;
+  composerText: string;
+  onComposerChange: (s: string) => void;
+  onSend: (e: React.FormEvent) => void;
+  isSending: boolean;
+  onBack: () => void;
+  statusColor: (s: Task['status']) => string;
+}
+
+function TaskLogView({
+  task,
+  taskMessages,
+  isActiveLike,
+  reviewRound,
+  composerText,
+  onComposerChange,
+  onSend,
+  isSending,
+  onBack,
+  statusColor,
+}: TaskLogViewProps) {
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Header with back button + task title + status */}
+      <header className="app__chat-header task-view__sub-header" style={{ padding: '12px 14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button className="settings-panel__back-btn" onClick={onBack} title="Back to task list">
+            <BackIcon size={13} />
+          </button>
+          <div className="app__chat-header-info">
+            <h3 className="app__chat-header-title" style={{ fontSize: '13px', margin: 0 }}>
+              Task #{task.id}: {task.title}
+            </h3>
+            <span className="app__chat-header-status" style={{ fontSize: '10px' }}>
+              <span
+                className={`agent-status-dot agent-status-dot--active ${isActiveLike ? 'agent-status-dot--pulsing' : ''}`}
+                style={task.status === 'reviewing' ? { background: '#a855f7' } : undefined}
+              />
+              {task.status === 'active'
+                ? 'Heartbeat loop active'
+                : task.status === 'reviewing'
+                ? `In review (round ${reviewRound}/3)`
+                : `Task status: ${task.status}`}
+            </span>
+          </div>
+        </div>
+        <span
+          className="task-table__badge"
+          style={{ background: statusColor(task.status) }}
+        >
+          {task.status}
+        </span>
+      </header>
+
+      {/* Message thread */}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        {taskMessages.length === 0 ? (
+          <div className="messages messages--empty">No messages in this execution yet. Agent will start on next tick.</div>
+        ) : (
+          <MessageList items={taskMessagesToChatItems(taskMessages)} sessionId={null} />
+        )}
+      </div>
+
+      {/* Composer */}
+      <form className="composer" onSubmit={onSend}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+          <textarea
+            className="composer__input"
+            placeholder="Provide feedback or ask the agent to resume..."
+            value={composerText}
+            onChange={(e) => onComposerChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                onSend(e);
+              }
+            }}
+            style={{ flex: 1, minHeight: '44px' }}
+          />
+          <button
+            type="submit"
+            className="app__new-chat-btn"
+            disabled={!composerText.trim() || isSending}
+            style={{ height: '40px', padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            {isSending ? 'Sending...' : 'Send'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// VIEW: EDIT (objective, checklist, status actions, branch info)
+// ---------------------------------------------------------------------------
+
+interface TaskEditViewProps {
+  task: Task;
+  onBack: () => void;
+  onToggleStatus: (t: Task) => void;
+  onDiscardWorktree: (t: Task) => void;
+  onArchiveToggle: (t: Task) => void;
+  onDelete: (t: Task) => void;
+  onToggleChecklistItem: (t: Task, item: ChecklistItem) => void;
+  onOpenLog: () => void;
+  statusColor: (s: Task['status']) => string;
+}
+
+function TaskEditView({
+  task,
+  onBack,
+  onToggleStatus,
+  onDiscardWorktree,
+  onArchiveToggle,
+  onDelete,
+  onToggleChecklistItem,
+  onOpenLog,
+  statusColor,
+}: TaskEditViewProps) {
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'auto' }}>
+      {/* Header with back button + title + status actions */}
+      <div className="task-view__sub-header" style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button className="settings-panel__back-btn" onClick={onBack} title="Back to task list">
+            <BackIcon size={13} />
+          </button>
+          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>Task #{task.id}: {task.title}</h3>
+          <span
+            className="task-table__badge"
+            style={{ background: statusColor(task.status) }}
+          >
+            {task.status}
+          </span>
+        </div>
+        <div style={{ display: 'inline-flex', gap: '6px' }}>
+          <button
+            className="confirm__btn"
+            onClick={onOpenLog}
+            title="View execution log"
+            style={{ padding: '3px 10px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+          >
+            View Log
+          </button>
+          {task.worktreePath && (
+            <button
+              className="confirm__btn"
+              onClick={() => onDiscardWorktree(task)}
+              title={`Commit pending changes to ${task.branch} and remove the worktree`}
+              style={{ padding: '3px 10px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+            >
+              <GitIcon size={12} /> Discard worktree
+            </button>
+          )}
+          <button
+            className="confirm__btn"
+            onClick={() => onArchiveToggle(task)}
+            title={task.archived ? 'Unarchive this task' : 'Archive this task (hides it from the list, excludes from scheduler)'}
+            style={{ padding: '3px 10px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+          >
+            <ArchiveIcon size={12} /> {task.archived ? 'Unarchive' : 'Archive'}
+          </button>
+          <button
+            className="confirm__btn confirm__btn--primary"
+            onClick={() => onToggleStatus(task)}
+            style={{ padding: '3px 10px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+          >
+            {task.status === 'active' || task.status === 'reviewing' ? (
+              <>
+                <PauseIcon size={12} /> Pause
+              </>
+            ) : (
+              <>
+                <ActivateIcon size={12} /> Activate
+              </>
+            )}
+          </button>
+          <button
+            className="confirm__btn"
+            onClick={() => onDelete(task)}
+            title="Permanently delete this task and all its messages"
+            style={{ padding: '3px 10px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#ef4444' }}
+          >
+            <DeleteIcon size={12} /> Delete
+          </button>
+        </div>
+      </div>
+
+      <div style={{ padding: '16px', maxWidth: '720px' }}>
+        {task.branch && (
+          <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', opacity: 0.75 }}>
+            <GitIcon size={12} />
+            <code style={{ fontFamily: 'monospace' }}>{task.branch}</code>
+            {!task.worktreePath && <span style={{ opacity: 0.6 }}>(worktree removed)</span>}
+          </div>
+        )}
+
+        <div style={{ marginBottom: '16px' }}>
+          <h4 style={{ margin: '0 0 6px 0', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.6 }}>
+            Objective
+          </h4>
+          <div style={{ fontSize: '12px', background: 'rgba(255,255,255,0.02)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)', whiteSpace: 'pre-wrap' }}>
+            {task.objective}
+          </div>
+        </div>
+
+        {task.status === 'blocked' && task.blockedReason && (
+          <div
+            style={{
+              marginBottom: '16px',
+              padding: '10px',
+              background: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              borderRadius: '6px',
+              color: '#ef4444',
+              fontSize: '12px',
+            }}
+          >
+            <strong><WarningIcon size={13} /> Blocked Reason:</strong>
+            <p style={{ margin: '4px 0 0 0' }}>{task.blockedReason}</p>
+          </div>
+        )}
+
+        <div>
+          <h4 style={{ margin: '0 0 8px 0', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.6 }}>
+            Checklist
+          </h4>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {(task.checklist || []).map((item) => {
+              const isDone = item.status === 'done';
+              return (
+                <label
+                  key={item.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '8px',
+                    fontSize: '12px',
+                    padding: '6px 8px',
+                    background: 'rgba(255,255,255,0.01)',
+                    border: '1px solid rgba(255,255,255,0.03)',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    textDecoration: isDone ? 'line-through' : 'none',
+                    opacity: isDone ? 0.6 : 1,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isDone}
+                    onChange={() => onToggleChecklistItem(task, item)}
+                    style={{ marginTop: '2px', cursor: 'pointer' }}
+                  />
+                  <span>{item.text}</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
