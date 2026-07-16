@@ -172,7 +172,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
   const [showArchived, setShowArchived] = useState<boolean>(loadShowArchived);
   // Inline confirm dialog (VSCode webviews disable window.confirm()).
   const [pendingConfirm, setPendingConfirm] = useState<{
-    type: 'delete' | 'discard';
+    type: 'delete' | 'discard' | 'archive';
     task: Task;
   } | null>(null);
   const [taskError, setTaskError] = useState<string | null>(null);
@@ -350,6 +350,16 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
         const body = await res.json().catch(() => ({}));
         setTaskError(body.error || `Failed to ${action} task`);
       } else {
+        // Navigate back to the list after a successful toggle, mirroring delete.
+        // Without this, archiving with "Show archived" off removes the task from
+        // `tasks`, leaving the edit/log view pointing at an undefined selectedTask
+        // and rendering the alarming "Task not found" fallback.
+        if (selectedTaskId === task.id) {
+          setSelectedTaskId(null);
+          setTaskMessages([]);
+          stopThreadPolling();
+          setView('list');
+        }
         fetchTasks(task.projectId);
       }
     } catch (err) {
@@ -360,6 +370,11 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
   const handleDeleteTask = async (task: Task) => {
     // VSCode webviews disable window.confirm(); use an inline overlay instead.
     setPendingConfirm({ type: 'delete', task });
+  };
+
+  // Inline-archive from the list view (with a confirm overlay, one click).
+  const handleArchiveFromList = (task: Task) => {
+    setPendingConfirm({ type: 'archive', task });
   };
 
   const confirmPendingAction = async (): Promise<void> => {
@@ -400,6 +415,8 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
       } catch (err) {
         setTaskError(`Failed to discard worktree: ${String(err)}`);
       }
+    } else if (type === 'archive') {
+      await handleArchiveToggle(task);
     }
   };
 
@@ -566,6 +583,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
               onNewTask={() => setIsNewTaskOpen(true)}
               onOpenLog={openTaskLog}
               onOpenEdit={openTaskEdit}
+              onArchive={handleArchiveFromList}
               statusColor={statusColor}
             />
           ) : view === 'log' && selectedTask ? (
@@ -579,6 +597,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
               onSend={handleSendMessage}
               isSending={isSending}
               onBack={backToList}
+              onToggleChecklistItem={handleToggleChecklistItem}
               statusColor={statusColor}
             />
           ) : view === 'edit' && selectedTask ? (
@@ -749,11 +768,17 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
         <div className="app__confirm-overlay" onClick={cancelPendingAction}>
           <div className="app__confirm-dialog" onClick={(e) => e.stopPropagation()}>
             <div className="app__confirm-title">
-              {pendingConfirm.type === 'delete' ? 'Delete task' : 'Discard worktree'}
+              {pendingConfirm.type === 'delete'
+                ? 'Delete task'
+                : pendingConfirm.type === 'archive'
+                ? 'Archive task'
+                : 'Discard worktree'}
             </div>
             <p className="app__confirm-message">
               {pendingConfirm.type === 'delete'
                 ? `Permanently delete task #${pendingConfirm.task.id} "${pendingConfirm.task.title}"? This removes the task and all its messages from the store. This action cannot be undone.`
+                : pendingConfirm.type === 'archive'
+                ? `Archive task #${pendingConfirm.task.id} "${pendingConfirm.task.title}"? It will be hidden from the list and excluded from the scheduler. You can unarchive it later by enabling "Show archived".`
                 : `Discard the worktree for task #${pendingConfirm.task.id}? Pending changes are committed to branch ${pendingConfirm.task.branch}; the branch is kept.`}
             </p>
             <div className="app__confirm-buttons">
@@ -762,7 +787,11 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
                 className={`app__confirm-btn ${pendingConfirm.type === 'delete' ? 'app__confirm-btn--danger' : ''}`}
                 onClick={confirmPendingAction}
               >
-                {pendingConfirm.type === 'delete' ? 'Delete' : 'Discard'}
+                {pendingConfirm.type === 'delete'
+                  ? 'Delete'
+                  : pendingConfirm.type === 'archive'
+                  ? 'Archive'
+                  : 'Discard'}
               </button>
             </div>
           </div>
@@ -799,6 +828,7 @@ interface TaskListViewProps {
   onNewTask: () => void;
   onOpenLog: (t: Task) => void;
   onOpenEdit: (t: Task) => void;
+  onArchive: (t: Task) => void;
   statusColor: (s: Task['status']) => string;
 }
 
@@ -819,6 +849,7 @@ function TaskListView({
   onNewTask,
   onOpenLog,
   onOpenEdit,
+  onArchive,
   statusColor,
 }: TaskListViewProps) {
   return (
@@ -948,17 +979,30 @@ function TaskListView({
                     </td>
                     <td className="task-table__td task-table__td--muted">{updatedStr}</td>
                     <td className="task-table__td">
-                      <button
-                        className="task-table__edit-btn"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenEdit(task);
-                        }}
-                        title="Edit task"
-                        aria-label="Edit task"
-                      >
-                        <EditIcon size={13} />
-                      </button>
+                      <div style={{ display: 'inline-flex', gap: '2px' }}>
+                        <button
+                          className="task-table__edit-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onArchive(task);
+                          }}
+                          title={task.archived ? 'Unarchive task' : 'Archive task'}
+                          aria-label={task.archived ? 'Unarchive task' : 'Archive task'}
+                        >
+                          <ArchiveIcon size={13} />
+                        </button>
+                        <button
+                          className="task-table__edit-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenEdit(task);
+                          }}
+                          title="Edit task"
+                          aria-label="Edit task"
+                        >
+                          <EditIcon size={13} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -1008,6 +1052,7 @@ interface TaskLogViewProps {
   onSend: (e: React.FormEvent) => void;
   isSending: boolean;
   onBack: () => void;
+  onToggleChecklistItem: (t: Task, item: ChecklistItem) => void;
   statusColor: (s: Task['status']) => string;
 }
 
@@ -1021,8 +1066,11 @@ function TaskLogView({
   onSend,
   isSending,
   onBack,
+  onToggleChecklistItem,
   statusColor,
 }: TaskLogViewProps) {
+  const completedCount = task.checklist.filter((c) => c.status === 'done').length;
+  const totalCount = task.checklist.length;
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Header with back button + task title + status */}
@@ -1056,41 +1104,104 @@ function TaskLogView({
         </span>
       </header>
 
-      {/* Message thread */}
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        {taskMessages.length === 0 ? (
-          <div className="messages messages--empty">No messages in this execution yet. Agent will start on next tick.</div>
-        ) : (
-          <MessageList items={taskMessagesToChatItems(taskMessages)} sessionId={null} />
-        )}
-      </div>
+      {/* Body: checklist sidebar (left) + message thread (right) */}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'row' }}>
+        {/* Checklist sidebar */}
+        <aside
+          style={{
+            width: '240px',
+            minWidth: '200px',
+            borderRight: '1px solid var(--vscode-panel-border, rgba(255,255,255,0.08))',
+            display: 'flex',
+            flexDirection: 'column',
+            overflowY: 'auto',
+            background: 'var(--vscode-sideBar-background, rgba(0,0,0,0.1))',
+          }}
+        >
+          <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--vscode-panel-border, rgba(255,255,255,0.05))' }}>
+            <h4 style={{ margin: 0, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.6 }}>
+              Checklist
+            </h4>
+            {totalCount > 0 && (
+              <div style={{ fontSize: '10px', opacity: 0.5, marginTop: '2px' }}>
+                {completedCount}/{totalCount} done
+              </div>
+            )}
+          </div>
+          <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            {totalCount === 0 ? (
+              <span style={{ fontSize: '11px', opacity: 0.4, padding: '8px 4px' }}>No checklist items.</span>
+            ) : (
+              (task.checklist || []).map((item) => {
+                const isDone = item.status === 'done';
+                const isInProgress = item.status === 'in_progress';
+                return (
+                  <label
+                    key={item.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '6px',
+                      fontSize: '11px',
+                      padding: '4px 6px',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      textDecoration: isDone ? 'line-through' : 'none',
+                      opacity: isDone ? 0.5 : 1,
+                      background: isInProgress ? 'rgba(168,85,247,0.08)' : 'transparent',
+                    }}
+                    title={isInProgress ? 'In progress' : isDone ? 'Done' : 'Pending'}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isDone}
+                      onChange={() => onToggleChecklistItem(task, item)}
+                      style={{ marginTop: '2px', cursor: 'pointer', flexShrink: 0 }}
+                    />
+                    <span style={{ wordBreak: 'break-word' }}>{item.text}</span>
+                  </label>
+                );
+              })
+            )}
+          </div>
+        </aside>
 
-      {/* Composer */}
-      <form className="composer" onSubmit={onSend}>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
-          <textarea
-            className="composer__input"
-            placeholder="Provide feedback or ask the agent to resume..."
-            value={composerText}
-            onChange={(e) => onComposerChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                onSend(e);
-              }
-            }}
-            style={{ flex: 1, minHeight: '44px' }}
-          />
-          <button
-            type="submit"
-            className="app__new-chat-btn"
-            disabled={!composerText.trim() || isSending}
-            style={{ height: '40px', padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          >
-            {isSending ? 'Sending...' : 'Send'}
-          </button>
+        {/* Message thread */}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+          {taskMessages.length === 0 ? (
+            <div className="messages messages--empty">No messages in this execution yet. Agent will start on next tick.</div>
+          ) : (
+            <MessageList items={taskMessagesToChatItems(taskMessages)} sessionId={null} />
+          )}
+
+          {/* Composer */}
+          <form className="composer" onSubmit={onSend}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+              <textarea
+                className="composer__input"
+                placeholder="Provide feedback or ask the agent to resume..."
+                value={composerText}
+                onChange={(e) => onComposerChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    onSend(e);
+                  }
+                }}
+                style={{ flex: 1, minHeight: '44px' }}
+              />
+              <button
+                type="submit"
+                className="app__new-chat-btn"
+                disabled={!composerText.trim() || isSending}
+                style={{ height: '40px', padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                {isSending ? 'Sending...' : 'Send'}
+              </button>
+            </div>
+          </form>
         </div>
-      </form>
+      </div>
     </div>
   );
 }
