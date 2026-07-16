@@ -31,6 +31,8 @@ export interface Task {
   noProgressCount: number;
   maxNoProgress: number;
   lockedAt: string | null;
+  branch?: string | null;
+  worktreePath?: string | null;
   createdAt: string;
   updatedAt: string;
 }
