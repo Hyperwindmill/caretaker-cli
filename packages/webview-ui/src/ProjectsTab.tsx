@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import type { AgentSummary } from './bridge.js';
-import { FolderIcon, DeleteIcon, WarningIcon, ToolIcon, PauseIcon, ActivateIcon, GitIcon, ArchiveIcon, EditIcon, BackIcon } from './icons.js';
-import FolderPicker from './FolderPicker.js';
+import { DeleteIcon, WarningIcon, ToolIcon, PauseIcon, ActivateIcon, GitIcon, ArchiveIcon, EditIcon, BackIcon } from './icons.js';
 import { MessageList } from './MessageList.js';
 import type { ChatItem } from './App.js';
 
@@ -158,14 +157,6 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
   const [page, setPage] = useState(0);
 
   // Modals / forms
-  const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
-  const [newProject, setNewProject] = useState({
-    name: '',
-    description: '',
-    workingDir: '',
-    agentId: '',
-  });
-
   const [isNewTaskOpen, setIsNewTaskOpen] = useState(false);
   const [newTask, setNewTask] = useState({
     title: '',
@@ -291,41 +282,6 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
     if (threadIntervalRef.current) {
       clearInterval(threadIntervalRef.current);
       threadIntervalRef.current = null;
-    }
-  };
-
-  const handleCreateProject = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newProject.name || !newProject.workingDir) return;
-    try {
-      const res = await fetch('/api/projects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...newProject,
-          agentId: newProject.agentId || (agents[0]?.id ?? ''),
-        }),
-      });
-      if (res.ok) {
-        setIsNewProjectOpen(false);
-        setNewProject({ name: '', description: '', workingDir: '', agentId: '' });
-        fetchProjects();
-      }
-    } catch (err) {
-      console.error('Failed to create project:', err);
-    }
-  };
-
-  const handleDeleteProject = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this project? All associated tasks will be deleted.')) return;
-    try {
-      const res = await fetch(`/api/projects/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        if (selectedProjectId === id) setSelectedProjectId(null);
-        fetchProjects();
-      }
-    } catch (err) {
-      console.error('Failed to delete project:', err);
     }
   };
 
@@ -561,80 +517,19 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
   const pageTasks = tasks.slice(pageStart, pageStart + PAGE_SIZE);
 
   return (
-    <div className="app app--with-sidebar" style={{ height: '100%' }}>
-      {/* LEFT PROJECTS SIDEBAR */}
-      <aside className="app__sidebar" style={{ width: '260px' }}>
-        <div className="app__sidebar-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span className="app__sidebar-section-title" style={{ fontSize: '11px', fontWeight: 'bold' }}>PROJECTS</span>
-          <button
-            className="app__new-chat-btn"
-            onClick={() => setIsNewProjectOpen(true)}
-            style={{ padding: '2px 8px', fontSize: '10px' }}
-          >
-            + Add
-          </button>
-        </div>
-
-        <div className="app__sidebar-content" style={{ padding: '8px' }}>
-          <div className="app__sidebar-sessions-list">
-            {projects.length === 0 ? (
-              <div className="app__sidebar-empty-text">No projects registered.</div>
-            ) : (
-              projects.map((project) => {
-                const isSelected = selectedProjectId === project.id;
-                return (
-                  <div
-                    key={project.id}
-                    className={`app__sidebar-session-item ${isSelected ? 'app__sidebar-session-item--active' : ''}`}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      padding: '6px 8px',
-                      cursor: 'pointer',
-                      borderRadius: '6px',
-                      marginBottom: '4px',
-                    }}
-                    onClick={() => setSelectedProjectId(project.id)}
-                  >
-                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                      <div style={{ fontWeight: 600, fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}><FolderIcon size={12} /> {project.name}</div>
-                      <div style={{ fontSize: '10px', opacity: 0.7 }} title={project.workingDir}>
-                        {project.workingDir.length > 25 ? `...${project.workingDir.slice(-22)}` : project.workingDir}
-                      </div>
-                    </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteProject(project.id);
-                      }}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: isSelected ? '#ffffff' : '#ef4444',
-                        cursor: 'pointer',
-                        padding: '4px',
-                        fontSize: '12px',
-                        opacity: 0.8,
-                      }}
-                      title="Delete Project"
-                      aria-label="Delete Project"
-                    >
-                      <DeleteIcon size={12} />
-                    </button>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-      </aside>
-
-      {/* MAIN PANE — view router */}
+    <div className="app" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      {/* MAIN PANE — full width, view router */}
       <main className="app__chat-pane" style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--vscode-editor-background)' }}>
-        {selectedProject ? (
+        {projects.length === 0 ? (
+          <div className="app__empty-state">
+            <p>No projects registered. Create one from the Settings panel to get started.</p>
+          </div>
+        ) : selectedProject ? (
           view === 'list' ? (
             <TaskListView
+              projects={projects}
+              selectedProjectId={selectedProjectId}
+              onProjectChange={setSelectedProjectId}
               project={selectedProject}
               agentName={selectedProjectAgentName}
               tasks={pageTasks}
@@ -682,131 +577,8 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
               </button>
             </div>
           )
-        ) : (
-          <div className="app__empty-state">
-            <p>Select a project from the sidebar to view tasks and coordinate autonomous iterations</p>
-          </div>
-        )}
+        ) : null}
       </main>
-
-      {/* NEW PROJECT MODAL */}
-      {isNewProjectOpen && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0,0,0,0.6)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 999,
-          }}
-        >
-          <form
-            onSubmit={handleCreateProject}
-            className="confirm"
-            style={{
-              width: '400px',
-              border: '1px solid var(--vscode-panel-border, rgba(255,255,255,0.1))',
-              background: 'var(--vscode-sideBar-background)',
-            }}
-          >
-            <div className="confirm__header">
-              <span style={{ fontSize: '18px', display: 'inline-flex' }}><FolderIcon size={18} /></span>
-              <span className="confirm__prompt" style={{ fontSize: '14px' }}>Register New Project</span>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <label style={{ fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                Project Name
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. My Codebase"
-                  value={newProject.name}
-                  onChange={(e) => setNewProject({ ...newProject, name: e.target.value })}
-                  style={{
-                    background: 'var(--vscode-input-background, #252526)',
-                    color: 'var(--vscode-input-foreground)',
-                    border: '1px solid var(--vscode-input-border, #3c3c3c)',
-                    borderRadius: '4px',
-                    padding: '6px 8px',
-                    fontSize: '12px',
-                    outline: 'none',
-                  }}
-                />
-              </label>
-
-              <label style={{ fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                Description
-                <textarea
-                  placeholder="What is this codebase about?"
-                  value={newProject.description}
-                  onChange={(e) => setNewProject({ ...newProject, description: e.target.value })}
-                  style={{
-                    background: 'var(--vscode-input-background, #252526)',
-                    color: 'var(--vscode-input-foreground)',
-                    border: '1px solid var(--vscode-input-border, #3c3c3c)',
-                    borderRadius: '4px',
-                    padding: '6px 8px',
-                    fontSize: '12px',
-                    height: '50px',
-                    outline: 'none',
-                    resize: 'none',
-                  }}
-                />
-              </label>
-
-              <div className="form-group" style={{ fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label htmlFor="project-workingDir">Local Working Directory Path (Absolute)</label>
-                <FolderPicker
-                  id="project-workingDir"
-                  placeholder="e.g. /home/user/projects/my-code"
-                  value={newProject.workingDir}
-                  onChange={(path) => setNewProject({ ...newProject, workingDir: path })}
-                />
-              </div>
-
-              <label style={{ fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                Agent to assign
-                <select
-                  required
-                  value={newProject.agentId}
-                  onChange={(e) => setNewProject({ ...newProject, agentId: e.target.value })}
-                  style={{
-                    background: 'var(--vscode-input-background, #252526)',
-                    color: 'var(--vscode-input-foreground)',
-                    border: '1px solid var(--vscode-input-border, #3c3c3c)',
-                    borderRadius: '4px',
-                    padding: '6px 8px',
-                    fontSize: '12px',
-                    outline: 'none',
-                  }}
-                >
-                  <option value="" disabled>-- Select Agent --</option>
-                  {agents.map((agent) => (
-                    <option key={agent.id} value={agent.id}>
-                      {agent.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <div className="confirm__buttons" style={{ justifyContent: 'flex-end', marginTop: '10px' }}>
-              <button type="button" className="confirm__btn" onClick={() => setIsNewProjectOpen(false)}>
-                Cancel
-              </button>
-              <button type="submit" className="confirm__btn confirm__btn--primary">
-                Add Project
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
 
       {/* NEW TASK MODAL */}
       {isNewTaskOpen && (
@@ -957,10 +729,13 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
 }
 
 // ---------------------------------------------------------------------------
-// VIEW: LIST (paginated tasks table)
+// VIEW: LIST (paginated tasks table with project filter dropdown)
 // ---------------------------------------------------------------------------
 
 interface TaskListViewProps {
+  projects: Project[];
+  selectedProjectId: number | null;
+  onProjectChange: (id: number) => void;
   project: Project;
   agentName: string;
   tasks: Task[];
@@ -977,6 +752,9 @@ interface TaskListViewProps {
 }
 
 function TaskListView({
+  projects,
+  selectedProjectId,
+  onProjectChange,
   project,
   agentName,
   tasks,
@@ -993,10 +771,31 @@ function TaskListView({
 }: TaskListViewProps) {
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Header: project name, agent, + New Task, Show archived */}
+      {/* Header: project filter dropdown, agent, + New Task, Show archived */}
       <div className="task-view__header">
-        <div>
-          <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 700 }}>{project.name}</h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <select
+            className="task-view__project-filter"
+            value={selectedProjectId ?? undefined}
+            onChange={(e) => onProjectChange(Number(e.target.value))}
+            style={{
+              background: 'var(--vscode-input-background, #252526)',
+              color: 'var(--vscode-input-foreground)',
+              border: '1px solid var(--vscode-input-border, #3c3c3c)',
+              borderRadius: '4px',
+              padding: '4px 8px',
+              fontSize: '13px',
+              fontWeight: 600,
+              outline: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
           <span style={{ fontSize: '10px', opacity: 0.6 }}>Agent: {agentName}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -1019,7 +818,7 @@ function TaskListView({
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 16px' }}>
         {allTasksCount === 0 ? (
           <div className="app__empty-state">
-            <p>No tasks created. Click "+ New Task" to start.</p>
+            <p>No tasks created for {project.name}. Click "+ New Task" to start.</p>
           </div>
         ) : (
           <table className="task-table">

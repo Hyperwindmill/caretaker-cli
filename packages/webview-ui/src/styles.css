@@ -3189,3 +3189,16 @@ body.vscode-light .composer__attachment {
   opacity: 0.7;
   white-space: nowrap;
 }
+
+/* Project filter dropdown in the task list header */
+.task-view__project-filter {
+  font-family: var(--font-sans);
+  max-width: 260px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-view__project-filter:hover {
+  border-color: var(--vscode-inputOption-activeBorder, var(--accent-cyan, #22d3ee));
+}
