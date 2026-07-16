@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
 import type { AgentSummary } from './bridge.js';
-import { FolderIcon, DeleteIcon, WarningIcon, ToolIcon, SettingsIcon, PauseIcon, ActivateIcon, GitIcon } from './icons.js';
+import { FolderIcon, DeleteIcon, WarningIcon, ToolIcon, PauseIcon, ActivateIcon, GitIcon } from './icons.js';
 import FolderPicker from './FolderPicker.js';
+import { MessageList } from './MessageList.js';
+import type { ChatItem } from './App.js';
 
 interface Project {
   id: number;
@@ -50,6 +52,56 @@ interface ProjectsTabProps {
   agents: AgentSummary[];
 }
 
+// Adapt stored TaskMessages to the shared ChatItem shape so the task thread
+// reuses the normal chat renderer (MessageList) instead of bespoke inline JSX.
+function taskMessagesToChatItems(msgs: TaskMessage[]): ChatItem[] {
+  const items: ChatItem[] = [];
+  for (const msg of msgs) {
+    if (msg.messageType === 'system' || msg.messageType === 'block') {
+      items.push({ kind: 'notice', text: msg.content, variant: msg.messageType });
+      continue;
+    }
+    if (msg.messageType === 'tool_call') {
+      // Stored as `${name} ${JSON.stringify(args)}`; results are not persisted.
+      const sp = msg.content.indexOf(' ');
+      const name = sp === -1 ? msg.content : msg.content.slice(0, sp);
+      let args: unknown = {};
+      if (sp !== -1) {
+        try {
+          args = JSON.parse(msg.content.slice(sp + 1));
+        } catch {
+          args = msg.content.slice(sp + 1);
+        }
+      }
+      items.push({ kind: 'tool', id: msg.toolCallId || String(msg.id), name, args, result: '' });
+      continue;
+    }
+    if (msg.role === 'user') {
+      items.push({ kind: 'user', text: msg.content });
+      continue;
+    }
+    // assistant (chat / heartbeat / heartbeat_live / review / yield)
+    let text = msg.content;
+    let thinking = '';
+    if (msg.content.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(msg.content);
+        if (Array.isArray(parsed)) {
+          const t = parsed.find((b: { type?: string; content?: string }) => b.type === 'thinking');
+          const x = parsed.find((b: { type?: string; content?: string }) => b.type === 'text');
+          if (t?.content) thinking = t.content;
+          if (x?.content) text = x.content;
+        }
+      } catch {
+        // keep raw content
+      }
+    }
+    if (thinking) items.push({ kind: 'thinking', text: thinking });
+    items.push({ kind: 'assistant', text, streaming: false });
+  }
+  return items;
+}
+
 export function ProjectsTab({ agents }: ProjectsTabProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
@@ -77,9 +129,6 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
   const [composerText, setComposerText] = useState('');
   const [isSending, setIsSending] = useState(false);
 
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const prevMessagesLengthRef = useRef(0);
   const threadIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -102,15 +151,10 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
     if (selectedTaskId !== null) {
       fetchTaskMessages(selectedTaskId);
       startThreadPolling(selectedTaskId);
-      prevMessagesLengthRef.current = 0;
     } else {
       stopThreadPolling();
     }
   }, [selectedTaskId]);
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [taskMessages]);
 
   const fetchProjects = async () => {
     try {
@@ -163,21 +207,6 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
     if (threadIntervalRef.current) {
       clearInterval(threadIntervalRef.current);
       threadIntervalRef.current = null;
-    }
-  };
-
-  const scrollToBottom = () => {
-    const container = messagesContainerRef.current;
-    if (!container) return;
-
-    const isNewMessage = taskMessages.length > prevMessagesLengthRef.current;
-    prevMessagesLengthRef.current = taskMessages.length;
-
-    const threshold = 100;
-    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight <= threshold;
-
-    if (isNewMessage || isNearBottom) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   };
 
@@ -638,79 +667,12 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
                     </div>
                   </header>
 
-                  <div ref={messagesContainerRef} className="messages" style={{ flex: 1, padding: '16px', overflowY: 'auto' }}>
+                  <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                     {taskMessages.length === 0 ? (
-                      <div className="messages--empty">No messages in this execution yet. Agent will start on next tick.</div>
+                      <div className="messages messages--empty">No messages in this execution yet. Agent will start on next tick.</div>
                     ) : (
-                      taskMessages.map((msg) => {
-                        const isUser = msg.role === 'user';
-                        const isSystem = msg.messageType === 'system';
-                        const isToolCall = msg.messageType === 'tool_call';
-                        const isBlock = msg.messageType === 'block';
-
-                        if (isSystem || isToolCall || isBlock) {
-                          return (
-                            <div
-                              key={msg.id}
-                              style={{
-                                alignSelf: 'center',
-                                padding: '6px 12px',
-                                background: isBlock ? 'rgba(239, 68, 68, 0.1)' : 'rgba(255,255,255,0.02)',
-                                border: `1px solid ${isBlock ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.05)'}`,
-                                borderRadius: '6px',
-                                fontSize: '11px',
-                                color: isBlock ? '#ef4444' : 'var(--vscode-descriptionForeground)',
-                                fontFamily: isToolCall ? 'var(--font-mono)' : 'inherit',
-                                margin: '4px 0',
-                                maxWidth: '90%',
-                                textAlign: 'center',
-                              }}
-                            >
-                              {isBlock ? (
-                                <><WarningIcon size={12} /> Task Blocked: </>
-                              ) : isToolCall ? (
-                                <><ToolIcon size={12} /> Tool Call: </>
-                              ) : (
-                                <><SettingsIcon size={12} /> </>
-                              )}
-                              {msg.content}
-                            </div>
-                          );
-                        }
-
-                        // Try to parse thinking blocks if present in assistant messages
-                        let text = msg.content;
-                        let thinking = '';
-                        try {
-                          if (msg.content.startsWith('[')) {
-                            const parsed = JSON.parse(msg.content);
-                            if (Array.isArray(parsed)) {
-                              const thinkBlock = parsed.find((b: any) => b.type === 'thinking');
-                              const textBlock = parsed.find((b: any) => b.type === 'text');
-                              if (thinkBlock) thinking = thinkBlock.content;
-                              if (textBlock) text = textBlock.content;
-                            }
-                          }
-                        } catch {
-                          // Keep text as-is
-                        }
-
-                        return (
-                          <div key={msg.id} className={`bubble ${isUser ? 'bubble--user' : 'bubble--assistant'}`}>
-                            <div className="bubble__role">{isUser ? 'User' : 'Caretaker Agent'}</div>
-                            <div className="bubble__text">
-                              {thinking && (
-                                <div style={{ fontSize: '11px', fontStyle: 'italic', opacity: 0.6, borderLeft: '2px solid rgba(255,255,255,0.2)', paddingLeft: '8px', marginBottom: '8px' }}>
-                                  Thinking: {thinking}
-                                </div>
-                              )}
-                              {text}
-                            </div>
-                          </div>
-                        );
-                      })
+                      <MessageList items={taskMessagesToChatItems(taskMessages)} sessionId={null} />
                     )}
-                    <div ref={messagesEndRef} />
                   </div>
 
                   <form className="composer" onSubmit={handleSendMessage}>
