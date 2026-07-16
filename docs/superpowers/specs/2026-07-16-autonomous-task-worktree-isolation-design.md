@@ -60,6 +60,8 @@ New module `packages/cli/src/cli/web/scheduler/task_git.ts`, all via `execFile('
   `git add -A` then `git commit -m "wip: <title> (cycle N)"` where
   `N = (git rev-list --count <firstCommit>..HEAD on branch) + 1`. Returns whether it committed.
 - `finalizeDone(worktreePath): Promise<void>` — `git worktree remove --force <wtPath>`.
+- `discardWorktree(task): Promise<void>` — `commitWip` + `finalizeDone` + clear `worktreePath`;
+  the manual-cleanup / DONE path (see "Manual worktree management").
 
 The lifecycle lives **entirely in the heartbeat**, never in the `task_complete` tool (which stays
 dumb: it only sets status). Rationale: removing the worktree from inside the turn currently running
@@ -84,16 +86,31 @@ After `harness.run` (only when the task has a worktree):
 The prompt's workspace line already instructs the agent to operate exclusively inside its working
 dir; since the working dir is now the worktree, the sandbox enforces isolation.
 
-## Known limitations (declared, out of scope)
+## Manual worktree management (resolves the edge cases)
 
-- `task_complete` invoked **interactively** (outside a heartbeat) sets the task to done but does not
-  clean the worktree immediately. Upgrade path: a start-of-tick sweep of `done` tasks with
-  `worktreePath != null`.
-- Deleting a task with a live worktree orphans it. Upgrade path: cascade cleanup in task deletion
-  (same family as the recent chat-deletion work).
+Rather than an automatic sweep/cascade, the two edge cases are resolved by an explicit
+**"Discard worktree"** affordance on the task, available in both the task view and edit UI whenever
+`worktreePath != null`. It commits any dirty state (so nothing is lost), removes the worktree, and
+clears `worktreePath` while keeping the branch — the same `finalizeDone` path used at DONE. This
+does not touch the heartbeat cycle.
+
+- **Function**: `discardWorktree(task)` in `task_git.ts` = `commitWip` + `finalizeDone` +
+  clear `worktreePath`. Shared with the DONE path (which is exactly this sequence).
+- **Web endpoint**: `POST /api/tasks/:id/discard-worktree` in `server.ts`, mirroring the existing
+  `/api/tasks/:id/status` pattern.
+- **UI**: a button in the task detail/edit view in `webview-ui`, shown only when the task has a
+  live worktree.
+- **Mirror tool** (per the "every user affordance is also a model tool" convention):
+  `mcp__task__task_discard_worktree({ task_id })`.
+
+This covers:
+- `task_complete` invoked **interactively** (task went done outside a heartbeat, worktree lingering)
+  → user/agent discards it explicitly.
+- A task the user wants to abandon or delete → discard the worktree first, then delete the task.
 
 ## Testing
 
 `packages/cli/src/cli/web/scheduler/task_git.test.ts`: create a git repo in a temp dir, then assert
 the sequence `ensureWorktree` → write a file → `commitWip` (returns true, commit exists on branch)
-→ `finalizeDone` (worktree gone, branch still present in the repo).
+→ `finalizeDone` (worktree gone, branch still present in the repo). Also assert `discardWorktree`
+commits dirty state before removing (branch has the commit; worktree gone).
