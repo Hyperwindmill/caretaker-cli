@@ -553,6 +553,14 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
                     </div>
                   </div>
 
+                  {selectedTask.branch && (
+                    <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', opacity: 0.75 }}>
+                      <GitIcon size={12} />
+                      <code style={{ fontFamily: 'monospace' }}>{selectedTask.branch}</code>
+                      {!selectedTask.worktreePath && <span style={{ opacity: 0.6 }}>(worktree removed)</span>}
+                    </div>
+                  )}
+
                   <div style={{ marginBottom: '16px' }}>
                     <h4 style={{ margin: '0 0 6px 0', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.6 }}>
                       Objective
