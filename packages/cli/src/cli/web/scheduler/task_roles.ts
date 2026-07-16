@@ -35,6 +35,13 @@ export function resolveReviewEnabled(
   return task.reviewEnabled ?? project?.reviewEnabled ?? true;
 }
 
+export function resolveSddEnabled(
+  task: Pick<Task, 'sddEnabled'>,
+  project?: Pick<ProjectConfig, 'sddEnabled'> | null,
+): boolean {
+  return task.sddEnabled ?? project?.sddEnabled ?? false;
+}
+
 /**
  * Where does an (re)activated task go? Planning, unless planning is disabled
  * or a plan message is already on record. Deterministic and derived from the
@@ -55,6 +62,31 @@ export async function activationStatus(
  *  reviewer's mcp__task__* strip in task_review.ts. */
 export const PLANNER_TOOL_DENYLIST = new Set(['write', 'edit', 'multiedit', 'bash']);
 
-export function filterPlannerTools(tools: Tool[]): Tool[] {
-  return tools.filter((t) => !PLANNER_TOOL_DENYLIST.has(t.name));
+/** Tools the SDD wrapper applies to: workspace writers that take a `path` arg. */
+const SDD_WRAPPED_TOOLS = new Set(['write', 'edit', 'multiedit']);
+
+/** Wrap a writing tool so it only accepts markdown targets. Everything else
+ *  about the tool (schema, sandbox, read-before-write guard) is unchanged —
+ *  the guard runs before delegation. Guard-rail, not a security boundary. */
+function markdownOnly(tool: Tool): Tool {
+  return {
+    ...tool,
+    description: `${tool.description} In this planning phase, only markdown (.md) files are accepted.`,
+    execute: async (args, ctx) => {
+      const p = (args as { path?: unknown }).path;
+      if (typeof p !== 'string' || !p.toLowerCase().endsWith('.md')) {
+        return { content: 'Error: planning phase (SDD mode): only markdown (.md) files may be written.' };
+      }
+      return tool.execute(args, ctx);
+    },
+  };
+}
+
+export function filterPlannerTools(tools: Tool[], sdd = false): Tool[] {
+  if (!sdd) return tools.filter((t) => !PLANNER_TOOL_DENYLIST.has(t.name));
+  // SDD mode: bash stays out (the actual implementation brake); the file
+  // writers survive but only for markdown targets.
+  return tools
+    .filter((t) => t.name !== 'bash')
+    .map((t) => (SDD_WRAPPED_TOOLS.has(t.name) ? markdownOnly(t) : t));
 }

@@ -32,6 +32,8 @@ export type ProjectConfig = {
   planningEnabled?: boolean | null;
   /** DONE-review gate default for tasks in this project. Unset = enabled. */
   reviewEnabled?: boolean | null;
+  /** SDD mode default for tasks in this project: planner may write .md files. Unset = disabled. */
+  sddEnabled?: boolean | null;
 };
 
 export type CaretakerConfig = {
