@@ -1,5 +1,17 @@
 # caretaker-desktop
 
+## 0.5.0
+
+### Patch Changes
+
+- Updated dependencies [97d36f8]
+- Updated dependencies [699a67d]
+- Updated dependencies [fb5020f]
+- Updated dependencies [0704fc5]
+- Updated dependencies [06cc49e]
+  - caretaker-cli@0.5.0
+  - webview-ui@0.5.0
+
 ## 0.4.2
 
 ### Patch Changes
