@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { readDocumentTool, __setDocumentParsers, type DocumentParsers } from './read_document.js';
+import {
+  readDocumentTool,
+  __setDocumentParsers,
+  ensureWritableNavigator,
+  type DocumentParsers,
+} from './read_document.js';
 import { write as writeXlsx, utils as xlsxUtils } from 'xlsx/xlsx.mjs';
 
 function ctx(workingDir: string) {
@@ -177,40 +182,34 @@ test('read_document: performs real XLSX parsing correctly (integrates SheetJS)',
   assert.match(out.content, /\| Cell2A \| Cell2B \|/);
 });
 
-test('read_document: PDF falls back to pandoc when unpdf fails', async () => {
+test('read_document: PDF falls back to pdftotext when unpdf fails', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'ct-rd-'));
   const filePath = join(dir, 'tricky.pdf');
   await writeFile(filePath, 'fake pdf');
 
   let extractPdfCalled = false;
-  let checkPandocCalled = false;
-  let runPandocCalled = false;
+  let runPdftotextCalled = false;
 
   const mockParsers: Partial<DocumentParsers> = {
     async extractPdf() {
       extractPdfCalled = true;
       throw new Error('unpdf worker failed');
     },
-    async checkPandoc() {
-      checkPandocCalled = true;
-      return true;
-    },
-    async runPandoc(fp) {
-      runPandocCalled = true;
+    async runPdftotext(fp) {
+      runPdftotextCalled = true;
       assert.equal(fp, filePath);
-      return { content: 'PDF text via pandoc' };
+      return { content: 'PDF text via pdftotext' };
     },
   };
   __setDocumentParsers(mockParsers as DocumentParsers);
 
   const out = await readDocumentTool.execute({ path: 'tricky.pdf' }, ctx(dir));
   assert.ok(extractPdfCalled, 'unpdf should be tried first');
-  assert.ok(checkPandocCalled, 'pandoc availability should be checked');
-  assert.ok(runPandocCalled, 'pandoc should be invoked as fallback');
-  assert.equal(out.content, 'PDF text via pandoc');
+  assert.ok(runPdftotextCalled, 'pdftotext should be invoked as fallback');
+  assert.equal(out.content, 'PDF text via pdftotext');
 });
 
-test('read_document: PDF surfaces combined error when both unpdf and pandoc fail', async () => {
+test('read_document: PDF surfaces combined error when both unpdf and pdftotext fail', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'ct-rd-'));
   const filePath = join(dir, 'broken.pdf');
   await writeFile(filePath, 'fake pdf');
@@ -219,35 +218,54 @@ test('read_document: PDF surfaces combined error when both unpdf and pandoc fail
     async extractPdf() {
       throw new Error('unpdf crashed');
     },
-    async checkPandoc() {
-      return true;
-    },
-    async runPandoc() {
-      return { content: '', error: 'pandoc: error reading PDF' };
+    async runPdftotext() {
+      return { content: '', error: 'pdftotext: damaged file' };
     },
   };
   __setDocumentParsers(mockParsers as DocumentParsers);
 
   const out = await readDocumentTool.execute({ path: 'broken.pdf' }, ctx(dir));
   assert.match(out.content, /unpdf crashed/);
-  assert.match(out.content, /pandoc.*error reading PDF/);
+  assert.match(out.content, /pdftotext.*damaged file/);
 });
 
-test('read_document: PDF surfaces unpdf error when pandoc not installed', async () => {
+test('read_document: PDF surfaces unpdf error when pdftotext not installed', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'ct-rd-'));
-  const filePath = join(dir, 'no-pandoc.pdf');
+  const filePath = join(dir, 'no-poppler.pdf');
   await writeFile(filePath, 'fake pdf');
 
   const mockParsers: Partial<DocumentParsers> = {
     async extractPdf() {
       throw new Error('unpdf original error');
     },
-    async checkPandoc() {
-      return false;
+    async runPdftotext() {
+      return { content: '', error: 'spawn pdftotext ENOENT', notInstalled: true };
     },
   };
   __setDocumentParsers(mockParsers as DocumentParsers);
 
-  const out = await readDocumentTool.execute({ path: 'no-pandoc.pdf' }, ctx(dir));
+  const out = await readDocumentTool.execute({ path: 'no-poppler.pdf' }, ctx(dir));
   assert.match(out.content, /unpdf original error/);
+  assert.doesNotMatch(out.content, /pdftotext/);
+});
+
+test('ensureWritableNavigator: repairs a getter-only nullish navigator (VSCode extension host)', () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  Object.defineProperty(globalThis, 'navigator', { get: () => undefined, configurable: true });
+  try {
+    ensureWritableNavigator();
+    // exactly what unpdf's serverless pdfjs shim executes at import time:
+    (globalThis as { navigator?: { platform?: string } }).navigator ??= {};
+    (globalThis as { navigator: { platform?: string } }).navigator.platform ??= '';
+    assert.equal((globalThis as { navigator: { platform?: string } }).navigator.platform, '');
+  } finally {
+    if (original) Object.defineProperty(globalThis, 'navigator', original);
+    else delete (globalThis as { navigator?: unknown }).navigator;
+  }
+});
+
+test('ensureWritableNavigator: leaves a real navigator untouched', () => {
+  const before = globalThis.navigator;
+  ensureWritableNavigator();
+  assert.equal(globalThis.navigator, before);
 });
