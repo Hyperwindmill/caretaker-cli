@@ -40,7 +40,7 @@ interface TaskMessage {
   id: number;
   taskId: number;
   role: 'user' | 'assistant' | 'tool';
-  messageType: 'chat' | 'heartbeat' | 'heartbeat_live' | 'system' | 'block' | 'tool_call' | 'yield';
+  messageType: 'chat' | 'heartbeat' | 'heartbeat_live' | 'system' | 'block' | 'tool_call' | 'yield' | 'review';
   content: string;
   toolCallId?: string | null;
   createdAt: string;
