@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import type { AgentSummary } from './bridge.js';
 import { FolderIcon, DeleteIcon, WarningIcon, ToolIcon, SettingsIcon, PauseIcon, ActivateIcon, GitIcon } from './icons.js';
+import FolderPicker from './FolderPicker.js';
 
 interface Project {
   id: number;
@@ -823,25 +824,15 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
                 />
               </label>
 
-              <label style={{ fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                Local Working Directory Path (Absolute)
-                <input
-                  type="text"
-                  required
+              <div className="form-group" style={{ fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <label htmlFor="project-workingDir">Local Working Directory Path (Absolute)</label>
+                <FolderPicker
+                  id="project-workingDir"
                   placeholder="e.g. /home/user/projects/my-code"
                   value={newProject.workingDir}
-                  onChange={(e) => setNewProject({ ...newProject, workingDir: e.target.value })}
-                  style={{
-                    background: 'var(--vscode-input-background, #252526)',
-                    color: 'var(--vscode-input-foreground)',
-                    border: '1px solid var(--vscode-input-border, #3c3c3c)',
-                    borderRadius: '4px',
-                    padding: '6px 8px',
-                    fontSize: '12px',
-                    outline: 'none',
-                  }}
+                  onChange={(path) => setNewProject({ ...newProject, workingDir: path })}
                 />
-              </label>
+              </div>
 
               <label style={{ fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 Agent to assign
