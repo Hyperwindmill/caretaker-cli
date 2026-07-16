@@ -267,7 +267,7 @@ export async function startServer(port: number, host: string): Promise<void> {
   app.post('/api/projects', async (c) => {
     try {
       const body = await c.req.json();
-      const { name, description, workingDir, agentId, plannerAgentId, reviewerAgentId, planningEnabled, reviewEnabled } = body;
+      const { name, description, workingDir, agentId, plannerAgentId, reviewerAgentId, planningEnabled, reviewEnabled, sddEnabled } = body;
       const config = await loadConfig();
       if (!config.projects) {
         config.projects = [];
@@ -284,6 +284,7 @@ export async function startServer(port: number, host: string): Promise<void> {
         reviewerAgentId: reviewerAgentId || null,
         planningEnabled: typeof planningEnabled === 'boolean' ? planningEnabled : null,
         reviewEnabled: typeof reviewEnabled === 'boolean' ? reviewEnabled : null,
+        sddEnabled: typeof sddEnabled === 'boolean' ? sddEnabled : null,
       };
       config.projects.push(project);
       await saveConfig(config);
@@ -326,7 +327,7 @@ export async function startServer(port: number, host: string): Promise<void> {
   app.post('/api/projects/:id/tasks', async (c) => {
     const projectId = Number(c.req.param('id'));
     const body = await c.req.json();
-    const { title, objective, checklist, startActive, agentId, plannerAgentId, reviewerAgentId, planningEnabled, reviewEnabled } = body;
+    const { title, objective, checklist, startActive, agentId, plannerAgentId, reviewerAgentId, planningEnabled, reviewEnabled, sddEnabled } = body;
 
     // Validate that the specified agents exist (if provided).
     const idsToValidate = [agentId, plannerAgentId, reviewerAgentId].filter(Boolean) as string[];
@@ -368,6 +369,7 @@ export async function startServer(port: number, host: string): Promise<void> {
       reviewerAgentId: reviewerAgentId || null,
       planningEnabled: taskPlanning,
       reviewEnabled: typeof reviewEnabled === 'boolean' ? reviewEnabled : null,
+      sddEnabled: typeof sddEnabled === 'boolean' ? sddEnabled : null,
     });
     return c.json({ ok: true });
   });
@@ -577,10 +579,18 @@ export async function startServer(port: number, host: string): Promise<void> {
     if ('reviewEnabled' in body) {
       task.reviewEnabled = typeof body.reviewEnabled === 'boolean' ? body.reviewEnabled : null;
     }
+    if ('sddEnabled' in body) {
+      task.sddEnabled = typeof body.sddEnabled === 'boolean' ? body.sddEnabled : null;
+    }
     task.updatedAt = new Date().toISOString();
     await saveTask(task);
 
-    return c.json({ ok: true, planningEnabled: task.planningEnabled ?? null, reviewEnabled: task.reviewEnabled ?? null });
+    return c.json({
+      ok: true,
+      planningEnabled: task.planningEnabled ?? null,
+      reviewEnabled: task.reviewEnabled ?? null,
+      sddEnabled: task.sddEnabled ?? null,
+    });
   });
 
   const nodeServer = serve({
