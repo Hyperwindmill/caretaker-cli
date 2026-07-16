@@ -62,11 +62,29 @@ export async function ensureWorktree(
   return { branch, worktreePath, agentWorkingDir };
 }
 
+async function hasGitIdentity(cwd: string): Promise<boolean> {
+  try {
+    const [name, email] = await Promise.all([
+      git(cwd, ['config', 'user.name']),
+      git(cwd, ['config', 'user.email']),
+    ]);
+    return name.length > 0 && email.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 export async function commitWip(worktreePath: string, title: string): Promise<boolean> {
   const status = await git(worktreePath, ['status', '--porcelain']);
   if (!status) return false;
   await git(worktreePath, ['add', '-A']);
-  await git(worktreePath, ['commit', '-m', `wip: ${title}`]);
+  // --no-verify: these are machine-made WIP commits; the repo's pre-commit hooks
+  // (husky, lint-staged) belong on the user's real commit/merge after review, not here.
+  // Inject a fallback identity ONLY when the repo has none configured — never override the user's.
+  const idArgs = (await hasGitIdentity(worktreePath))
+    ? []
+    : ['-c', 'user.name=Caretaker', '-c', 'user.email=caretaker@localhost'];
+  await git(worktreePath, [...idArgs, 'commit', '--no-verify', '-m', `wip: ${title}`]);
   return true;
 }
 
