@@ -790,7 +790,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
                     outline: 'none',
                   }}
                 >
-                  <option value="">Same as developer</option>
+                  <option value="">Project default</option>
                   {agents.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.name} ({a.provider})
@@ -814,7 +814,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
                     outline: 'none',
                   }}
                 >
-                  <option value="">Same as developer</option>
+                  <option value="">Project default</option>
                   {agents.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.name} ({a.provider})
@@ -1455,9 +1455,9 @@ function TaskEditView({
             onChange={(e) => onSetAgent(task, 'planner', e.target.value)}
             disabled={isRunning}
             style={{ background: 'var(--vscode-input-background, #252526)', color: 'var(--vscode-input-foreground)', border: '1px solid var(--vscode-input-border, #3c3c3c)', borderRadius: '4px', padding: '6px 8px', fontSize: '12px', outline: 'none', width: '100%', cursor: isRunning ? 'not-allowed' : 'pointer', opacity: isRunning ? 0.6 : 1 }}
-            title={isRunning ? 'Pause the task before changing its planner' : 'Agent that runs the planning phase (read-only). Falls back to the developer agent.'}
+            title={isRunning ? 'Pause the task before changing its planner' : 'Agent that runs the planning phase (read-only). Unset: falls back to the project planner, then the developer.'}
           >
-            <option value="">Same as developer</option>
+            <option value="">Project default</option>
             {agents.map((a) => (
               <option key={a.id} value={a.id}>{a.name} ({a.provider})</option>
             ))}
@@ -1473,9 +1473,9 @@ function TaskEditView({
             onChange={(e) => onSetAgent(task, 'reviewer', e.target.value)}
             disabled={isRunning}
             style={{ background: 'var(--vscode-input-background, #252526)', color: 'var(--vscode-input-foreground)', border: '1px solid var(--vscode-input-border, #3c3c3c)', borderRadius: '4px', padding: '6px 8px', fontSize: '12px', outline: 'none', width: '100%', cursor: isRunning ? 'not-allowed' : 'pointer', opacity: isRunning ? 0.6 : 1 }}
-            title={isRunning ? 'Pause the task before changing its reviewer' : 'Agent that reviews the branch at DONE. Falls back to the developer agent.'}
+            title={isRunning ? 'Pause the task before changing its reviewer' : 'Agent that reviews the branch at DONE. Unset: falls back to the project reviewer, then the developer.'}
           >
-            <option value="">Same as developer</option>
+            <option value="">Project default</option>
             {agents.map((a) => (
               <option key={a.id} value={a.id}>{a.name} ({a.provider})</option>
             ))}

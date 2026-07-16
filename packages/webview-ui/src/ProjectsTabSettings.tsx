@@ -218,7 +218,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
               value={plannerAgentId}
               onChange={(e) => setPlannerAgentId(e.target.value)}
             >
-              <option value="">Same as developer</option>
+              <option value="">Same as assigned agent</option>
               {agents.map((agent) => (
                 <option key={agent.id} value={agent.id}>
                   {agent.name}
@@ -234,7 +234,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
               value={reviewerAgentId}
               onChange={(e) => setReviewerAgentId(e.target.value)}
             >
-              <option value="">Same as developer</option>
+              <option value="">Same as assigned agent</option>
               {agents.map((agent) => (
                 <option key={agent.id} value={agent.id}>
                   {agent.name}
