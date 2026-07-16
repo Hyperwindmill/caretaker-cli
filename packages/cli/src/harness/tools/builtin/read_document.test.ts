@@ -176,3 +176,78 @@ test('read_document: performs real XLSX parsing correctly (integrates SheetJS)',
   assert.match(out.content, /\| Cell1A \| Cell1B \|/);
   assert.match(out.content, /\| Cell2A \| Cell2B \|/);
 });
+
+test('read_document: PDF falls back to pandoc when unpdf fails', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ct-rd-'));
+  const filePath = join(dir, 'tricky.pdf');
+  await writeFile(filePath, 'fake pdf');
+
+  let extractPdfCalled = false;
+  let checkPandocCalled = false;
+  let runPandocCalled = false;
+
+  const mockParsers: Partial<DocumentParsers> = {
+    async extractPdf() {
+      extractPdfCalled = true;
+      throw new Error('unpdf worker failed');
+    },
+    async checkPandoc() {
+      checkPandocCalled = true;
+      return true;
+    },
+    async runPandoc(fp) {
+      runPandocCalled = true;
+      assert.equal(fp, filePath);
+      return { content: 'PDF text via pandoc' };
+    },
+  };
+  __setDocumentParsers(mockParsers as DocumentParsers);
+
+  const out = await readDocumentTool.execute({ path: 'tricky.pdf' }, ctx(dir));
+  assert.ok(extractPdfCalled, 'unpdf should be tried first');
+  assert.ok(checkPandocCalled, 'pandoc availability should be checked');
+  assert.ok(runPandocCalled, 'pandoc should be invoked as fallback');
+  assert.equal(out.content, 'PDF text via pandoc');
+});
+
+test('read_document: PDF surfaces combined error when both unpdf and pandoc fail', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ct-rd-'));
+  const filePath = join(dir, 'broken.pdf');
+  await writeFile(filePath, 'fake pdf');
+
+  const mockParsers: Partial<DocumentParsers> = {
+    async extractPdf() {
+      throw new Error('unpdf crashed');
+    },
+    async checkPandoc() {
+      return true;
+    },
+    async runPandoc() {
+      return { content: '', error: 'pandoc: error reading PDF' };
+    },
+  };
+  __setDocumentParsers(mockParsers as DocumentParsers);
+
+  const out = await readDocumentTool.execute({ path: 'broken.pdf' }, ctx(dir));
+  assert.match(out.content, /unpdf crashed/);
+  assert.match(out.content, /pandoc.*error reading PDF/);
+});
+
+test('read_document: PDF surfaces unpdf error when pandoc not installed', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ct-rd-'));
+  const filePath = join(dir, 'no-pandoc.pdf');
+  await writeFile(filePath, 'fake pdf');
+
+  const mockParsers: Partial<DocumentParsers> = {
+    async extractPdf() {
+      throw new Error('unpdf original error');
+    },
+    async checkPandoc() {
+      return false;
+    },
+  };
+  __setDocumentParsers(mockParsers as DocumentParsers);
+
+  const out = await readDocumentTool.execute({ path: 'no-pandoc.pdf' }, ctx(dir));
+  assert.match(out.content, /unpdf original error/);
+});
