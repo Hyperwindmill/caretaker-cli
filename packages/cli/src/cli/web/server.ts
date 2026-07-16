@@ -31,6 +31,7 @@ import { authenticateMcpServer, revokeMcpAuth } from '../../mcp/oauth.js';
 import {
   listForAgent,
   readSession,
+  deleteSession,
   computeContextUsage,
   createSession,
   userMessage,
@@ -709,6 +710,22 @@ export async function startServer(port: number, host: string): Promise<void> {
             currentSessionId = null;
             controller = null;
             post({ type: 'contextUsage', usage: null });
+            return;
+          }
+          case 'deleteSession': {
+            try {
+              if (currentAgent) {
+                await deleteSession(currentAgent.id, msg.sessionId);
+                if (currentSessionId === msg.sessionId) {
+                  currentSessionId = null;
+                  controller = null;
+                  post({ type: 'contextUsage', usage: null });
+                }
+                await loadSessionsAndSend(currentAgent.id);
+              }
+            } catch (err) {
+              post({ type: 'error', message: `Failed to delete conversation: ${err}` });
+            }
             return;
           }
           case 'getSettingsData':

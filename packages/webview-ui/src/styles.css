@@ -338,7 +338,44 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
   transition: var(--transition-fast);
+}
+
+.app__session-item-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app__session-item-delete {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--vscode-descriptionForeground, oklch(1 0 0 / 0.5));
+  cursor: pointer;
+  opacity: 0;
+  transition: var(--transition-fast);
+}
+
+.app__session-item:hover .app__session-item-delete {
+  opacity: 1;
+}
+
+.app__session-item-delete:hover {
+  color: #ef4444;
+  background: oklch(0.6 0.25 25 / 0.12);
 }
 
 .app__session-item:hover {
@@ -2323,6 +2360,33 @@ body.vscode-light .settings-panel__tab-btn--active {
   font-size: 13px;
   opacity: 0.7;
   color: var(--primary-blue);
+}
+
+.app__sidebar-session-delete {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--vscode-descriptionForeground, oklch(1 0 0 / 0.5));
+  cursor: pointer;
+  opacity: 0;
+  transition: var(--transition-fast);
+}
+
+.app__sidebar-session-item:hover .app__sidebar-session-delete {
+  opacity: 1;
+}
+
+.app__sidebar-session-delete:hover {
+  color: #ef4444;
+  background: oklch(0.6 0.25 25 / 0.12);
 }
 
 .app__sidebar-empty-text {
