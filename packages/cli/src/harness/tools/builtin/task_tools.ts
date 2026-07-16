@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { getDb, ChecklistItem, Project, Task, TaskMessage, getTaskById, saveTask, createTask, addTaskMessage, deleteTask } from '../../../store/db.js';
-import { loadConfig } from '../../../store/json.js';
+import { loadConfig, loadAgents } from '../../../store/json.js';
 import type { Tool, ToolResult } from '../types.js';
 import { discardWorktree } from '../../../lib/task_git.js';
 import { runningTasks } from '../../../cli/web/scheduler/locks.js';
@@ -341,6 +341,14 @@ export const taskCreateTool: Tool = {
     const project = (config.projects || []).find((p) => p.id === projectId);
     if (!project) return err(`Project ${projectId} not found`);
 
+    // Validate that the specified agent exists (if provided).
+    if (agentId) {
+      const agents = await loadAgents();
+      if (!agents.some((a) => a.id === agentId)) {
+        return err(`Agent "${agentId}" not found. Available agents: ${agents.map((a) => a.id).join(', ') || '(none)'}`);
+      }
+    }
+
     const checklist: ChecklistItem[] = checklistInput.map((item, idx) => ({
       id: randomUUID(),
       text: item.text,
@@ -680,6 +688,14 @@ export const taskSetAgentTool: Tool = {
     const lockKey = `task_db_${taskId}`;
     if (task.lockedAt || runningTasks.has(lockKey)) {
       return err(`Task ${taskId} is currently running. Wait for it to finish or pause it first.`);
+    }
+
+    // Validate that the specified agent exists (if provided and non-null).
+    if (agentId) {
+      const agents = await loadAgents();
+      if (!agents.some((a) => a.id === agentId)) {
+        return err(`Agent "${agentId}" not found. Available agents: ${agents.map((a) => a.id).join(', ') || '(none)'}`);
+      }
     }
 
     task.agentId = agentId;
