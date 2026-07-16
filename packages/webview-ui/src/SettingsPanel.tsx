@@ -146,12 +146,14 @@ export function SettingsPanel({
         >
           Providers
         </button>
-        <button
-          className={`settings-panel__tab-btn ${activeTab === 'projects' ? 'settings-panel__tab-btn--active' : ''}`}
-          onClick={() => setActiveTab('projects')}
-        >
-          Projects
-        </button>
+        {layout === 'sidebar' && (
+          <button
+            className={`settings-panel__tab-btn ${activeTab === 'projects' ? 'settings-panel__tab-btn--active' : ''}`}
+            onClick={() => setActiveTab('projects')}
+          >
+            Projects
+          </button>
+        )}
         <button
           className={`settings-panel__tab-btn ${activeTab === 'agents' ? 'settings-panel__tab-btn--active' : ''}`}
           onClick={() => setActiveTab('agents')}

@@ -512,7 +512,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
   const selectedAgentName = agents.find((a) => a.id === selectedAgentId)?.name;
   const activeAgent = agents.find((a) => a.id === selectedAgentId);
 
-  if (activeScreen === 'projects') {
+  if (activeScreen === 'projects' && layout === 'sidebar') {
     return (
       <div className="app" style={{ height: '100%' }}>
         <header className="app__header">
