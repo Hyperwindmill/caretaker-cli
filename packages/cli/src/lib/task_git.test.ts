@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm, stat, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -78,5 +78,27 @@ test('discardWorktree commits pending work then removes the worktree', async () 
   await assert.rejects(() => stat(worktreePath));
   const log = await g(repo, ['log', '--oneline', branch]);
   assert.match(log.stdout, /wip: Abandon me/); // pending work was committed, not lost
+  await rm(repo, { recursive: true, force: true });
+});
+
+test('commitWip bypasses a failing pre-commit hook and works without configured identity', async () => {
+  // Start from a normal repo (needs identity for the initial commit)...
+  const repo = await makeRepo();
+  // ...then make every future commit hostile: a hook that always rejects, and no identity.
+  const hook = join(repo, '.git', 'hooks', 'pre-commit');
+  await writeFile(hook, '#!/bin/sh\nexit 1\n');
+  await chmod(hook, 0o755);
+  await g(repo, ['config', '--unset', 'user.email']);
+  await g(repo, ['config', '--unset', 'user.name']);
+
+  const { branch, worktreePath, agentWorkingDir } = await ensureWorktree(repo, 2, 5, 'Hook hostile');
+  await writeFile(join(agentWorkingDir, 'out.txt'), 'work\n');
+
+  // Without --no-verify (hook) and without a fallback identity this commit would fail.
+  assert.equal(await commitWip(worktreePath, 'Hook hostile'), true);
+  const log = await g(repo, ['log', '--oneline', branch]);
+  assert.match(log.stdout, /wip: Hook hostile/);
+
+  await finalizeDone(worktreePath);
   await rm(repo, { recursive: true, force: true });
 });
