@@ -54,6 +54,7 @@ export const getTaskStateTool: Tool = {
         reviewerAgentId: task.reviewerAgentId || null,
         planningEnabled: task.planningEnabled ?? null,
         reviewEnabled: task.reviewEnabled ?? null,
+        sddEnabled: task.sddEnabled ?? null,
         project: project
           ? {
               name: project.name,
@@ -344,6 +345,7 @@ export const taskCreateTool: Tool = {
       reviewer_agent_id: { type: 'string', description: 'Optional reviewer-role agent for this task.' },
       planning_enabled: { type: 'boolean', description: 'Override the project planning-phase default for this task.' },
       review_enabled: { type: 'boolean', description: 'Override the project review-gate default for this task.' },
+      sdd_enabled: { type: 'boolean', description: 'Override the project SDD-mode default for this task (planner may write .md files during planning).' },
     },
     required: ['project_id', 'title', 'objective', 'checklist'],
   },
@@ -359,6 +361,7 @@ export const taskCreateTool: Tool = {
     const reviewerAgentId = args.reviewer_agent_id ? String(args.reviewer_agent_id) : null;
     const planningEnabled = typeof args.planning_enabled === 'boolean' ? args.planning_enabled : null;
     const reviewEnabled = typeof args.review_enabled === 'boolean' ? args.review_enabled : null;
+    const sddEnabled = typeof args.sdd_enabled === 'boolean' ? args.sdd_enabled : null;
 
     const config = await loadConfig();
     const project = (config.projects || []).find((p) => p.id === projectId);
@@ -401,6 +404,7 @@ export const taskCreateTool: Tool = {
       reviewerAgentId,
       planningEnabled,
       reviewEnabled,
+      sddEnabled,
     });
 
     if (startActive) {

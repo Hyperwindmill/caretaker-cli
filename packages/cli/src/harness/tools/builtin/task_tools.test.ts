@@ -11,7 +11,7 @@ const CT_HOME = await mkdtemp(join(tmpdir(), 'ct-tasktools-home-'));
 process.env.CARETAKER_HOME = CT_HOME;
 
 const { createTask, getTaskById, saveTask, deleteTask, addTaskMessage, runQuery } = await import('../../../store/db.js');
-const { completeTaskTool, taskArchiveTool, taskUnarchiveTool, taskDeleteTool, taskSearchTool, taskSetAgentTool, taskCreateTool, submitPlanTool, taskActivateTool, taskUnpauseTool } = await import('./task_tools.js');
+const { completeTaskTool, taskArchiveTool, taskUnarchiveTool, taskDeleteTool, taskSearchTool, taskSetAgentTool, taskCreateTool, submitPlanTool, taskActivateTool, taskUnpauseTool, getTaskStateTool } = await import('./task_tools.js');
 const { runningTasks } = await import('../../../cli/web/scheduler/locks.js');
 const { saveConfig, saveAgents } = await import('../../../store/json.js');
 
@@ -381,6 +381,24 @@ test('task_set_agent with role planner/reviewer sets the role fields', async () 
   // Default role still targets the developer field.
   await taskSetAgentTool.execute({ task_id: t.id, agent_id: 'a-x' }, ctx());
   assert.equal((await getTaskById(t.id))!.agentId, 'a-x');
+});
+
+test('task_create persists sdd_enabled; task_get_state exposes it', async () => {
+  await saveConfig({
+    port: 3000, providers: [],
+    projects: [{ id: 11, name: 'SddProj', description: '', workingDir: '/w', agentId: 'a', active: true }],
+  } as any);
+  const res = await taskCreateTool.execute(
+    { project_id: 11, title: 'Sdd', objective: 'o', checklist: [], sdd_enabled: true },
+    ctx(),
+  );
+  const parsed = JSON.parse(res.content);
+  assert.equal(parsed.ok, true);
+  assert.equal((await getTaskById(parsed.task_id))!.sddEnabled, true);
+
+  const state = JSON.parse((await getTaskStateTool.execute({ task_id: parsed.task_id }, ctx())).content);
+  assert.equal(state.sddEnabled, true);
+  await saveConfig({ port: 3000, providers: [] } as any);
 });
 
 test.after(async () => {
