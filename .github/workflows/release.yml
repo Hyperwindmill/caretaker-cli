@@ -143,7 +143,16 @@ jobs:
         run: pnpm build
 
       - name: Publish CLI to npm
-        run: pnpm --filter @hyperwindmill/caretaker-cli publish --no-git-checks
+        # Idempotent: skip if this version is already on npm (first release is
+        # published manually to bootstrap the trusted publisher; also safe on re-runs).
+        run: |
+          PKG=@hyperwindmill/caretaker-cli
+          VER=$(node -p "require('./packages/cli/package.json').version")
+          if npm view "$PKG@$VER" version >/dev/null 2>&1; then
+            echo "$PKG@$VER already published — skipping."
+          else
+            pnpm --filter "$PKG" publish --no-git-checks
+          fi
 
   publish-release:
     name: publish-release
