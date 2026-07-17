@@ -52,6 +52,11 @@ export async function runDoneReview(opts: {
 }): Promise<{ verdict: 'pass' | 'changes'; text: string }> {
   // Strip task-state tools: the reviewer must not mutate the task; the harness decides.
   const reviewTools = opts.tools.filter((t) => !t.name.startsWith('mcp__task__'));
+  // claude-code reviewer: bypass permissions like the native path, but no task
+  // bridge — parity with the mcp__task__ strip above (the agent's own
+  // mcpServers still pass through inside the runner).
+  const claudeCode =
+    opts.provider.type === 'claude-code' ? { permissionMode: 'bypassPermissions' as const } : undefined;
   const result = await harness.run(
     {
       agent: { ...opts.agent, permissionMode: 'bypassPermissions' }, // unattended: mirror the auto-approve confirm gate
@@ -60,6 +65,7 @@ export async function runDoneReview(opts: {
       prompt: reviewPrompt(opts.objective, opts.branch, opts.round),
       history: [],
       workingDir: opts.workingDir,
+      ...(claudeCode ? { claudeCode } : {}),
     },
     {
       confirmTool: async () => 'once', // unattended
