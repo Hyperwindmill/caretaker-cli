@@ -42,6 +42,8 @@ Claude Code agents use Claude Code's own tools and its own permission modes inst
 
 > Uses your local Claude Code session; Anthropic may bill programmatic use as extra usage.
 
+_Claude and Claude Code are trademarks of Anthropic, PBC. This project is an independent open-source tool and is not affiliated with, endorsed, or sponsored by Anthropic._
+
 ### Agent identities, not "an agent"
 
 Caretaker is built around having _several_ agents that mean different things to you — a code agent rooted in one repo with a focused toolset, a writing agent in your notes folder with no shell, a research agent with read-only tools and web fetch.
