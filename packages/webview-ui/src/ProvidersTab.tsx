@@ -15,16 +15,20 @@ export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps)
 
   // Form states
   const [name, setName] = useState('');
+  const [type, setType] = useState<'openai' | 'claude-code'>('openai');
   const [endpoint, setEndpoint] = useState('');
   const [apiKey, setApiKey] = useState('');
+  const [command, setCommand] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const startEdit = (provider: ProviderConfig) => {
     setEditingProvider(provider);
     setIsCreating(false);
     setName(provider.name);
+    setType(provider.type ?? 'openai');
     setEndpoint(provider.endpoint);
     setApiKey(provider.apiKey || '');
+    setCommand(provider.command || '');
     setErrorMsg(null);
   };
 
@@ -32,8 +36,10 @@ export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps)
     setIsCreating(true);
     setEditingProvider(null);
     setName('');
+    setType('openai');
     setEndpoint('');
     setApiKey('');
+    setCommand('');
     setErrorMsg(null);
   };
 
@@ -47,20 +53,24 @@ export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps)
     const trimmedName = name.trim();
     const trimmedEndpoint = endpoint.trim();
     const trimmedApiKey = apiKey.trim();
+    const trimmedCommand = command.trim();
+    const isClaudeCode = type === 'claude-code';
 
     if (!trimmedName) {
       setErrorMsg('Name is required.');
       return;
     }
-    if (!trimmedEndpoint) {
-      setErrorMsg('Endpoint is required.');
-      return;
-    }
-    try {
-      new URL(trimmedEndpoint);
-    } catch {
-      setErrorMsg('Endpoint must be a valid URL (e.g. http://localhost:11434/v1).');
-      return;
+    if (!isClaudeCode) {
+      if (!trimmedEndpoint) {
+        setErrorMsg('Endpoint is required.');
+        return;
+      }
+      try {
+        new URL(trimmedEndpoint);
+      } catch {
+        setErrorMsg('Endpoint must be a valid URL (e.g. http://localhost:11434/v1).');
+        return;
+      }
     }
 
     // Name uniqueness check for creation, or if renaming
@@ -76,11 +86,18 @@ export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps)
 
     // Modify caretaker.json
     const updatedProviders = [...config.providers];
-    const newProv: ProviderConfig = {
-      name: trimmedName,
-      endpoint: trimmedEndpoint,
-      ...(trimmedApiKey ? { apiKey: trimmedApiKey } : {}),
-    };
+    const newProv: ProviderConfig = isClaudeCode
+      ? {
+          name: trimmedName,
+          type,
+          endpoint: '',
+          ...(trimmedCommand ? { command: trimmedCommand } : {}),
+        }
+      : {
+          name: trimmedName,
+          endpoint: trimmedEndpoint,
+          ...(trimmedApiKey ? { apiKey: trimmedApiKey } : {}),
+        };
 
     if (isCreating) {
       updatedProviders.push(newProv);
@@ -142,6 +159,18 @@ export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps)
         <div className="glass-form">
           <h4>{isCreating ? 'Add Provider' : `Edit Provider: ${editingProvider?.name}`}</h4>
           <div className="form-group">
+            <label htmlFor="provider-type">Type</label>
+            <select
+              id="provider-type"
+              value={type}
+              onChange={(e) => setType(e.target.value as 'openai' | 'claude-code')}
+              disabled={editingProvider !== null} // Changing an existing provider's type could break agents that reference it
+            >
+              <option value="openai">OpenAI-compatible endpoint</option>
+              <option value="claude-code">Claude Code (local CLI)</option>
+            </select>
+          </div>
+          <div className="form-group">
             <label htmlFor="provider-name">Name</label>
             <input
               id="provider-name"
@@ -152,26 +181,44 @@ export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps)
               disabled={editingProvider !== null} // Don't allow changing name of existing to prevent cascading breakages
             />
           </div>
-          <div className="form-group">
-            <label htmlFor="provider-endpoint">Endpoint URL</label>
-            <input
-              id="provider-endpoint"
-              type="text"
-              placeholder="e.g. http://localhost:11434/v1"
-              value={endpoint}
-              onChange={(e) => setEndpoint(e.target.value)}
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="provider-key">API Key (Optional)</label>
-            <input
-              id="provider-key"
-              type="password"
-              placeholder={editingProvider?.apiKey ? '••••••••' : 'Optional credentials'}
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-            />
-          </div>
+          {type === 'claude-code' ? (
+            <div className="form-group">
+              <label htmlFor="provider-command">Command (Optional)</label>
+              <input
+                id="provider-command"
+                type="text"
+                placeholder="claude"
+                value={command}
+                onChange={(e) => setCommand(e.target.value)}
+              />
+              <p style={{ fontSize: '11px', color: 'var(--vscode-descriptionForeground)', lineHeight: '1.4', margin: '4px 0 0' }}>
+                Uses your local Claude Code session; Anthropic may bill programmatic use as extra usage.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="form-group">
+                <label htmlFor="provider-endpoint">Endpoint URL</label>
+                <input
+                  id="provider-endpoint"
+                  type="text"
+                  placeholder="e.g. http://localhost:11434/v1"
+                  value={endpoint}
+                  onChange={(e) => setEndpoint(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="provider-key">API Key (Optional)</label>
+                <input
+                  id="provider-key"
+                  type="password"
+                  placeholder={editingProvider?.apiKey ? '••••••••' : 'Optional credentials'}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                />
+              </div>
+            </>
+          )}
           <div className="form-actions">
             <button className="btn btn--secondary" onClick={cancelForm}>
               Cancel
@@ -190,7 +237,9 @@ export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps)
               <div key={prov.name} className="settings-card">
                 <div className="settings-card__body">
                   <div className="settings-card__title">{prov.name}</div>
-                  <div className="settings-card__subtitle">{prov.endpoint}</div>
+                  <div className="settings-card__subtitle">
+                    {prov.type === 'claude-code' ? `Claude Code (local CLI)${prov.command ? ` — ${prov.command}` : ''}` : prov.endpoint}
+                  </div>
                   {prov.apiKey && <div className="settings-card__badge">Key Configured</div>}
                 </div>
                 <div className="settings-card__actions">
