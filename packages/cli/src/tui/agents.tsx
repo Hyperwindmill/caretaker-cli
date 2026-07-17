@@ -305,6 +305,8 @@ export default function Agents({ onBack }: { onBack: () => void }) {
 
   if (mode === 'detail' && selected) {
     const managed = !!selected.pluginId;
+    const isClaudeCode =
+      providers.find((p) => p.name === selected.provider)?.type === 'claude-code';
     return (
       <Box flexDirection="column">
         <Text bold>{selected.name}</Text>
@@ -315,16 +317,23 @@ export default function Agents({ onBack }: { onBack: () => void }) {
         )}
         <Text>provider: {selected.provider}</Text>
         <Text>model: {selected.model}</Text>
-        <Text>maxTurns: {selected.maxTurns === 0 ? 'unlimited' : selected.maxTurns}</Text>
-        <Text>
-          tools:{' '}
-          {selected.allowedTools.length === 0
-            ? '(none)'
-            : formatToolsForDetail(selected.allowedTools, selected.confirmTools ?? [])}
-        </Text>
-        <Text>
-          plugins: {(selected.plugins ?? []).length === 0 ? '(none)' : selected.plugins!.join(', ')}
-        </Text>
+        {isClaudeCode ? (
+          <Text>permissionMode: {selected.permissionMode || 'Auto (Claude Code default)'}</Text>
+        ) : (
+          <>
+            <Text>maxTurns: {selected.maxTurns === 0 ? 'unlimited' : selected.maxTurns}</Text>
+            <Text>
+              tools:{' '}
+              {selected.allowedTools.length === 0
+                ? '(none)'
+                : formatToolsForDetail(selected.allowedTools, selected.confirmTools ?? [])}
+            </Text>
+            <Text>
+              plugins:{' '}
+              {(selected.plugins ?? []).length === 0 ? '(none)' : selected.plugins!.join(', ')}
+            </Text>
+          </>
+        )}
         <Text>
           mcp: {(selected.mcpServers ?? []).length === 0 ? '(none)' : selected.mcpServers!.length}{' '}
           server(s)
@@ -410,7 +419,33 @@ type FormStep =
   | 'plugins'
   | 'mcpServers'
   | 'workingDir'
-  | 'maxTurns';
+  | 'maxTurns'
+  | 'permissionMode';
+
+const CLAUDE_CODE_PERMISSION_MODES = [
+  'acceptEdits',
+  'auto',
+  'bypassPermissions',
+  'manual',
+  'dontAsk',
+  'plan',
+] as const;
+
+// Computes the step sequence for a given form flavor, so claude-code's
+// skip-tools/plugins/maxTurns + insert-permissionMode branching lives in one
+// place instead of scattered across every transition.
+function stepSequence(managed: boolean, isClaudeCode: boolean): FormStep[] {
+  const seq: FormStep[] = [];
+  if (!managed) seq.push('name');
+  seq.push('provider', 'model');
+  if (!managed) seq.push('systemPrompt');
+  if (isClaudeCode) {
+    seq.push('mcpServers', 'workingDir', 'permissionMode');
+  } else {
+    seq.push('tools', 'plugins', 'mcpServers', 'workingDir', 'maxTurns');
+  }
+  return seq;
+}
 
 function AgentForm({
   providers,
@@ -432,8 +467,10 @@ function AgentForm({
   const [step, setStep] = useState<FormStep>(managed ? 'provider' : 'name');
   const [name, setName] = useState(initial?.name ?? '');
   const [provider, setProvider] = useState(initial?.provider ?? '');
+  const isClaudeCode = providers.find((p) => p.name === provider)?.type === 'claude-code';
   const [model, setModel] = useState(initial?.model ?? '');
   const [systemPrompt, setSystemPrompt] = useState(initial?.systemPrompt ?? '');
+  const [permissionMode, setPermissionMode] = useState(initial?.permissionMode ?? '');
   const normalizeTools = (tools: string[]): string[] => {
     const hasTaskTools = tools.some((t) => t.startsWith('mcp__task__'));
     if (hasTaskTools) {
@@ -442,8 +479,12 @@ function AgentForm({
     return tools;
   };
 
-  const [allowedTools, setAllowedTools] = useState<string[]>(normalizeTools(initial?.allowedTools ?? []));
-  const [confirmTools, setConfirmTools] = useState<string[]>(normalizeTools(initial?.confirmTools ?? []));
+  const [allowedTools, setAllowedTools] = useState<string[]>(
+    normalizeTools(initial?.allowedTools ?? []),
+  );
+  const [confirmTools, setConfirmTools] = useState<string[]>(
+    normalizeTools(initial?.confirmTools ?? []),
+  );
   const [activePlugins, setActivePlugins] = useState<string[]>(initial?.plugins ?? []);
   const [discoveredPlugins, setDiscoveredPlugins] = useState<PluginRecord[]>([]);
   const [activeMcp, setActiveMcp] = useState<string[]>(initial?.mcpServers ?? []);
@@ -461,57 +502,68 @@ function AgentForm({
     if (key.escape) onCancel();
   });
 
+  // Step sequence computed as a filtered array (rather than scattering
+  // isClaudeCode conditionals across every transition): claude-code skips
+  // tools/plugins/maxTurns and gets a permissionMode step instead.
+  const steps = stepSequence(managed, isClaudeCode);
+  const nextAfter = (s: FormStep): FormStep => {
+    const idx = steps.indexOf(s);
+    return idx >= 0 && idx + 1 < steps.length ? steps[idx + 1] : s;
+  };
+
+  const finalize = (n: number, permissionModeOverride?: string) => {
+    const pm = permissionModeOverride ?? permissionMode;
+    const a: AgentConfig = {
+      id: initial?.id ?? randomUUID(),
+      name: name.trim(),
+      systemPrompt: systemPrompt.trim(),
+      provider,
+      model: model.trim(),
+      allowedTools,
+      maxTurns: n,
+      ...(confirmTools.length > 0 ? { confirmTools } : {}),
+      ...(activePlugins.length > 0 ? { plugins: activePlugins } : {}),
+      ...(activeMcp.length > 0 ? { mcpServers: activeMcp } : {}),
+      ...(workingDir.trim() ? { workingDir: workingDir.trim() } : {}),
+      ...(isClaudeCode && pm ? { permissionMode: pm } : {}),
+      // Preserve plugin-managed origin tags so the next sync recognizes
+      // this row instead of orphaning it.
+      ...(initial?.pluginId ? { pluginId: initial.pluginId } : {}),
+      ...(initial?.pluginScopedName ? { pluginScopedName: initial.pluginScopedName } : {}),
+    };
+    void onSave(a);
+  };
+
   const advance = () => {
     if (step === 'name') {
       const v = name.trim();
       if (!v) return setError('name is required');
       if (existingNames.includes(v)) return setError('name already exists');
       setError(null);
-      setStep('provider');
+      setStep(nextAfter('name'));
     } else if (step === 'systemPrompt') {
       setError(null);
-      setStep('tools');
-    } else if (step === 'model' && managed) {
-      // Managed agents skip the systemPrompt step — manifest-owned.
-      setError(null);
-      setStep('tools');
+      setStep(nextAfter('systemPrompt'));
     } else if (step === 'tools') {
       setError(null);
-      setStep('plugins');
+      setStep(nextAfter('tools'));
     } else if (step === 'plugins') {
       setError(null);
-      setStep('mcpServers');
+      setStep(nextAfter('plugins'));
     } else if (step === 'mcpServers') {
       setError(null);
-      setStep('workingDir');
+      setStep(nextAfter('mcpServers'));
     } else if (step === 'workingDir') {
       const v = workingDir.trim();
       if (v && !isAbsolute(v))
         return setError('workingDir must be an absolute path (or empty for cwd)');
       setError(null);
-      setStep('maxTurns');
+      setStep(nextAfter('workingDir'));
     } else if (step === 'maxTurns') {
       const n = Number.parseInt(maxTurns.trim(), 10);
       if (!Number.isFinite(n) || n < 0)
         return setError('maxTurns must be a non-negative integer (0 = unlimited)');
-      const a: AgentConfig = {
-        id: initial?.id ?? randomUUID(),
-        name: name.trim(),
-        systemPrompt: systemPrompt.trim(),
-        provider,
-        model: model.trim(),
-        allowedTools,
-        maxTurns: n,
-        ...(confirmTools.length > 0 ? { confirmTools } : {}),
-        ...(activePlugins.length > 0 ? { plugins: activePlugins } : {}),
-        ...(activeMcp.length > 0 ? { mcpServers: activeMcp } : {}),
-        ...(workingDir.trim() ? { workingDir: workingDir.trim() } : {}),
-        // Preserve plugin-managed origin tags so the next sync recognizes
-        // this row instead of orphaning it.
-        ...(initial?.pluginId ? { pluginId: initial.pluginId } : {}),
-        ...(initial?.pluginScopedName ? { pluginScopedName: initial.pluginScopedName } : {}),
-      };
-      void onSave(a);
+      finalize(n);
     }
   };
 
@@ -567,8 +619,7 @@ function AgentForm({
             onPick={(id) => {
               setModel(id);
               setError(null);
-              // Managed agents lock the systemPrompt — jump straight to tools.
-              setStep(managed ? 'tools' : 'systemPrompt');
+              setStep(nextAfter('model'));
             }}
           />
         ) : ['name', 'provider'].includes(step) ? (
@@ -602,49 +653,54 @@ function AgentForm({
         )}
       </Box>
 
-      <Box flexDirection="column">
-        <Text>tools:</Text>
-        {step === 'tools' ? (
-          <ToolPicker
-            tools={[
-              ...toolRegistry.list().filter((t) => !t.name.startsWith('mcp__task__')),
-              {
-                name: 'mcp__task__*',
-                description: 'Manage autonomous tasks & checklists (enables all mcp__task__* tools)',
-                parameters: { type: 'object', properties: {} },
-                execute: async () => ({ content: '' }),
-              },
-            ]}
-            allowed={allowedTools}
-            confirm={confirmTools}
-            onChange={(a, c) => {
-              setAllowedTools(a);
-              setConfirmTools(c);
-            }}
-            onSubmit={advance}
-          />
-        ) : ['name', 'provider', 'model', 'systemPrompt'].includes(step) ? (
-          <Text dimColor> (pending)</Text>
-        ) : (
-          <Text>{`  ${allowedTools.length === 0 ? '(none)' : formatToolsForDetail(allowedTools, confirmTools)}`}</Text>
-        )}
-      </Box>
+      {!isClaudeCode && (
+        <Box flexDirection="column">
+          <Text>tools:</Text>
+          {step === 'tools' ? (
+            <ToolPicker
+              tools={[
+                ...toolRegistry.list().filter((t) => !t.name.startsWith('mcp__task__')),
+                {
+                  name: 'mcp__task__*',
+                  description:
+                    'Manage autonomous tasks & checklists (enables all mcp__task__* tools)',
+                  parameters: { type: 'object', properties: {} },
+                  execute: async () => ({ content: '' }),
+                },
+              ]}
+              allowed={allowedTools}
+              confirm={confirmTools}
+              onChange={(a, c) => {
+                setAllowedTools(a);
+                setConfirmTools(c);
+              }}
+              onSubmit={advance}
+            />
+          ) : ['name', 'provider', 'model', 'systemPrompt'].includes(step) ? (
+            <Text dimColor> (pending)</Text>
+          ) : (
+            <Text>{`  ${allowedTools.length === 0 ? '(none)' : formatToolsForDetail(allowedTools, confirmTools)}`}</Text>
+          )}
+        </Box>
+      )}
 
-      <Box flexDirection="column">
-        <Text>plugins:</Text>
-        {step === 'plugins' ? (
-          <PluginPicker
-            plugins={discoveredPlugins}
-            value={activePlugins}
-            onChange={setActivePlugins}
-            onSubmit={advance}
-          />
-        ) : ['name', 'provider', 'model', 'systemPrompt', 'tools'].includes(step) ? (
-          <Text dimColor> (pending)</Text>
-        ) : (
-          <Text>{`  ${activePlugins.length === 0 ? '(none)' : activePlugins.join(', ')}`}</Text>
-        )}
-      </Box>
+      {!isClaudeCode && (
+        <Box flexDirection="column">
+          <Text>plugins:</Text>
+          {step === 'plugins' ? (
+            <PluginPicker
+              plugins={discoveredPlugins}
+              value={activePlugins}
+              onChange={setActivePlugins}
+              onSubmit={advance}
+            />
+          ) : ['name', 'provider', 'model', 'systemPrompt', 'tools'].includes(step) ? (
+            <Text dimColor> (pending)</Text>
+          ) : (
+            <Text>{`  ${activePlugins.length === 0 ? '(none)' : activePlugins.join(', ')}`}</Text>
+          )}
+        </Box>
+      )}
 
       <Box flexDirection="column">
         <Text>mcp:</Text>
@@ -692,19 +748,60 @@ function AgentForm({
         )}
       </Box>
 
-      <Box>
-        <Text>maxTurns: </Text>
-        {step === 'maxTurns' ? (
-          <TextInput
-            value={maxTurns}
-            onChange={setMaxTurns}
-            onSubmit={advance}
-            placeholder="0 = unlimited"
-          />
-        ) : (
-          <Text dimColor>(pending)</Text>
-        )}
-      </Box>
+      {!isClaudeCode && (
+        <Box>
+          <Text>maxTurns: </Text>
+          {step === 'maxTurns' ? (
+            <TextInput
+              value={maxTurns}
+              onChange={setMaxTurns}
+              onSubmit={advance}
+              placeholder="0 = unlimited"
+            />
+          ) : (
+            <Text dimColor>(pending)</Text>
+          )}
+        </Box>
+      )}
+
+      {isClaudeCode && (
+        <Box flexDirection="column">
+          <Text>permissionMode: </Text>
+          {step === 'permissionMode' ? (
+            <SelectInput
+              items={[
+                { label: 'Auto (Claude Code default)', value: '' },
+                ...CLAUDE_CODE_PERMISSION_MODES.map((m) => ({ label: m, value: m })),
+              ]}
+              initialIndex={
+                permissionMode
+                  ? Math.max(
+                      0,
+                      CLAUDE_CODE_PERMISSION_MODES.indexOf(
+                        permissionMode as (typeof CLAUDE_CODE_PERMISSION_MODES)[number],
+                      ) + 1,
+                    )
+                  : 0
+              }
+              onSelect={(item) => {
+                setPermissionMode(item.value);
+                setError(null);
+                const n = Number.parseInt(maxTurns.trim(), 10);
+                finalize(Number.isFinite(n) && n >= 0 ? n : 30, item.value);
+              }}
+            />
+          ) : ['name', 'provider', 'model', 'systemPrompt', 'mcpServers', 'workingDir'].includes(
+              step,
+            ) ? (
+            <Text dimColor>(pending)</Text>
+          ) : (
+            <Text>{permissionMode || 'Auto (Claude Code default)'}</Text>
+          )}
+          <Text dimColor>
+            Uses your local Claude Code session; Anthropic may bill programmatic use as extra usage.
+          </Text>
+        </Box>
+      )}
 
       {error && (
         <Box marginTop={1}>
@@ -732,10 +829,16 @@ function ModelStep({
   initialModel?: string;
   onPick: (id: string) => void;
 }) {
-  const [state, setState] = useState<ModelStepState>({ mode: 'loading' });
+  const isClaudeCode = provider.type === 'claude-code';
+  const [state, setState] = useState<ModelStepState>(
+    isClaudeCode ? { mode: 'manual', reason: null } : { mode: 'loading' },
+  );
   const [manualValue, setManualValue] = useState(initialModel ?? '');
 
   useEffect(() => {
+    // claude-code providers never expose an OpenAI-style model-listing
+    // endpoint — always go straight to manual entry.
+    if (isClaudeCode) return;
     let cancelled = false;
     void fetchOpenAiStyleModels(provider.endpoint, provider.apiKey ?? null).then((res) => {
       if (cancelled) return;
@@ -750,7 +853,7 @@ function ModelStep({
     return () => {
       cancelled = true;
     };
-  }, [provider.endpoint, provider.apiKey]);
+  }, [isClaudeCode, provider.endpoint, provider.apiKey]);
 
   if (state.mode === 'loading') {
     return <Text dimColor>fetching models from {provider.name}…</Text>;
@@ -766,7 +869,9 @@ function ModelStep({
             const v = manualValue.trim();
             if (v) onPick(v);
           }}
-          placeholder="e.g. gpt-4o-mini"
+          placeholder={
+            isClaudeCode ? 'sonnet | opus | haiku (or full model id)' : 'e.g. gpt-4o-mini'
+          }
         />
         {state.reason && (
           <Text dimColor color="yellow">
