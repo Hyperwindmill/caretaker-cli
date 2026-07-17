@@ -5,7 +5,7 @@ import type { Tool } from '../types.js';
 import { assertWithinRoot, OutsideRootError } from '../sandbox.js';
 import { extractText, getDocumentProxy } from 'unpdf';
 import mammoth from 'mammoth';
-import { read as readXlsx, utils as xlsxUtils } from 'xlsx/xlsx.mjs';
+import ExcelJS from 'exceljs';
 
 export const MAX_OUTPUT_CHARS = 150_000; // soft limit (~150 KB of text)
 
@@ -56,37 +56,31 @@ const realParsers: DocumentParsers = {
     return value;
   },
   async extractXlsx(buffer: Buffer) {
-    const workbook = readXlsx(buffer);
+    const workbook = new ExcelJS.Workbook();
+    // ponytail: cast bridges @types/node's Buffer<ArrayBufferLike> vs exceljs's plain Buffer typedef
+    await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
     let output = '';
-    for (const sheetName of workbook.SheetNames) {
-      const worksheet = workbook.Sheets[sheetName];
-      if (!worksheet) continue;
-      const rows = xlsxUtils.sheet_to_json<unknown[]>(worksheet, { header: 1 });
-      if (rows.length === 0) continue;
-      output += `## Sheet: ${sheetName}\n\n`;
+    for (const worksheet of workbook.worksheets) {
+      const maxCols = worksheet.columnCount;
+      const rowCount = worksheet.rowCount;
+      if (maxCols === 0 || rowCount === 0) continue;
+      output += `## Sheet: ${worksheet.name}\n\n`;
 
-      // Construct Markdown Table
-      const maxCols = Math.max(...rows.map((r) => (r ? r.length : 0)));
-      if (maxCols === 0) continue;
-
-      // Header row (using the first row, pad if needed)
-      const firstRow = rows[0] || [];
+      // Header row (first row; `cell.text` flattens formulas/dates/rich text to display text)
+      const headerRow = worksheet.getRow(1);
       const headers = Array.from({ length: maxCols }, (_, i) => {
-        const val = firstRow[i];
-        return val !== undefined && val !== null ? String(val).trim() : `Column ${i + 1}`;
+        const val = headerRow.getCell(i + 1).text.trim();
+        return val !== '' ? val : `Column ${i + 1}`;
       });
       output += `| ${headers.join(' | ')} |\n`;
       output += `| ${headers.map(() => '---').join(' | ')} |\n`;
 
       // Body rows
-      for (let r = 1; r < rows.length; r++) {
-        const row = rows[r] || [];
-        const cells = Array.from({ length: maxCols }, (_, i) => {
-          const val = row[i];
-          return val !== undefined && val !== null
-            ? String(val).replace(/\r?\n/g, ' ').trim()
-            : '';
-        });
+      for (let r = 2; r <= rowCount; r++) {
+        const row = worksheet.getRow(r);
+        const cells = Array.from({ length: maxCols }, (_, i) =>
+          row.getCell(i + 1).text.replace(/\r?\n/g, ' ').trim(),
+        );
         output += `| ${cells.join(' | ')} |\n`;
       }
       output += '\n';
@@ -238,7 +232,7 @@ export const readDocumentTool: Tool = {
       } else if (ext === '.docx') {
         const buffer = await readFile(abs);
         textResult = await activeParsers.extractDocx(buffer);
-      } else if (ext === '.xlsx' || ext === '.xls') {
+      } else if (ext === '.xlsx') {
         const buffer = await readFile(abs);
         textResult = await activeParsers.extractXlsx(buffer);
       } else {
@@ -248,7 +242,7 @@ export const readDocumentTool: Tool = {
           return {
             content:
               `Error: unsupported format '${ext}' and pandoc is not installed on this system.\n` +
-              `Supported formats out-of-the-box: .pdf, .docx, .xlsx, .xls.\n` +
+              `Supported formats out-of-the-box: .pdf, .docx, .xlsx.\n` +
               `Please install pandoc (e.g. 'sudo apt install pandoc' or 'brew install pandoc') to read '${ext}' files.`,
           };
         }

@@ -93,8 +93,9 @@
     "@morphql/store": "^0.1.45",
     "caretaker-types": "workspace:*",
     "commander": "^14.0.3",
+    "exceljs": "^4.4.0",
     "fast-glob": "^3.3.3",
-    "hono": "^4.12.22",
+    "hono": "^4.12.25",
     "ink": "^7.0.2",
     "ink-big-text": "^2.0.0",
     "ink-select-input": "^6.2.0",
@@ -106,7 +107,6 @@
     "unpdf": "^1.6.2",
     "webview-ui": "workspace:*",
     "ws": "^8.21.0",
-    "xlsx": "^0.18.5",
     "yaml": "^2.8.4"
   }
 }

@@ -87,7 +87,7 @@ export const readAttachmentTool: Tool = {
         textResult = await extractPdfWithFallback(buffer, filePath, ctx.signal);
       } else if (ext === '.docx') {
         textResult = await activeParsers.extractDocx(buffer);
-      } else if (ext === '.xlsx' || ext === '.xls') {
+      } else if (ext === '.xlsx') {
         textResult = await activeParsers.extractXlsx(buffer);
       } else if (textExtensions.has(ext)) {
         textResult = buffer.toString('utf8');
@@ -108,7 +108,7 @@ export const readAttachmentTool: Tool = {
             return {
               content:
                 `Error: unsupported attachment format '${ext}' and pandoc is not installed on this system.\n` +
-                `Supported formats: .pdf, .docx, .xlsx, .xls, plain text, and common code extensions.\n` +
+                `Supported formats: .pdf, .docx, .xlsx, plain text, and common code extensions.\n` +
                 `Install pandoc (e.g. 'apt install pandoc') to read other formats.`,
             };
           }

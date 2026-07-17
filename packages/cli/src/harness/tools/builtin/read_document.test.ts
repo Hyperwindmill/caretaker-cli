@@ -9,7 +9,7 @@ import {
   ensureWritableNavigator,
   type DocumentParsers,
 } from './read_document.js';
-import { write as writeXlsx, utils as xlsxUtils } from 'xlsx/xlsx.mjs';
+import ExcelJS from 'exceljs';
 
 function ctx(workingDir: string) {
   return {
@@ -155,24 +155,22 @@ test('read_document: unsupported format uses pandoc if installed', async () => {
   assert.equal(out.content, '# epub markdown converted title');
 });
 
-test('read_document: performs real XLSX parsing correctly (integrates SheetJS)', async () => {
+test('read_document: performs real XLSX parsing correctly (integrates exceljs)', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'ct-rd-'));
   const filePath = join(dir, 'real.xlsx');
 
-  // Create a real worksheet using SheetJS
-  const ws = xlsxUtils.aoa_to_sheet([
-    ['Header1', 'Header2'],
-    ['Cell1A', 'Cell1B'],
-    ['Cell2A', 'Cell2B'],
-  ]);
-  const wb = xlsxUtils.book_new();
-  xlsxUtils.book_append_sheet(wb, ws, 'TestSheet');
+  // Create a real worksheet using exceljs
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('TestSheet');
+  ws.addRow(['Header1', 'Header2']);
+  ws.addRow(['Cell1A', 'Cell1B']);
+  ws.addRow(['Cell2A', 'Cell2B']);
 
   // Write workbook to buffer
-  const buf = writeXlsx(wb, { type: 'buffer', bookType: 'xlsx' });
+  const buf = Buffer.from(await wb.xlsx.writeBuffer());
   await writeFile(filePath, buf);
 
-  // Restore real parser to execute the SheetJS logic
+  // Restore real parser to execute the exceljs logic
   __setDocumentParsers(null);
 
   const out = await readDocumentTool.execute({ path: 'real.xlsx' }, ctx(dir));
