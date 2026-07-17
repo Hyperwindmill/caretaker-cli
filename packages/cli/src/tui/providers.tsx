@@ -107,11 +107,21 @@ export default function Providers({ onBack }: { onBack: () => void }) {
   }
 
   if (mode === 'detail' && selected) {
+    const isClaudeCode = selected.type === 'claude-code';
     return (
       <Box flexDirection="column">
         <Text bold>{selected.name}</Text>
-        <Text>endpoint: {selected.endpoint}</Text>
-        <Text>apiKey: {selected.apiKey ? '(set)' : '(none)'}</Text>
+        {isClaudeCode ? (
+          <>
+            <Text>type: claude-code</Text>
+            <Text>command: {selected.command || '(default: claude on PATH)'}</Text>
+          </>
+        ) : (
+          <>
+            <Text>endpoint: {selected.endpoint}</Text>
+            <Text>apiKey: {selected.apiKey ? '(set)' : '(none)'}</Text>
+          </>
+        )}
         <Box marginTop={1}>
           <SelectInput
             items={[
@@ -139,7 +149,10 @@ export default function Providers({ onBack }: { onBack: () => void }) {
 
   const items = [
     ...providers.map((p) => ({
-      label: `${p.name}  —  ${p.endpoint}`,
+      label:
+        p.type === 'claude-code'
+          ? `${p.name}  —  Claude Code (local CLI)${p.command ? `  —  ${p.command}` : ''}`
+          : `${p.name}  —  ${p.endpoint}`,
       value: `p:${p.name}`,
     })),
     { label: '+ Create new', value: '__new__' },
@@ -171,7 +184,8 @@ export default function Providers({ onBack }: { onBack: () => void }) {
   );
 }
 
-type FormStep = 'name' | 'endpoint' | 'apiKey';
+type FormStep = 'type' | 'name' | 'endpoint' | 'apiKey' | 'command';
+type ProviderType = 'openai' | 'claude-code';
 
 function ProviderForm({
   existingNames,
@@ -185,75 +199,156 @@ function ProviderForm({
   onCancel: () => void;
 }) {
   const isEdit = !!initial;
-  const [step, setStep] = useState<FormStep>(isEdit ? 'endpoint' : 'name');
+  // Editing an existing provider keeps its type fixed — agents reference
+  // providers by name, so switching type out from under them is a footgun
+  // (same rationale as the webview form).
+  const [type, setType] = useState<ProviderType>(initial?.type ?? 'openai');
+  const [step, setStep] = useState<FormStep>(
+    isEdit ? (type === 'claude-code' ? 'command' : 'endpoint') : 'type',
+  );
   const [name, setName] = useState(initial?.name ?? '');
   const [endpoint, setEndpoint] = useState(initial?.endpoint ?? '');
   const [apiKey, setApiKey] = useState(initial?.apiKey ?? '');
+  const [command, setCommand] = useState(initial?.command ?? '');
   const [error, setError] = useState<string | null>(null);
 
   useInput((_input, key) => {
     if (key.escape) onCancel();
   });
 
+  const finalize = () => {
+    if (type === 'claude-code') {
+      const p: ProviderConfig = { name: name.trim(), type: 'claude-code', endpoint: '' };
+      if (command.trim()) p.command = command.trim();
+      void onSave(p);
+      return;
+    }
+    const p: ProviderConfig = { name: name.trim(), endpoint: endpoint.trim() };
+    if (apiKey.trim()) p.apiKey = apiKey.trim();
+    void onSave(p);
+  };
+
   const submit = () => {
-    if (step === 'name') {
+    if (step === 'type') {
+      setError(null);
+      setStep('name');
+    } else if (step === 'name') {
       const v = name.trim();
       if (!v) return setError('name is required');
       if (existingNames.includes(v)) return setError('name already exists');
       setError(null);
-      setStep('endpoint');
+      setStep(type === 'claude-code' ? 'command' : 'endpoint');
     } else if (step === 'endpoint') {
       const v = endpoint.trim();
       if (!v) return setError('endpoint is required');
       setError(null);
       setStep('apiKey');
+    } else if (step === 'command') {
+      setError(null);
+      finalize();
     } else {
-      const p: ProviderConfig = { name: name.trim(), endpoint: endpoint.trim() };
-      if (apiKey.trim()) p.apiKey = apiKey.trim();
-      void onSave(p);
+      finalize();
     }
   };
+
+  const stepOrder: FormStep[] =
+    type === 'claude-code' ? ['type', 'name', 'command'] : ['type', 'name', 'endpoint', 'apiKey'];
+  const currentIdx = stepOrder.indexOf(step);
+  const isPending = (s: FormStep) => stepOrder.indexOf(s) > currentIdx;
 
   return (
     <Box flexDirection="column">
       <Text bold>{isEdit ? `Edit provider "${initial!.name}"` : 'New provider'}</Text>
       <Box marginTop={1}>
+        <Text>type: </Text>
+        {!isEdit && step === 'type' ? (
+          <SelectInput
+            items={[
+              { label: 'OpenAI-compatible endpoint', value: 'openai' },
+              { label: 'Claude Code (local CLI)', value: 'claude-code' },
+            ]}
+            initialIndex={type === 'claude-code' ? 1 : 0}
+            onSelect={(item) => {
+              setType(item.value as ProviderType);
+              setError(null);
+              setStep('name');
+            }}
+          />
+        ) : (
+          <Text>
+            {type === 'claude-code' ? 'Claude Code (local CLI)' : 'OpenAI-compatible endpoint'}
+          </Text>
+        )}
+      </Box>
+      <Box>
         <Text>name: </Text>
         {!isEdit && step === 'name' ? (
           <TextInput value={name} onChange={setName} onSubmit={submit} />
+        ) : isPending('name') ? (
+          <Text dimColor>(pending)</Text>
         ) : (
           <Text>{name}</Text>
         )}
       </Box>
-      <Box>
-        <Text>endpoint: </Text>
-        {step === 'endpoint' ? (
-          <TextInput
-            value={endpoint}
-            onChange={setEndpoint}
-            onSubmit={submit}
-            placeholder="https://api.openai.com"
-          />
-        ) : step === 'name' ? (
-          <Text dimColor>(pending)</Text>
-        ) : (
-          <Text>{endpoint}</Text>
-        )}
-      </Box>
-      <Box>
-        <Text>apiKey: </Text>
-        {step === 'apiKey' ? (
-          <TextInput
-            value={apiKey}
-            onChange={setApiKey}
-            onSubmit={submit}
-            placeholder={isEdit ? '(enter to keep current)' : '(optional, enter to skip)'}
-            mask="*"
-          />
-        ) : (
-          <Text dimColor>(pending)</Text>
-        )}
-      </Box>
+      {type === 'claude-code' ? (
+        <>
+          <Box>
+            <Text>command: </Text>
+            {step === 'command' ? (
+              <TextInput
+                value={command}
+                onChange={setCommand}
+                onSubmit={submit}
+                placeholder="claude (default: resolved from PATH)"
+              />
+            ) : isPending('command') ? (
+              <Text dimColor>(pending)</Text>
+            ) : (
+              <Text>{command || '(default: claude on PATH)'}</Text>
+            )}
+          </Box>
+          <Box marginTop={1}>
+            <Text dimColor>
+              Uses your local Claude Code session; Anthropic may bill programmatic use as extra
+              usage.
+            </Text>
+          </Box>
+        </>
+      ) : (
+        <>
+          <Box>
+            <Text>endpoint: </Text>
+            {step === 'endpoint' ? (
+              <TextInput
+                value={endpoint}
+                onChange={setEndpoint}
+                onSubmit={submit}
+                placeholder="https://api.openai.com"
+              />
+            ) : isPending('endpoint') ? (
+              <Text dimColor>(pending)</Text>
+            ) : (
+              <Text>{endpoint}</Text>
+            )}
+          </Box>
+          <Box>
+            <Text>apiKey: </Text>
+            {step === 'apiKey' ? (
+              <TextInput
+                value={apiKey}
+                onChange={setApiKey}
+                onSubmit={submit}
+                placeholder={isEdit ? '(enter to keep current)' : '(optional, enter to skip)'}
+                mask="*"
+              />
+            ) : isPending('apiKey') ? (
+              <Text dimColor>(pending)</Text>
+            ) : (
+              <Text>{apiKey ? '(set)' : '(none)'}</Text>
+            )}
+          </Box>
+        </>
+      )}
       {error && (
         <Box marginTop={1}>
           <Text color="red">{error}</Text>
