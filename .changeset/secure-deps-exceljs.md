@@ -1,5 +1,5 @@
 ---
-"caretaker-cli": patch
+"@hyperwindmill/caretaker-cli": patch
 "caretaker-desktop": patch
 "webview-ui": patch
 "caretaker-vscode": patch
