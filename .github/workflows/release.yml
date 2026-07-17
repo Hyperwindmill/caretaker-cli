@@ -109,6 +109,42 @@ jobs:
           path: packages/vscode-extension/*.vsix
           if-no-files-found: error
 
+  publish-npm:
+    name: publish-npm
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      # OIDC trusted publishing to npm — no NPM_TOKEN secret needed.
+      # Configure the trusted publisher on npmjs.com (package settings) linking
+      # this repo + workflow file. Requires pnpm 10 (pnpm 11 has an OIDC 404 bug)
+      # and Node >= 22.14.
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace
+        run: pnpm build
+
+      - name: Publish CLI to npm
+        run: pnpm --filter @hyperwindmill/caretaker-cli publish --no-git-checks
+
   publish-release:
     name: publish-release
     runs-on: ubuntu-latest
