@@ -1,5 +1,13 @@
 # caretaker-desktop
 
+## 0.11.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @hyperwindmill/caretaker-cli@0.11.1
+  - webview-ui@0.11.1
+
 ## 0.11.0
 
 ### Patch Changes
