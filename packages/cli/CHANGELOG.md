@@ -1,5 +1,16 @@
 # caretaker-cli
 
+## 0.10.1
+
+### Patch Changes
+
+- 3cef808: fix(claude-code): drop empty thinking blocks. Opus (extended thinking off) emits an empty `thinking` block in the final assistant message; it was persisted and rendered as an empty "Thinking Process" box when a chat was reloaded (never live). Guard at parse time (`claude_code_stream`) plus render-side guards in the web and TUI reload paths so already-persisted empty blocks are hidden too.
+- 50c9a6b: fix(tui): stop the shell-env probe from suspending the TUI on Linux. The boot-time interactive-shell probe (`bash -i -c env`, used to pick up NVM/volta PATH) ran in the same session as the process, so its job-control setup sent SIGTTIN/SIGTTOU to our process group and stopped the TUI right after the menu rendered (`[1]+ Stopped`). Spawning it `detached: true` (own session, no controlling terminal) disables bash's job control while still sourcing `.bashrc`.
+- 50c9a6b: fix(tui): exit the process cleanly on ESC/Quit. `runCli` rendered the Ink app and returned without awaiting `waitUntilExit()`, so `useApp().exit()` (ESC or the Quit menu item) unmounted the UI but left the event loop alive on background boot handles (MCP pool, model-limits fetch, refresh-on-start) — the TUI looked frozen until Ctrl+C. Now `runCli` awaits `waitUntilExit()` and `process.exit(0)`s.
+- Updated dependencies [3cef808]
+  - webview-ui@0.10.1
+  - caretaker-types@0.10.1
+
 ## 0.10.0
 
 ### Minor Changes
