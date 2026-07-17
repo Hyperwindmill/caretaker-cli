@@ -1,7 +1,12 @@
 export type ProviderConfig = {
   name: string;
+  /** Runner kind. Absent = 'openai' (OpenAI-compatible HTTP endpoint). */
+  type?: 'openai' | 'claude-code';
+  /** OpenAI-compatible base URL. Unused when type === 'claude-code'. */
   endpoint: string;
   apiKey?: string;
+  /** claude-code only: path to the Claude Code CLI binary. Default: 'claude' from PATH. */
+  command?: string;
 };
 
 export type ScheduledTaskConfig = {
@@ -237,6 +242,11 @@ export type AgentConfig = {
    *  tools/list output is registered as `mcp__<id>__<toolName>` callable
    *  tools for this agent. Disabled servers are silently skipped. */
   mcpServers?: string[];
+  /** claude-code providers only: Claude Code permission mode passed as
+   *  --permission-mode. Unset = detect from ~/.claude/settings.json
+   *  permissions.defaultMode, falling back to 'acceptEdits'. Unattended
+   *  runs (scheduler/tasks) force 'bypassPermissions' regardless. */
+  permissionMode?: string;
   // ─── plugin-managed origin ──────────────────────────────────────────
   /** PluginRecord.id this agent was derived from. Set on rows synthesized
    *  from a plugin manifest's `agents/*.md` files. Re-sync rewrites
