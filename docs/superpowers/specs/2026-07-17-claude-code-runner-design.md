@@ -77,10 +77,19 @@ with `cwd = workingDir` (worktree path for task runs).
 
 ## 3. System prompt and context
 
-Only `--append-system-prompt <agent.systemPrompt>`. The caretaker prelude,
-AGENTS.md walking, plugin/skill blocks and `<runtime-info>` are **not** sent:
-Claude Code performs its own context discovery (CLAUDE.md et al.) and its own
-system prompt; injecting ours would duplicate both.
+`--append-system-prompt` carries the agent's `systemPrompt` plus a filtered
+project context. The caretaker prelude, plugin/skill blocks and
+`<runtime-info>` are **not** sent — Claude Code has its own system prompt.
+
+Context files need care: Claude Code auto-loads **only CLAUDE.md** (project,
+parents, `~/.claude/CLAUDE.md`) — verified against the installed binary
+(2.1.207), where AGENTS.md appears only in the `/init` prompt. Caretaker's
+walk covers `AGENTS.md`, `CLAUDE.md`, `GEMINI.md` and the global
+`~/.caretaker/AGENTS.md`. So the runner reuses the existing
+`context_files.ts` walk and appends its output **minus the CLAUDE.md
+entries** (Claude Code already reads those itself), same 100 KB / 250 KB
+caps. Projects whose rules live in AGENTS.md/GEMINI.md, and the caretaker
+global rules, keep working on the claude-code runner.
 
 - Caretaker plugins do not apply to claude-code agents (hidden in the form).
 - The agent's `mcpServers` **do** apply: per run, caretaker writes a temporary
