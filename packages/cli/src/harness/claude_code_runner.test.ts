@@ -202,6 +202,34 @@ test('no sessionId: history folded into prompt, --no-session-persistence set', a
   assert.ok(getChild().stdinData.includes('continue'));
 });
 
+test('stale --resume retries once without --resume, then persists the new session id', async () => {
+  const meta = await createSession({ agentId: agent.id, title: 't' });
+  const { updateClaudeSessionId } = await import('../session/store.js');
+  await updateClaudeSessionId({ agentId: agent.id, id: meta.id }, 'stale-session-id');
+
+  const spawns: { command: string; args: string[] }[] = [];
+  __setSpawn((command: string, args: string[]) => {
+    spawns.push({ command, args });
+    // First attempt: exits non-zero (fixture lines irrelevant). Second
+    // attempt: succeeds with the text fixture.
+    if (spawns.length === 1) return new FakeChild([], 1) as any;
+    return new FakeChild(fixtureLines('claude_code_stream_text.jsonl'), 0) as any;
+  });
+
+  const result = await runClaudeCode(
+    { agent, provider, tools: [], prompt: 'hi', sessionId: meta.id },
+    {},
+  );
+
+  assert.equal(result.stop, 'done');
+  assert.equal(spawns.length, 2);
+  assert.ok(spawns[0]!.args.includes('--resume'));
+  assert.ok(!spawns[1]!.args.includes('--resume'));
+
+  const stored = (await readSession(agent.id, meta.id)).meta.claudeSessionId;
+  assert.equal(stored, '12a7ded1-dabe-4d88-9262-a60a6869cf93'); // session id from the fixture's init event
+});
+
 test('non-zero exit throws with stderr tail', async () => {
   useFixture('claude_code_stream_text.jsonl', 1);
   await assert.rejects(

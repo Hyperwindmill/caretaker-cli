@@ -601,7 +601,8 @@ export async function startServer(port: number, host: string): Promise<void> {
     hostname: host,
   });
 
-  setTaskBridgeUrl(`http://127.0.0.1:${port}/api/mcp/task`);
+  const bridgeHost = host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host;
+  setTaskBridgeUrl(`http://${bridgeHost}:${port}/api/mcp/task`);
 
   const wss = new WebSocketServer({ noServer: true });
 

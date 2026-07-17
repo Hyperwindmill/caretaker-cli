@@ -7,6 +7,12 @@ import type { Tool } from '../../../harness/tools/types.js';
 
 export type TaskRole = 'planner' | 'developer' | 'reviewer';
 
+// ponytail: hard wall-clock cap; make configurable if real runs need more
+// The Claude Code CLI has no --max-turns equivalent, so a claude-code run has
+// no native turn cap. Without a wall-clock backstop a runaway run would stall
+// the whole heartbeat (and, for reviews, the review gate) indefinitely.
+export const CLAUDE_CODE_MAX_RUN_MS = 15 * 60_000;
+
 export function resolveRoleAgent(
   role: TaskRole,
   task: Task,

@@ -42,6 +42,8 @@ Claude Code agents use Claude Code's own tools and its own permission modes inst
 
 > Uses your local Claude Code session; Anthropic may bill programmatic use as extra usage.
 
+Windows users whose Claude Code was installed via npm should set the provider `command` to the full path of `claude.exe` — npm's `.cmd` shim cannot be spawned directly.
+
 _Claude and Claude Code are trademarks of Anthropic, PBC. This project is an independent open-source tool and is not affiliated with, endorsed, or sponsored by Anthropic._
 
 ### Agent identities, not "an agent"
