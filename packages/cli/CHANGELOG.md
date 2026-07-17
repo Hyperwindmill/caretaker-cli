@@ -1,5 +1,11 @@
 # caretaker-cli
 
+## 0.11.1
+
+### Patch Changes
+
+- Fix `ENOENT: assets/logo.ans` when running the CLI installed from npm. The published `files` list only shipped `dist/`, but the TUI reads `assets/logo.ans` (relative to the package root) at startup. Ship that asset in the package.
+
 ## 0.11.0
 
 ### Minor Changes
