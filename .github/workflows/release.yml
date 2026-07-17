@@ -115,9 +115,10 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
       # OIDC trusted publishing to npm — no NPM_TOKEN secret needed.
-      # Configure the trusted publisher on npmjs.com (package settings) linking
-      # this repo + workflow file. Requires pnpm 10 (pnpm 11 has an OIDC 404 bug)
-      # and Node >= 22.14.
+      # The OIDC token exchange lives in the npm client (>= 11.5.1), NOT in pnpm,
+      # so we build a clean tarball with `pnpm pack` (resolves workspace: specifiers)
+      # and publish it with `npm publish`. Requires the trusted publisher configured
+      # on npmjs.com (repo + release.yml) and Node >= 22.14.
       id-token: write
       contents: read
     steps:
@@ -136,6 +137,9 @@ jobs:
           cache: pnpm
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Ensure npm >= 11.5.1 for OIDC
+        run: npm install -g npm@latest
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -143,15 +147,17 @@ jobs:
         run: pnpm build
 
       - name: Publish CLI to npm
-        # Idempotent: skip if this version is already on npm (first release is
-        # published manually to bootstrap the trusted publisher; also safe on re-runs).
+        # Idempotent: skip if this version is already on npm (also safe on re-runs).
+        # pnpm pack produces a clean tarball (workspace: specifiers resolved);
+        # npm publish does the OIDC token exchange that pnpm publish does not.
         run: |
           PKG=@hyperwindmill/caretaker-cli
           VER=$(node -p "require('./packages/cli/package.json').version")
           if npm view "$PKG@$VER" version >/dev/null 2>&1; then
             echo "$PKG@$VER already published — skipping."
           else
-            pnpm --filter "$PKG" publish --no-git-checks
+            (cd packages/cli && pnpm pack --pack-destination "$RUNNER_TEMP")
+            npm publish "$RUNNER_TEMP/hyperwindmill-caretaker-cli-$VER.tgz" --provenance --access public
           fi
 
   publish-release:
