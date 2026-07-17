@@ -1,5 +1,22 @@
 # caretaker-desktop
 
+## 0.10.0
+
+### Minor Changes
+
+- 8f3112d: Claude Code as an optional runner: new provider type `claude-code` runs agents
+  through `claude -p` (stream-json) on every surface — chat, headless, scheduler,
+  and autonomous tasks (task tools exposed via a token-guarded HTTP MCP bridge).
+  Agents on such providers use Claude Code's own tools and permission modes
+  (new per-agent permission-mode setting; unattended runs force bypassPermissions).
+
+### Patch Changes
+
+- Updated dependencies [7466cd2]
+- Updated dependencies [8f3112d]
+  - caretaker-cli@0.10.0
+  - webview-ui@0.10.0
+
 ## 0.9.0
 
 ### Minor Changes
