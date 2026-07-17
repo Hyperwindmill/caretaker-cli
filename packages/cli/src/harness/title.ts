@@ -24,6 +24,7 @@ export interface GenerateTitleInput {
  *  that case — title generation is best-effort. */
 export async function generateTitle(input: GenerateTitleInput): Promise<string | null> {
   const { agent, provider, firstUserPrompt, firstAssistantText, signal } = input;
+  if (input.provider.type === 'claude-code') return null; // no HTTP endpoint; keep fallback title
   if (!firstUserPrompt.trim() && !firstAssistantText.trim()) return null;
 
   const baseUrl = provider.endpoint.replace(/\/+$/, '');
