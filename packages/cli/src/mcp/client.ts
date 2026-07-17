@@ -155,6 +155,61 @@ async function openClient(server: McpServerConfig): Promise<PoolEntry> {
   throw new Error(`Unknown MCP transport: ${(server as { transport: string }).transport}`);
 }
 
+export type ResolvedServerRuntime =
+  | { type: 'stdio'; command: string; args?: string[]; env?: Record<string, string> }
+  | { type: 'http'; url: string; headers?: Record<string, string> };
+
+/**
+ * Resolve a configured server into the plaintext runtime shape an external
+ * consumer (Claude Code `--mcp-config`) needs: decrypted headers, `${VAR}`
+ * and `${CLAUDE_PLUGIN_ROOT}` expansion applied — the same pipeline
+ * `openClient()` uses to build a live transport. Returns `null` for disabled
+ * servers, malformed stdio/http rows (missing command/url), and OAuth
+ * servers without a current access token (Claude Code can't drive our OAuth
+ * refresh, so callers log and skip rather than connecting unauthenticated).
+ */
+export async function resolvedServerRuntime(
+  server: McpServerConfig,
+): Promise<ResolvedServerRuntime | null> {
+  if (!server.enabled) return null;
+
+  const pluginRoot = server.pluginId ? await pluginAbsoluteRoot(server.pluginId) : null;
+
+  if (server.transport === 'stdio') {
+    if (!server.command) return null;
+    return {
+      type: 'stdio',
+      command: expandPlaceholders(server.command, pluginRoot),
+      ...(server.args ? { args: expandArray(server.args, pluginRoot) } : {}),
+      ...(server.env ? { env: expandRecord(server.env, pluginRoot) } : {}),
+    };
+  }
+
+  if (server.transport === 'http') {
+    if (!server.url) return null;
+    const headers = expandRecord(decryptHeaders(server.headers), pluginRoot) ?? {};
+
+    if (server.oauthState) {
+      let token: string | undefined;
+      try {
+        token = readOAuthBlob(server).tokens?.access_token;
+      } catch {
+        // Treat decryption failure as no tokens.
+      }
+      if (!token) return null;
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    return {
+      type: 'http',
+      url: expandStrings(server.url, pluginRoot)!,
+      ...(Object.keys(headers).length ? { headers } : {}),
+    };
+  }
+
+  return null;
+}
+
 /**
  * Resolve a connected MCP Client for the given server id. Reuses a pooled
  * connection when available; otherwise resolves the McpServerConfig from
