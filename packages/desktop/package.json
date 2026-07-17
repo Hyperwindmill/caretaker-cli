@@ -19,7 +19,7 @@
     "dev": "pnpm run build && electron ."
   },
   "dependencies": {
-    "caretaker-cli": "workspace:*",
+    "@hyperwindmill/caretaker-cli": "workspace:*",
     "webview-ui": "workspace:*"
   },
   "devDependencies": {

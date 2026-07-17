@@ -52,9 +52,13 @@ import { startBackgroundScheduler, loadTaskRuns } from './scheduler.js';
 import { fsRouter } from './fs.js';
 import { activationStatus, resolvePlanningEnabled } from './scheduler/task_roles.js';
 
-// Resolve Webview static files path
+// Resolve Webview static files path.
+// Published npm package ships the assets under dist/webview (see scripts/copy-webview.mjs);
+// in the monorepo dev tree they live in the sibling webview-ui package.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const webviewDistPath = path.resolve(__dirname, '../../../../webview-ui/dist');
+const bundledWebviewDist = path.resolve(__dirname, '../../webview');
+const devWebviewDist = path.resolve(__dirname, '../../../../webview-ui/dist');
+const webviewDistPath = fs.existsSync(bundledWebviewDist) ? bundledWebviewDist : devWebviewDist;
 
 export interface ChatCallbacks {
   onChunk: (text: string) => void;

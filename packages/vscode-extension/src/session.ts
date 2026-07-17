@@ -9,11 +9,11 @@
 
 import * as path from 'node:path';
 
-import * as harness from 'caretaker-cli/harness';
-import * as session from 'caretaker-cli/session';
-import type { ConfirmDecision } from 'caretaker-cli/harness';
-import type { MessageRecord, SessionMetaRecord, ToolAttachmentRecord } from 'caretaker-cli/session';
-import type { AgentConfig, ProviderConfig } from 'caretaker-cli/types';
+import * as harness from '@hyperwindmill/caretaker-cli/harness';
+import * as session from '@hyperwindmill/caretaker-cli/session';
+import type { ConfirmDecision } from '@hyperwindmill/caretaker-cli/harness';
+import type { MessageRecord, SessionMetaRecord, ToolAttachmentRecord } from '@hyperwindmill/caretaker-cli/session';
+import type { AgentConfig, ProviderConfig } from '@hyperwindmill/caretaker-cli/types';
 
 /** Called by the controller when a tool that requires confirmation
  * (i.e. is in `agent.confirmTools`) is about to be invoked. The

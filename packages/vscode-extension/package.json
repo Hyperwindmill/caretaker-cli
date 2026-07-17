@@ -74,7 +74,7 @@
     "package": "vsce package --no-dependencies"
   },
   "dependencies": {
-    "caretaker-cli": "workspace:*",
+    "@hyperwindmill/caretaker-cli": "workspace:*",
     "webview-ui": "workspace:*",
     "marked": "^15.0.12",
     "react": "^19.2.6",

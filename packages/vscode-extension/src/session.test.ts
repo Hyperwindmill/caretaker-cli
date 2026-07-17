@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import type { AgentConfig, ProviderConfig } from 'caretaker-cli/types';
-import type { MessageRecord, SessionMetaRecord } from 'caretaker-cli/session';
+import type { AgentConfig, ProviderConfig } from '@hyperwindmill/caretaker-cli/types';
+import type { MessageRecord, SessionMetaRecord } from '@hyperwindmill/caretaker-cli/session';
 
 import { ChatSessionController, type ChatCallbacks, type ChatDeps } from './session.js';
 

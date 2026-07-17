@@ -11,7 +11,7 @@ import { randomBytes } from 'node:crypto';
 import { watch, existsSync, mkdirSync } from 'node:fs';
 import type { FSWatcher } from 'node:fs';
 
-import * as harness from 'caretaker-cli/harness';
+import * as harness from '@hyperwindmill/caretaker-cli/harness';
 import {
   loadAgents,
   loadConfig,
@@ -23,7 +23,7 @@ import {
   savePlugins,
   loadMcpServers,
   saveMcpServers,
-} from 'caretaker-cli/store';
+} from '@hyperwindmill/caretaker-cli/store';
 import {
   createSource,
   deleteSource,
@@ -31,7 +31,7 @@ import {
   refreshSource,
   listSources,
   listPlugins,
-} from 'caretaker-cli/plugins';
+} from '@hyperwindmill/caretaker-cli/plugins';
 import {
   createMcpServer,
   deleteMcpServer,
@@ -40,20 +40,20 @@ import {
   authenticateMcpServer,
   revokeMcpAuth,
   readOAuthBlob,
-} from 'caretaker-cli/mcp';
+} from '@hyperwindmill/caretaker-cli/mcp';
 
 import {
   listForAgent,
   readSession,
   deleteSession,
   computeContextUsage,
-} from 'caretaker-cli/session';
+} from '@hyperwindmill/caretaker-cli/session';
 import type {
   AgentConfig,
   ProviderConfig,
   PluginsFile,
   McpServerConfig,
-} from 'caretaker-cli/types';
+} from '@hyperwindmill/caretaker-cli/types';
 
 import {
   parseViewToHost,
