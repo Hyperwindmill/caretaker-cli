@@ -14,14 +14,14 @@
     "url": "https://github.com/Hyperwindmill/caretaker-cli/issues"
   },
   "scripts": {
-    "dev": "pnpm -F caretaker-cli dev",
+    "dev": "pnpm -F @hyperwindmill/caretaker-cli dev",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
     "format": "pnpm -r format",
     "format:check": "pnpm -r format:check",
-    "link:global": "pnpm -F caretaker-cli link:global",
+    "link:global": "pnpm -F @hyperwindmill/caretaker-cli link:global",
     "desktop:build": "pnpm -F caretaker-desktop build",
     "desktop:dev": "pnpm build && pnpm -F caretaker-desktop dev",
     "desktop:pack": "pnpm build && pnpm -F caretaker-desktop exec electron-builder --dir",
@@ -45,6 +45,7 @@
       "linkify-it": ">=5.0.1",
       "qs": ">=6.15.2",
       "js-yaml": ">=4.2.0",
+      "read-yaml-file>js-yaml": "^3.14.1",
       "esbuild": ">=0.28.1"
     }
   }
