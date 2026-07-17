@@ -129,10 +129,13 @@ claude-code:
   `mcp__task__*` — prompts and docs unchanged;
 - the per-cycle prompt (including replayed `plan`/`review` messages) is passed
   as the `-p` prompt text;
-- **planner (non-SDD):** `--permission-mode plan` (Claude Code's native
-  read-only mode) — equivalent of `filterPlannerTools`;
-- **planner (SDD):** allow markdown-only writes via
-  `--allowedTools "Write(**/*.md)" "Edit(**/*.md)"` with Bash in
+- **planner (non-SDD):** `--permission-mode manual` plus
+  `--allowedTools Read Glob Grep mcp__task` — in `-p` mode unanswered
+  permission prompts are denied, so everything outside the allowlist is
+  effectively blocked. (Not `--permission-mode plan`: plan mode could also
+  block MCP calls, and `mcp__task__task_submit_plan` must go through.)
+- **planner (SDD):** same, with `Write(**/*.md)`, `Edit(**/*.md)`,
+  `MultiEdit(**/*.md)` added to the allowlist and `Bash` in
   `--disallowedTools` — equivalent of the `.md`-only path guard;
 - **reviewer:** task tools omitted from the mcp-config — equivalent of the
   `mcp__task__*` strip.
