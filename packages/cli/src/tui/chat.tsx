@@ -403,7 +403,7 @@ function PartView({ part }: { part: AssistantPart }) {
     case 'text':
       return <Text>{part.text}</Text>;
     case 'thinking':
-      return <Text dimColor>· {part.text}</Text>;
+      return part.text.trim().length > 0 ? <Text dimColor>· {part.text}</Text> : null;
     case 'tool_use':
       return (
         <Text color="yellow">{`  → ${part.name}(${JSON.stringify(part.args).slice(0, 120)})`}</Text>

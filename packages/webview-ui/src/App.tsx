@@ -123,7 +123,7 @@ function reconstructChatItems(messages: ChatMessage[]): ChatItem[] {
         for (const part of msg.parts) {
           if (part.type === 'text') {
             items.push({ kind: 'assistant', text: part.text, streaming: false });
-          } else if (part.type === 'thinking') {
+          } else if (part.type === 'thinking' && part.text.trim().length > 0) {
             items.push({ kind: 'thinking', text: part.text });
           } else if (part.type === 'tool_use') {
             items.push({
