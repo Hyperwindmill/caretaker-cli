@@ -34,6 +34,14 @@ Any OpenAI-compatible provider works: hosted endpoints, internal gateways, local
 
 Secrets at rest are AES-256-GCM encrypted: plugin-source auth tokens, MCP server credentials, scheduler Telegram bot tokens. The encryption key is persisted with mode 0600.
 
+### Claude Code as a provider
+
+Instead of an OpenAI-compatible endpoint, a provider can be `type: 'claude-code'`: agents on it run through your local [Claude Code](https://claude.com/product/claude-code) CLI instead of an HTTP API. Requirements: Claude Code installed and already authenticated (`claude` on your `PATH`, or point `command` at the binary) — caretaker never handles Claude Code credentials itself, it just spawns `claude -p` and streams the result back into the chat, exactly like any other agent.
+
+Claude Code agents use Claude Code's own tools and its own permission modes instead of caretaker's tool picker and confirm gate — set a permission mode per agent, or let it fall back to whatever `~/.claude/settings.json` already has configured. Chat sessions resume the same underlying Claude Code session turn over turn, so context and history stay continuous. Scheduler and autonomous-task runs are unattended, so they always run with permissions bypassed; the autonomous task tools (`task_create`, `task_complete`, etc.) reach a claude-code agent through a small local HTTP bridge that **only the web server starts** — so autonomous tasks and the cron/Telegram scheduler need `caretaker-cli web` (or the desktop app) running, same as any other scheduled work.
+
+> Uses your local Claude Code session; Anthropic may bill programmatic use as extra usage.
+
 ### Agent identities, not "an agent"
 
 Caretaker is built around having _several_ agents that mean different things to you — a code agent rooted in one repo with a focused toolset, a writing agent in your notes folder with no shell, a research agent with read-only tools and web fetch.
