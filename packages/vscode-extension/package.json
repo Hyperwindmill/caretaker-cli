@@ -2,7 +2,7 @@
   "name": "caretaker-vscode",
   "displayName": "Caretaker",
   "description": "Caretaker agent harness — chat sidebar for VSCode.",
-  "version": "0.10.1",
+  "version": "0.11.0",
   "private": true,
   "publisher": "Hyperwindmill",
   "author": "Hyperwindmill <hyperwindmill@gmail.com>",
