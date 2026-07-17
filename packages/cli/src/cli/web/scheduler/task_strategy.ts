@@ -7,6 +7,9 @@ import { isGitRepo, ensureWorktree, agentDirIn, commitWip, finalizeDone } from '
 import { runDoneReview, MAX_REVIEW_ROUNDS } from './task_review.js';
 import type { AgentConfig, ProviderConfig, ProjectConfig } from '../../../types.js';
 import type { Tool } from '../../../harness/tools/types.js';
+import type { RunOptions } from '../../../harness/index.js';
+import { claudeCodeTaskExtras } from '../../../harness/claude_code_runner.js';
+import { issueBridgeToken, revokeBridgeToken, getTaskBridgeUrl } from '../mcp_bridge.js';
 import { resolveRoleAgent, resolveReviewEnabled, resolveSddEnabled, filterPlannerTools, TaskRole } from './task_roles.js';
 
 function buildPrompt(
@@ -258,32 +261,56 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
 
     console.log(`[task_heartbeat] Running agent "${agent.name}" on task #${task.id}...`);
 
-    await harness.run(
-      {
-        agent: effectiveAgent,
-        provider,
-        tools,
-        prompt,
-        history: historyRecords,
-        workingDir,
-      },
-      {
-        onChunk: (chunk) => {
-          buffer += chunk;
-          void updateLiveContent();
+    // claude-code agents get role-scoped permission/tool extras and, when a
+    // task bridge is running, an injected mcp__task server so the CLI can
+    // still call task_get_state/task_submit_plan/etc despite --strict-mcp-config.
+    const isClaudeCode = provider?.type === 'claude-code';
+    let bridgeToken: string | undefined;
+    let claudeCode: RunOptions['claudeCode'];
+    if (isClaudeCode) {
+      const bridgeUrl = getTaskBridgeUrl();
+      bridgeToken = bridgeUrl ? issueBridgeToken() : undefined;
+      claudeCode = claudeCodeTaskExtras({
+        planning,
+        sdd,
+        bridge: bridgeUrl && bridgeToken ? { url: bridgeUrl, token: bridgeToken } : undefined,
+      });
+      if (!bridgeUrl) {
+        console.warn('[tasks] claude-code agent without task bridge URL — task tools unavailable this run');
+      }
+    }
+
+    try {
+      await harness.run(
+        {
+          agent: effectiveAgent,
+          provider,
+          tools,
+          prompt,
+          history: historyRecords,
+          workingDir,
+          claudeCode,
         },
-        onToolCall: (id, name, args) => {
-          void addTaskMessage({
-            taskId: task.id,
-            role: 'assistant',
-            messageType: 'tool_call',
-            content: `${name} ${JSON.stringify(args)}`,
-            toolCallId: id,
-          });
+        {
+          onChunk: (chunk) => {
+            buffer += chunk;
+            void updateLiveContent();
+          },
+          onToolCall: (id, name, args) => {
+            void addTaskMessage({
+              taskId: task.id,
+              role: 'assistant',
+              messageType: 'tool_call',
+              content: `${name} ${JSON.stringify(args)}`,
+              toolCallId: id,
+            });
+          },
+          confirmTool: async () => 'once', // Autonomous execution auto-approves tools
         },
-        confirmTool: async () => 'once', // Autonomous execution auto-approves tools
-      },
-    );
+      );
+    } finally {
+      if (bridgeToken) revokeBridgeToken(bridgeToken);
+    }
 
     // Finalize live message
     if (liveMsgId !== null) {
