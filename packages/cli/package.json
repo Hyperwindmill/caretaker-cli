@@ -1,7 +1,6 @@
 {
-  "name": "caretaker-cli",
+  "name": "@hyperwindmill/caretaker-cli",
   "version": "0.10.1",
-  "private": true,
   "type": "module",
   "description": "Caretaker — in-process agent harness, TUI, file-based state.",
   "license": "SEE LICENSE IN LICENSE",
@@ -25,6 +24,15 @@
     "mcp",
     "openai",
     "byok"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist"
   ],
   "bin": {
     "caretaker-cli": "dist/index.js"
@@ -61,7 +69,7 @@
   },
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json && node scripts/copy-webview.mjs",
     "start": "node dist/index.js",
     "link:global": "pnpm run build && pnpm link --global",
     "typecheck": "tsc --noEmit",
@@ -77,6 +85,7 @@
     "@types/react": "^19.2.14",
     "@types/turndown": "^5.0.6",
     "@types/ws": "^8.18.1",
+    "caretaker-types": "workspace:*",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react": "^7.37.5",
@@ -85,13 +94,13 @@
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.59.2",
+    "webview-ui": "workspace:*",
     "zod": "^4.4.3"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.4",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@morphql/store": "^0.1.45",
-    "caretaker-types": "workspace:*",
     "commander": "^14.0.3",
     "exceljs": "^4.4.0",
     "fast-glob": "^3.3.3",
@@ -105,7 +114,6 @@
     "react": "^19.2.6",
     "turndown": "^7.2.4",
     "unpdf": "^1.6.2",
-    "webview-ui": "workspace:*",
     "ws": "^8.21.0",
     "yaml": "^2.8.4"
   }

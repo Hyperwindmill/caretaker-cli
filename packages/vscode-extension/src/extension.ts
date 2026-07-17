@@ -6,11 +6,11 @@
 
 import * as vscode from 'vscode';
 
-import * as harness from 'caretaker-cli/harness';
+import * as harness from '@hyperwindmill/caretaker-cli/harness';
 
 import { resolveCaretakerHome } from './config.js';
 import { SidebarWebviewProvider } from './sidebar.js';
-import { initModelLimits } from 'caretaker-cli/session';
+import { initModelLimits } from '@hyperwindmill/caretaker-cli/session';
 
 export function activate(context: vscode.ExtensionContext): void {
   // Initialize the model limits fetcher from models.dev

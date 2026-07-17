@@ -37,9 +37,6 @@ importers:
       '@morphql/store':
         specifier: ^0.1.45
         version: 0.1.45
-      caretaker-types:
-        specifier: workspace:*
-        version: link:../types
       commander:
         specifier: ^14.0.3
         version: 14.0.3
@@ -79,9 +76,6 @@ importers:
       unpdf:
         specifier: ^1.6.2
         version: 1.6.2
-      webview-ui:
-        specifier: workspace:*
-        version: link:../webview-ui
       ws:
         specifier: ^8.21.0
         version: 8.21.0
@@ -104,6 +98,9 @@ importers:
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
+      caretaker-types:
+        specifier: workspace:*
+        version: link:../types
       eslint:
         specifier: ^9.39.4
         version: 9.39.4(jiti@2.7.0)
@@ -128,13 +125,16 @@ importers:
       typescript-eslint:
         specifier: ^8.59.2
         version: 8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3)
+      webview-ui:
+        specifier: workspace:*
+        version: link:../webview-ui
       zod:
         specifier: ^4.4.3
         version: 4.4.3
 
   packages/desktop:
     dependencies:
-      caretaker-cli:
+      '@hyperwindmill/caretaker-cli':
         specifier: workspace:*
         version: link:../cli
       webview-ui:
@@ -159,7 +159,7 @@ importers:
 
   packages/vscode-extension:
     dependencies:
-      caretaker-cli:
+      '@hyperwindmill/caretaker-cli':
         specifier: workspace:*
         version: link:../cli
       marked:

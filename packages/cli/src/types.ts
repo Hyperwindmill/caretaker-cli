@@ -1,1 +1,1 @@
-export * from 'caretaker-types';
+export type * from 'caretaker-types';
