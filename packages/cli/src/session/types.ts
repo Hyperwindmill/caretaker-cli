@@ -29,6 +29,9 @@ export interface SessionMetaRecord {
   agentId: string;
   title: string;
   createdAt: string;
+  /** Claude Code CLI session id for claude-code runner agents; the next
+   *  turn resumes it via `claude -p --resume <id>`. */
+  claudeSessionId?: string;
 }
 
 export type Role = 'user' | 'assistant' | 'tool';
