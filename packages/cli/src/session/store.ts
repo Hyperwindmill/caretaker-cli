@@ -254,6 +254,18 @@ export async function updateTitle(
   return newMeta;
 }
 
+/** Persist the Claude Code session id by appending a fresh meta line
+ *  (readSession picks the latest meta; listForAgent keeps using the first). */
+export async function updateClaudeSessionId(
+  meta: Pick<SessionMetaRecord, 'agentId' | 'id'>,
+  claudeSessionId: string,
+): Promise<void> {
+  const current = await readSession(meta.agentId, meta.id);
+  const record: SessionMetaRecord = { ...current.meta, claudeSessionId };
+  const path = sessionPath(meta.agentId, meta.id);
+  await appendFile(path, serialize(record), { mode: 0o600 });
+}
+
 export async function deleteSession(agentId: string, sessionId: string): Promise<void> {
   const path = sessionPath(agentId, sessionId);
   await rm(path, { force: true });
