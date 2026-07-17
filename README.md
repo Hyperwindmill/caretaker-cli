@@ -2,6 +2,11 @@
   <img src="packages/cli/assets/caretaker.png" alt="caretaker" width="220" />
 </p>
 
+<p align="center">
+  <a href="https://www.npmjs.com/package/@hyperwindmill/caretaker-cli"><img src="https://img.shields.io/npm/v/@hyperwindmill/caretaker-cli?color=1FA3E5&label=npm" alt="npm version" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-FSL--1.1--MIT-blue" alt="license" /></a>
+</p>
+
 # caretaker
 
 Yet another agent harness. Yes — but built the way I want one to be.
@@ -110,26 +115,43 @@ The web server boots an in-process background scheduler that ticks every 15 s. I
 
 Each task gets its own JSONL execution log under `~/.caretaker/scheduler-logs/`; the web GUI's Execution Console shows past runs with full message rendering. Remember: the scheduler only runs where the web server runs (`caretaker-cli web` or the desktop app), never under the bare TUI or VSCode.
 
-## Quick start
+## Install
+
+```bash
+npm install -g @hyperwindmill/caretaker-cli
+# or: pnpm add -g @hyperwindmill/caretaker-cli
+```
+
+Then run it:
+
+```bash
+caretaker-cli                          # launch the TUI
+caretaker-cli web                      # local web GUI (http://127.0.0.1:3000)
+caretaker-cli run "…" --agent <name>   # headless one-shot dispatch
+```
+
+Requires Node ≥ 20. Electron desktop and VSCode sidebar builds are attached to each [GitHub Release](https://github.com/Hyperwindmill/caretaker-cli/releases).
+
+On first run: pick **Providers → New**, paste your base URL and key, save. Then **Agents → New**, choose a model, name the agent, set a working directory, pick your tools, write a system prompt, and start chatting.
+
+## From source (development)
 
 ```bash
 pnpm install
 pnpm -F @hyperwindmill/caretaker-cli dev                          # launch the TUI
 pnpm -F @hyperwindmill/caretaker-cli dev web                      # local web GUI (http://127.0.0.1:3000)
-pnpm desktop:dev                                   # Electron desktop app
+pnpm desktop:dev                                                 # Electron desktop app
 CARETAKER_HOME=/tmp/ct pnpm -F @hyperwindmill/caretaker-cli dev   # isolated dev environment
 ```
 
 ```bash
-pnpm build                       # build every workspace package
-pnpm test                        # run every package's tests
-pnpm -F @hyperwindmill/caretaker-cli test       # node test runner for the cli alone
-pnpm -F @hyperwindmill/caretaker-cli typecheck  # tsc --noEmit
+pnpm build                                        # build every workspace package
+pnpm test                                         # run every package's tests
+pnpm -F @hyperwindmill/caretaker-cli test         # node test runner for the cli alone
+pnpm -F @hyperwindmill/caretaker-cli typecheck    # tsc --noEmit
 ```
 
 Package manager: **pnpm** (≥10). The repo is a pnpm workspaces monorepo; `npm install` / `package-lock.json` are not supported.
-
-On first run: pick **Providers → New**, paste your base URL and key, save. Then **Agents → New**, choose a model, name the agent, set a working directory, pick your tools, write a system prompt, and start chatting.
 
 ## Built-in tools
 
