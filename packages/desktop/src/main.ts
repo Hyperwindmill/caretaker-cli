@@ -85,7 +85,7 @@ if (!gotTheLock) {
     const base64 = "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAABqklEQVR4nGNkIBHIaVr/xyf/6PpRRlLMI0oxIUspcQwTrSwnVi9OF1JiMTaAKzSwhgC1LcdnJoYDaGE5PrOZCCmgtSMIJkJaA7gD6OF7bHYx0dtydEewEKM4MtSPITYigOHL128M3759Z6hq6GZ49uIVg7uLHUNSbBgDAwMDg6mRHsPpc5cYGBgYGBYuXcuwbdd+ohzCiOwabMDWypQhOzWWISGzlOHHj58MDrYWDOlJkQyRifko6q6c3MGgY+5BlKUw8Oj6UUYmQsGflhjJ0DlhJsOPHz8ZGBgYGA4cPsHw8NFTBhYWogIPL5DTtP5P0BQ1FUWGq9dvoYhV1HdRbDkMEMyGzMzMVLOMLAfce/CIQVtDFc5nZGRk6GuvoZ8DFi9fz1CSn8bAxsbKwMDAwODn5QxnUwMQTAObt+9lUJCXYdi6Zh7Du3cfGN68e89Q29xLNQcwDkQhhAwGvi4gtQ1HTfDo+lHGgQ+BQeGAgYgGmJ1M6AL0tBzFAQMFUBxAj1BAtwMjBGjpCGxmY40CWjgCl5kELaK0qCbkGYKJkJLQIEYvyYZTu3sOAH6uloRBx5zYAAAAAElFTkSuQmCC";
     const fallbackPath = path.join(DATA_DIR, "tray-icon.png");
     try {
-      fs.writeFileSync(fallbackPath, Buffer.from(base64, "base64"));
+      fs.writeFileSync(fallbackPath, new Uint8Array(Buffer.from(base64, "base64")));
       const fallbackImg = nativeImage.createFromBuffer(fs.readFileSync(fallbackPath));
       return fallbackImg;
     } catch {
