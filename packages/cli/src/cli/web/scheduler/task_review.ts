@@ -1,6 +1,7 @@
 import * as harness from '../../../harness/index.js';
 import type { AgentConfig, ProviderConfig } from '../../../types.js';
 import type { Tool } from '../../../harness/tools/types.js';
+import { CLAUDE_CODE_MAX_RUN_MS } from './task_roles.js';
 
 export const MAX_REVIEW_ROUNDS = 3;
 
@@ -55,21 +56,36 @@ export async function runDoneReview(opts: {
   // claude-code reviewer: bypass permissions like the native path, but no task
   // bridge — parity with the mcp__task__ strip above (the agent's own
   // mcpServers still pass through inside the runner).
-  const claudeCode =
-    opts.provider.type === 'claude-code' ? { permissionMode: 'bypassPermissions' as const } : undefined;
-  const result = await harness.run(
-    {
-      agent: { ...opts.agent, permissionMode: 'bypassPermissions' }, // unattended: mirror the auto-approve confirm gate
-      provider: opts.provider,
-      tools: reviewTools,
-      prompt: reviewPrompt(opts.objective, opts.branch, opts.round),
-      history: [],
-      workingDir: opts.workingDir,
-      ...(claudeCode ? { claudeCode } : {}),
-    },
-    {
-      confirmTool: async () => 'once', // unattended
-    },
-  );
-  return { verdict: parseReviewVerdict(result.text), text: result.text };
+  const isClaudeCode = opts.provider.type === 'claude-code';
+  const claudeCode = isClaudeCode ? { permissionMode: 'bypassPermissions' as const } : undefined;
+  // Same wall-clock backstop as the task heartbeat: the Claude Code CLI has
+  // no --max-turns equivalent, so a runaway review pass would otherwise stall
+  // the reviewing gate indefinitely.
+  let ccTimer: NodeJS.Timeout | undefined;
+  let signal: AbortSignal | undefined;
+  if (isClaudeCode) {
+    const ccController = new AbortController();
+    ccTimer = setTimeout(() => ccController.abort(), CLAUDE_CODE_MAX_RUN_MS);
+    signal = ccController.signal;
+  }
+  try {
+    const result = await harness.run(
+      {
+        agent: { ...opts.agent, permissionMode: 'bypassPermissions' }, // unattended: mirror the auto-approve confirm gate
+        provider: opts.provider,
+        tools: reviewTools,
+        prompt: reviewPrompt(opts.objective, opts.branch, opts.round),
+        history: [],
+        workingDir: opts.workingDir,
+        signal,
+        ...(claudeCode ? { claudeCode } : {}),
+      },
+      {
+        confirmTool: async () => 'once', // unattended
+      },
+    );
+    return { verdict: parseReviewVerdict(result.text), text: result.text };
+  } finally {
+    if (ccTimer) clearTimeout(ccTimer);
+  }
 }

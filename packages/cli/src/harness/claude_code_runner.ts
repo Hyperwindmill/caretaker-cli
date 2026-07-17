@@ -156,9 +156,29 @@ function addUsage(into: AssistantUsage, u: AssistantUsage): void {
   if (u.cacheWrite !== undefined) into.cacheWrite = (into.cacheWrite ?? 0) + u.cacheWrite;
 }
 
-export async function runClaudeCode(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunResult> {
-  const { agent, provider } = opts;
-  const workingDir = opts.workingDir ?? process.cwd();
+type ResultEvent = { subtype: string; text: string; usage?: AssistantUsage; isError: boolean };
+
+type AttemptResult = {
+  exitCode: number | null;
+  aborted: boolean;
+  text: string;
+  toolCalls: number;
+  cumulative: AssistantUsage;
+  claudeSessionId?: string;
+  resultEvent?: ResultEvent;
+  stderrTail: string;
+};
+
+/** One spawn-and-read cycle of the Claude Code CLI. Does not throw on a
+ *  non-zero exit — the caller (runClaudeCode) decides whether to retry. */
+async function attemptRun(
+  command: string,
+  args: string[],
+  prompt: string,
+  workingDir: string,
+  signal: AbortSignal | undefined,
+  cb: RunCallbacks,
+): Promise<AttemptResult> {
   const safeEmit = async (fn: (() => void | Promise<void>) | undefined) => {
     try {
       await fn?.();
@@ -166,6 +186,126 @@ export async function runClaudeCode(opts: RunOptions, cb: RunCallbacks = {}): Pr
       console.warn('[claude-code] callback error:', err);
     }
   };
+
+  const cumulative = zeroUsage();
+  let text = '';
+  let toolCalls = 0;
+  let claudeSessionId: string | undefined;
+  let resultEvent: ResultEvent | undefined;
+  let aborted = false;
+  let stderrTail = '';
+
+  // Assistant events arrive one block per event, sharing the message id;
+  // merge them and flush one MessageRecord per anthropic message.
+  let pending: { id: string; parts: AssistantPart[]; usage?: AssistantUsage } | null = null;
+  const flushPending = async () => {
+    if (!pending) return;
+    const p = pending;
+    pending = null;
+    for (const part of p.parts) if (part.type === 'text') text += part.text;
+    if (p.usage) {
+      addUsage(cumulative, p.usage);
+      await safeEmit(() => cb.onUsage?.(p.usage!));
+    }
+    await safeEmit(() => cb.onMessage?.(assistantMessage(p.parts, p.usage)));
+  };
+
+  const child = spawnImpl(command, args, {
+    cwd: workingDir,
+    env: process.env,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+
+  const onAbort = () => {
+    aborted = true;
+    child.kill('SIGTERM');
+  };
+  signal?.addEventListener('abort', onAbort, { once: true });
+
+  child.stderr?.on('data', (d: Buffer) => {
+    stderrTail = (stderrTail + String(d)).slice(-4096);
+  });
+
+  const spawnError: Promise<never> = new Promise((_, reject) =>
+    child.on('error', (err) => {
+      let message = `claude-code runner failed to start "${command}": ${err.message}`;
+      if (process.platform === 'win32') {
+        message +=
+          ' On Windows, point the provider "command" at the Claude Code executable (e.g. claude.exe) — npm .cmd shims cannot be spawned directly.';
+      }
+      reject(new Error(message));
+    }),
+  );
+  const closed: Promise<number | null> = new Promise((resolve) =>
+    child.on('close', (code) => resolve(code)),
+  );
+
+  child.stdin?.write(prompt);
+  child.stdin?.end();
+
+  const rl = createInterface({ input: child.stdout! });
+  const reading = (async () => {
+    for await (const line of rl) {
+      for (const evt of parseClaudeStreamLine(line)) {
+        switch (evt.kind) {
+          case 'init':
+            claudeSessionId = evt.sessionId;
+            break;
+          case 'text':
+            await safeEmit(() => cb.onChunk?.(evt.text));
+            break;
+          case 'thinking':
+            await safeEmit(() => cb.onThinking?.(evt.text));
+            break;
+          case 'assistant_message': {
+            if (pending && pending.id !== evt.id) await flushPending();
+            if (!pending) pending = { id: evt.id, parts: [], usage: undefined };
+            pending.parts.push(...evt.parts);
+            if (evt.usage) pending.usage = evt.usage; // latest event wins per message
+            for (const part of evt.parts) {
+              if (part.type === 'tool_use') {
+                toolCalls += 1;
+                await safeEmit(() => cb.onToolCall?.(part.id, part.name, part.args));
+              }
+            }
+            break;
+          }
+          case 'tool_result':
+            await flushPending();
+            await safeEmit(() => cb.onToolResult?.(evt.toolUseId, evt.content));
+            await safeEmit(() => cb.onMessage?.(toolMessage(evt.toolUseId, evt.content)));
+            break;
+          case 'result':
+            await flushPending();
+            resultEvent = evt;
+            break;
+        }
+      }
+    }
+  })();
+
+  const exitCode = await Promise.race([
+    Promise.all([reading, closed]).then(([, c]) => c),
+    spawnError,
+  ]);
+  await flushPending();
+  signal?.removeEventListener('abort', onAbort);
+
+  return {
+    exitCode,
+    aborted,
+    text,
+    toolCalls,
+    cumulative,
+    claudeSessionId,
+    resultEvent,
+    stderrTail,
+  };
+}
+
+export async function runClaudeCode(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunResult> {
+  const { agent, provider } = opts;
+  const workingDir = opts.workingDir ?? process.cwd();
 
   // 1. Resume id from session meta (chat surfaces pass sessionId).
   let resumeId: string | undefined;
@@ -197,121 +337,49 @@ export async function runClaudeCode(opts: RunOptions, cb: RunCallbacks = {}): Pr
     detectClaudeDefaultPermissionMode() ??
     'acceptEdits';
 
-  const args = buildClaudeArgs({
-    model: agent.model,
-    permissionMode,
-    appendSystemPrompt: appendSystemPrompt || undefined,
-    allowedTools: opts.claudeCode?.allowedTools,
-    disallowedTools: opts.claudeCode?.disallowedTools,
-    mcpConfigPath: mcp?.configPath,
-    resumeId,
-    persistSession: Boolean(opts.sessionId),
-  });
-  // History only folds into the prompt when there is no CC session to resume.
-  const prompt = resumeId ? opts.prompt : foldHistory(opts.history, opts.prompt);
   const command = provider.command || 'claude';
 
-  const cumulative = zeroUsage();
-  let text = '';
-  let toolCalls = 0;
-  let claudeSessionId: string | undefined;
-  let resultEvent:
-    | { subtype: string; text: string; usage?: AssistantUsage; isError: boolean }
-    | undefined;
-  let aborted = false;
-  let stderrTail = '';
-
-  // Assistant events arrive one block per event, sharing the message id;
-  // merge them and flush one MessageRecord per anthropic message.
-  let pending: { id: string; parts: AssistantPart[]; usage?: AssistantUsage } | null = null;
-  const flushPending = async () => {
-    if (!pending) return;
-    const p = pending;
-    pending = null;
-    for (const part of p.parts) if (part.type === 'text') text += part.text;
-    if (p.usage) {
-      addUsage(cumulative, p.usage);
-      await safeEmit(() => cb.onUsage?.(p.usage!));
-    }
-    await safeEmit(() => cb.onMessage?.(assistantMessage(p.parts, p.usage)));
+  const runAttempt = (resume: string | undefined) => {
+    const args = buildClaudeArgs({
+      model: agent.model,
+      permissionMode,
+      appendSystemPrompt: appendSystemPrompt || undefined,
+      allowedTools: opts.claudeCode?.allowedTools,
+      disallowedTools: opts.claudeCode?.disallowedTools,
+      mcpConfigPath: mcp?.configPath,
+      resumeId: resume,
+      persistSession: Boolean(opts.sessionId),
+    });
+    // History only folds into the prompt when there is no CC session to resume.
+    const prompt = resume ? opts.prompt : foldHistory(opts.history, opts.prompt);
+    return attemptRun(command, args, prompt, workingDir, opts.signal, cb);
   };
 
   try {
-    const child = spawnImpl(command, args, {
-      cwd: workingDir,
-      env: process.env,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
+    let attempt = await runAttempt(resumeId);
 
-    const onAbort = () => {
-      aborted = true;
-      child.kill('SIGTERM');
-    };
-    opts.signal?.addEventListener('abort', onAbort, { once: true });
+    // A dead/GC'd --resume session id would otherwise wedge every future turn
+    // (the CLI exits non-zero forever). Retry exactly once, folding history
+    // into the prompt like a brand-new session; the post-run logic below then
+    // persists whatever session id this attempt issues, overwriting the stale
+    // one. If the retry also fails, we fall through to the normal error path.
+    if (!attempt.aborted && attempt.exitCode !== 0 && resumeId) {
+      console.warn(
+        `[claude-code] resume with session "${resumeId}" failed (exit ${attempt.exitCode}); retrying once without --resume`,
+      );
+      attempt = await runAttempt(undefined);
+    }
 
-    child.stderr?.on('data', (d: Buffer) => {
-      stderrTail = (stderrTail + String(d)).slice(-4096);
-    });
-
-    const spawnError: Promise<never> = new Promise((_, reject) =>
-      child.on('error', (err) =>
-        reject(new Error(`claude-code runner failed to start "${command}": ${err.message}`)),
-      ),
-    );
-    const closed: Promise<number | null> = new Promise((resolve) =>
-      child.on('close', (code) => resolve(code)),
-    );
-
-    child.stdin?.write(prompt);
-    child.stdin?.end();
-
-    const rl = createInterface({ input: child.stdout! });
-    const reading = (async () => {
-      for await (const line of rl) {
-        for (const evt of parseClaudeStreamLine(line)) {
-          switch (evt.kind) {
-            case 'init':
-              claudeSessionId = evt.sessionId;
-              break;
-            case 'text':
-              await safeEmit(() => cb.onChunk?.(evt.text));
-              break;
-            case 'thinking':
-              await safeEmit(() => cb.onThinking?.(evt.text));
-              break;
-            case 'assistant_message': {
-              if (pending && pending.id !== evt.id) await flushPending();
-              if (!pending) pending = { id: evt.id, parts: [], usage: undefined };
-              pending.parts.push(...evt.parts);
-              if (evt.usage) pending.usage = evt.usage; // latest event wins per message
-              for (const part of evt.parts) {
-                if (part.type === 'tool_use') {
-                  toolCalls += 1;
-                  await safeEmit(() => cb.onToolCall?.(part.id, part.name, part.args));
-                }
-              }
-              break;
-            }
-            case 'tool_result':
-              await flushPending();
-              await safeEmit(() => cb.onToolResult?.(evt.toolUseId, evt.content));
-              await safeEmit(() => cb.onMessage?.(toolMessage(evt.toolUseId, evt.content)));
-              break;
-            case 'result':
-              await flushPending();
-              resultEvent = evt;
-              break;
-          }
-        }
-      }
-    })();
-
-    const exitCode = await Promise.race([
-      Promise.all([reading, closed]).then(([, c]) => c),
-      spawnError,
-    ]);
-    await flushPending();
-    opts.signal?.removeEventListener('abort', onAbort);
+    const {
+      exitCode,
+      aborted,
+      text,
+      toolCalls,
+      cumulative,
+      claudeSessionId,
+      resultEvent,
+      stderrTail,
+    } = attempt;
 
     if (aborted) return { text, toolCalls, usage: cumulative, stop: 'aborted' };
     if (exitCode !== 0) {

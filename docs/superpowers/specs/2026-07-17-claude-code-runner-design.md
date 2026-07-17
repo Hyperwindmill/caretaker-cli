@@ -34,7 +34,9 @@ no migration needed). A `claude-code` provider has:
 - a provider-form note: *"Uses your local Claude Code session; Anthropic may
   bill programmatic use as extra usage."*
 
-Provider health check: `<command> --version`.
+There is no provider health-check facility for any provider type, claude-code
+included: a missing or broken binary surfaces as a first-turn error in chat
+rather than an upfront check.
 
 Agents select it like any provider; `AgentConfig.model` is passed through as
 `--model` (alias or full model id).
@@ -68,13 +70,18 @@ claude -p <prompt>
 with `cwd = workingDir` (worktree path for task runs).
 
 - **Session continuity:** the Claude Code `session_id` from the stream-json
-  init event is persisted in the caretaker session JSONL metadata; subsequent
-  turns pass `--resume <id>`. Caretaker's JSONL remains the display record;
-  Claude Code owns the canonical conversation state.
+  init event is persisted in the caretaker session JSONL metadata once the
+  run finishes and issued a new id (including error results — a resumable CC
+  session id is still valid even if that particular turn errored, and a stale
+  `--resume <id>` is retried once without `--resume` before failing the turn);
+  subsequent turns pass `--resume <id>`. Caretaker's JSONL remains the display
+  record; Claude Code owns the canonical conversation state.
 - **Event mapping:** assistant text deltas → `onContent`; thinking →
   `onThinking`; `tool_use` blocks → `onToolCall` (rendered collapsed like
   native tool use); `tool_result` → `onToolResult`; the final `result` event →
-  usage (input/output/cache tokens) plus `total_cost_usd`, surfaced in the UI.
+  usage (input/output/cache tokens). `total_cost_usd` is parsed into
+  `costUsd` but not yet surfaced anywhere (out of scope for now; a future
+  addition).
 - **Abort:** kill the child process.
 - **Flags verified against the installed CLI** (`--help`, 2026-07-17). The
   current CLI has no `--max-turns`; `AgentConfig.maxTurns` is ignored (and

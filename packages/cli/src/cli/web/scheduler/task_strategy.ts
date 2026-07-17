@@ -10,7 +10,14 @@ import type { Tool } from '../../../harness/tools/types.js';
 import type { RunOptions } from '../../../harness/index.js';
 import { claudeCodeTaskExtras } from '../../../harness/claude_code_runner.js';
 import { issueBridgeToken, revokeBridgeToken, getTaskBridgeUrl } from '../mcp_bridge.js';
-import { resolveRoleAgent, resolveReviewEnabled, resolveSddEnabled, filterPlannerTools, TaskRole } from './task_roles.js';
+import {
+  resolveRoleAgent,
+  resolveReviewEnabled,
+  resolveSddEnabled,
+  filterPlannerTools,
+  TaskRole,
+  CLAUDE_CODE_MAX_RUN_MS,
+} from './task_roles.js';
 
 function buildPrompt(
   systemPrompt: string,
@@ -267,6 +274,11 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
     const isClaudeCode = provider?.type === 'claude-code';
     let bridgeToken: string | undefined;
     let claudeCode: RunOptions['claudeCode'];
+    // Claude Code runs have no native turn cap (the CLI has no --max-turns),
+    // so bound them with a wall-clock timeout instead; native runs stay
+    // governed by maxTurns as usual.
+    let ccTimer: NodeJS.Timeout | undefined;
+    let signal: AbortSignal | undefined;
     if (isClaudeCode) {
       const bridgeUrl = getTaskBridgeUrl();
       bridgeToken = bridgeUrl ? issueBridgeToken() : undefined;
@@ -278,6 +290,9 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
       if (!bridgeUrl) {
         console.warn('[tasks] claude-code agent without task bridge URL — task tools unavailable this run');
       }
+      const ccController = new AbortController();
+      ccTimer = setTimeout(() => ccController.abort(), CLAUDE_CODE_MAX_RUN_MS);
+      signal = ccController.signal;
     }
 
     try {
@@ -290,6 +305,7 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
           history: historyRecords,
           workingDir,
           claudeCode,
+          signal,
         },
         {
           onChunk: (chunk) => {
@@ -310,6 +326,7 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
       );
     } finally {
       if (bridgeToken) revokeBridgeToken(bridgeToken);
+      if (ccTimer) clearTimeout(ccTimer);
     }
 
     // Finalize live message
