@@ -11,6 +11,7 @@ import * as harness from '../../harness/index.js';
 import { getDb, Task, getTaskById, saveTask, createTask, addTaskMessage, deleteTask, runQuery } from '../../store/db.js';
 import { discardWorktree } from '../../lib/task_git.js';
 import { runningTasks } from './scheduler/locks.js';
+import { registerTaskBridge, setTaskBridgeUrl } from './mcp_bridge.js';
 import {
   loadAgents,
   loadConfig,
@@ -186,6 +187,7 @@ export async function startServer(port: number, host: string): Promise<void> {
   const app = new Hono();
 
   app.route('/api/fs', fsRouter);
+  registerTaskBridge(app);
 
   // Pure-Node static serving with absolute path validation and fallback
   app.get('/', (c) => {
@@ -598,6 +600,8 @@ export async function startServer(port: number, host: string): Promise<void> {
     port,
     hostname: host,
   });
+
+  setTaskBridgeUrl(`http://127.0.0.1:${port}/api/mcp/task`);
 
   const wss = new WebSocketServer({ noServer: true });
 
