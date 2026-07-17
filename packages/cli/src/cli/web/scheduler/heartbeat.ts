@@ -117,7 +117,7 @@ export async function executeTaskRun(task: ScheduledTaskConfig): Promise<void> {
     // Invoke headless loop run
     await harness.run(
       {
-        agent,
+        agent: { ...agent, permissionMode: 'bypassPermissions' }, // unattended: mirror the auto-approve confirm gate
         provider,
         tools,
         prompt: effectivePrompt,

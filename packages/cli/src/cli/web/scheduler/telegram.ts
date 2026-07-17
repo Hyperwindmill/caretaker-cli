@@ -291,7 +291,7 @@ async function executeTelegramTaskRun(
 
     await harness.run(
       {
-        agent,
+        agent: { ...agent, permissionMode: 'bypassPermissions' }, // unattended: mirror the auto-approve confirm gate
         provider,
         tools,
         prompt: effectivePrompt,

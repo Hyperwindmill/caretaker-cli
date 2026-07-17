@@ -180,7 +180,11 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
     if (!baseTools.includes('mcp__task__*')) {
       baseTools.push('mcp__task__*');
     }
-    const effectiveAgent = { ...agent, allowedTools: baseTools };
+    const effectiveAgent = {
+      ...agent,
+      allowedTools: baseTools,
+      permissionMode: 'bypassPermissions', // unattended: mirror the auto-approve confirm gate
+    };
 
     // Resolve tools
     let tools = await harness.resolveAgentTools(effectiveAgent, harness.tools);

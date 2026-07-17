@@ -54,7 +54,7 @@ export async function runDoneReview(opts: {
   const reviewTools = opts.tools.filter((t) => !t.name.startsWith('mcp__task__'));
   const result = await harness.run(
     {
-      agent: opts.agent,
+      agent: { ...opts.agent, permissionMode: 'bypassPermissions' }, // unattended: mirror the auto-approve confirm gate
       provider: opts.provider,
       tools: reviewTools,
       prompt: reviewPrompt(opts.objective, opts.branch, opts.round),
