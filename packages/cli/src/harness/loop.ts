@@ -89,6 +89,9 @@ export interface RunOptions {
   sessionId?: string;
   /** Attachments staged with the user's prompt. */
   promptAttachments?: ToolAttachmentRecord[];
+  /** claude-code runner extras (ignored by the native loop): permission
+   *  mode override, tool allow/deny rules, extra per-run MCP servers. */
+  claudeCode?: import('./claude_code_runner.js').ClaudeCodeRunExtras;
 }
 
 export interface RunResult {
