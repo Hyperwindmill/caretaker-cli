@@ -42,11 +42,16 @@ Agents select it like any provider; `AgentConfig.model` is passed through as
 ## 2. Runner module
 
 New `packages/cli/src/harness/claude_code_runner.ts`, a peer of `loop.ts`. The
-harness entry point branches on the resolved provider's `type`, keeping the
-same signature and the same callbacks (`onContent`, `onThinking`,
-`onToolCall`/`onToolResult`, usage, session persistence). No surface changes:
-TUI, web, VSCode, headless `run`, scheduler and tasks all flow through the same
-entry point.
+abstraction is the existing `run(RunOptions, RunCallbacks): Promise<RunResult>`
+contract — the runner implements it a second time; `loop.ts` stays untouched
+and the dispatch is a single `provider.type === 'claude-code'` check at the
+`run()` entry. No runner registry, no capability flags — with two runners
+that's speculative; a third runner can promote the branch to a lookup later.
+Callers keep passing `tools`/`provider`/`agent` as today (the claude-code
+runner ignores the resolved toolset). No surface changes: TUI, web, VSCode,
+headless `run`, scheduler and tasks all flow through the same entry point.
+Role-specific flag assembly for task runs (planner/reviewer) is encapsulated
+in the runner module so the heartbeat keeps a single branch.
 
 Per turn, spawn one process:
 
