@@ -12,9 +12,9 @@ A terminal-native home for your agents that you can also drive from a local web 
 
 The harness, agents store, plugins, MCP servers, skills, slash commands and confirm gate are shared by every entry point. **The web server is the functional superset** — some features only ship there, and both the desktop app and the web GUI run on top of it.
 
-- **Web server (`caretaker-cli web`)** — `pnpm -F caretaker-cli dev web` (or `caretaker-cli web --port 3000`) starts a local Hono + WebSocket server that serves the webview as a desktop-grade two-column web app. It is the only surface that boots the **scheduler** (see below), and it hosts the **Scheduler** settings tab and the **Execution Console**.
+- **Web server (`caretaker-cli web`)** — `pnpm -F @hyperwindmill/caretaker-cli dev web` (or `caretaker-cli web --port 3000`) starts a local Hono + WebSocket server that serves the webview as a desktop-grade two-column web app. It is the only surface that boots the **scheduler** (see below), and it hosts the **Scheduler** settings tab and the **Execution Console**.
 - **Desktop (`caretaker-desktop`)** — an Electron shell in [`packages/desktop`](packages/desktop). It is **not** a separate GUI: the main process picks a free port, forks the CLI's own web server (`caretaker-cli web`) as a child process, and frames `http://127.0.0.1:<port>` in a `BrowserWindow` with a system tray and single-instance lock. Because it runs the full web server, **the scheduler runs under the desktop app too**. Build/run with `pnpm desktop:dev`, package installers with `pnpm desktop:dist` (electron-builder targets Windows/macOS/Linux).
-- **TUI** — `pnpm -F caretaker-cli dev` launches the Ink terminal app. Manage providers, agents, plugins, MCP servers, and chat. It does **not** run the scheduler and does not expose the scheduler UI.
+- **TUI** — `pnpm -F @hyperwindmill/caretaker-cli dev` launches the Ink terminal app. Manage providers, agents, plugins, MCP servers, and chat. It does **not** run the scheduler and does not expose the scheduler UI.
 - **VSCode sidebar** — [`packages/vscode-extension`](packages/vscode-extension) embeds the harness as an ESM library (no subprocess). Same `~/.caretaker/` state, same agents, same conversations. Full Providers / Agents / Plugins / MCP configuration is available from the sidebar Settings panel; only the scheduler is missing because the daemon is not booted here.
 - **Headless** — `caretaker-cli run [prompt...] --agent <name>` does one-shot dispatches for scripts and CI; `--output json` for a structured blob.
 
@@ -24,7 +24,7 @@ The harness, agents store, plugins, MCP servers, skills, slash commands and conf
 
 ### Quick setup
 
-`pnpm install`, `pnpm -F caretaker-cli dev`, and the first-run wizard walks you through adding a provider and creating your first agent. No accounts, no daemons, no signup.
+`pnpm install`, `pnpm -F @hyperwindmill/caretaker-cli dev`, and the first-run wizard walks you through adding a provider and creating your first agent. No accounts, no daemons, no signup.
 
 State lives under `~/.caretaker/`: JSON for config, JSONL for chat sessions and scheduler logs, plus a [`@morphql/store`](https://www.npmjs.com/package/@morphql/store) folder database under `~/.caretaker/store/` that backs the task/project system (see below). It's all readable, inspectable, deletable. Override the root with `CARETAKER_HOME=/path/to/dir` and you have an isolated environment in one env var. Writes go through a tmp-file + atomic rename, with a Windows-safe retry on `EACCES`/`EPERM`/`EBUSY` so Defender or OneDrive locking the file doesn't corrupt your config.
 
@@ -114,17 +114,17 @@ Each task gets its own JSONL execution log under `~/.caretaker/scheduler-logs/`;
 
 ```bash
 pnpm install
-pnpm -F caretaker-cli dev                          # launch the TUI
-pnpm -F caretaker-cli dev web                      # local web GUI (http://127.0.0.1:3000)
+pnpm -F @hyperwindmill/caretaker-cli dev                          # launch the TUI
+pnpm -F @hyperwindmill/caretaker-cli dev web                      # local web GUI (http://127.0.0.1:3000)
 pnpm desktop:dev                                   # Electron desktop app
-CARETAKER_HOME=/tmp/ct pnpm -F caretaker-cli dev   # isolated dev environment
+CARETAKER_HOME=/tmp/ct pnpm -F @hyperwindmill/caretaker-cli dev   # isolated dev environment
 ```
 
 ```bash
 pnpm build                       # build every workspace package
 pnpm test                        # run every package's tests
-pnpm -F caretaker-cli test       # node test runner for the cli alone
-pnpm -F caretaker-cli typecheck  # tsc --noEmit
+pnpm -F @hyperwindmill/caretaker-cli test       # node test runner for the cli alone
+pnpm -F @hyperwindmill/caretaker-cli typecheck  # tsc --noEmit
 ```
 
 Package manager: **pnpm** (≥10). The repo is a pnpm workspaces monorepo; `npm install` / `package-lock.json` are not supported.

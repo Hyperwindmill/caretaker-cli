@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repo layout
 
-pnpm workspaces monorepo, five packages (all `private: true`, versioned together as one Changesets fixed group):
+pnpm workspaces monorepo, five packages, versioned together as one Changesets fixed group. Four are `private: true`; only `packages/cli/` is published to npm (as `@hyperwindmill/caretaker-cli`):
 
 - `packages/cli/` — the Caretaker CLI/TUI (`caretaker-cli`). Authoritative source of the harness, store, plugins, MCP, commands, sub-agent dispatch, scheduler, and tool registry. Also ships a Hono-based local web server (`caretaker-cli web`).
 - `packages/webview-ui/` — shared React UI bundled by esbuild. Consumed by both `cli/web/` (served by `caretaker-cli web`) and `vscode-extension/` (loaded into the sidebar webview). Public exports: `./` (App) and `./bridge` (host↔view message contract).
@@ -18,12 +18,12 @@ All commands below run from the repo root unless noted.
 
 ```bash
 pnpm install                            # bootstrap the workspace
-pnpm -F caretaker-cli dev               # launch the TUI (tsx packages/cli/src/index.ts)
-pnpm -F caretaker-cli dev web           # launch the local web GUI on http://127.0.0.1:3000
-pnpm -F caretaker-cli build             # tsc → packages/cli/dist/
-pnpm -F caretaker-cli start             # node dist/index.js (after build)
-pnpm -F caretaker-cli typecheck         # tsc --noEmit
-pnpm -F caretaker-cli test              # tsx --test "packages/cli/src/**/*.test.ts"
+pnpm -F @hyperwindmill/caretaker-cli dev               # launch the TUI (tsx packages/cli/src/index.ts)
+pnpm -F @hyperwindmill/caretaker-cli dev web           # launch the local web GUI on http://127.0.0.1:3000
+pnpm -F @hyperwindmill/caretaker-cli build             # tsc → packages/cli/dist/
+pnpm -F @hyperwindmill/caretaker-cli start             # node dist/index.js (after build)
+pnpm -F @hyperwindmill/caretaker-cli typecheck         # tsc --noEmit
+pnpm -F @hyperwindmill/caretaker-cli test              # tsx --test "packages/cli/src/**/*.test.ts"
 pnpm -F webview-ui build                # esbuild → packages/webview-ui/dist/
 pnpm -F webview-ui dev                  # esbuild --watch
 pnpm -F caretaker-vscode build          # build extension host + webview bundles
@@ -33,10 +33,10 @@ pnpm build                              # build every package (pnpm -r build)
 pnpm test                               # test every package (pnpm -r test)
 ```
 
-Run a single test file: `pnpm -F caretaker-cli exec tsx --test packages/cli/src/harness/loop.test.ts`
-Run a single test by name: `pnpm -F caretaker-cli exec tsx --test --test-name-pattern='resolves @refs once' packages/cli/src/harness/prelude.test.ts`
+Run a single test file: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/harness/loop.test.ts`
+Run a single test by name: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test --test-name-pattern='resolves @refs once' packages/cli/src/harness/prelude.test.ts`
 
-Isolated environment for manual TUI / web work: `CARETAKER_HOME=/tmp/ct pnpm -F caretaker-cli dev`. All on-disk state (providers, agents, sessions, plugins, MCP, scheduler logs) lives under `CARETAKER_HOME` (default `~/.caretaker/`).
+Isolated environment for manual TUI / web work: `CARETAKER_HOME=/tmp/ct pnpm -F @hyperwindmill/caretaker-cli dev`. All on-disk state (providers, agents, sessions, plugins, MCP, scheduler logs) lives under `CARETAKER_HOME` (default `~/.caretaker/`).
 
 Package manager: **pnpm** (≥10). The root has `pnpm-workspace.yaml`; `package-lock.json` and `npm install` are not supported.
 
@@ -119,13 +119,13 @@ Secrets at rest (plugin auth tokens, MCP credentials, Telegram bot tokens) are A
 - **Keep the docs in sync**: whenever a change alters architecture, a state machine, a public contract, or user-facing behaviour, update `CLAUDE.md` (and `README.md` when the change is user-facing) in the same unit of work — a stale architecture doc is worse than none. Both files describe *current* behaviour, not history.
 - Tests are co-located with source as `*.test.ts`, run via Node's built-in test runner through `tsx`. No Jest, no vitest.
 - TypeScript is `strict` but `noImplicitAny: false`. ESM only (`"type": "module"`), `moduleResolution: "bundler"`.
-- ESLint (typescript-eslint + react + react-hooks, prettier-disable on top) and Prettier are wired up via `packages/cli/eslint.config.js` and `packages/cli/.prettierrc.json`. `pnpm -F caretaker-cli lint` / `lint:fix` / `format` / `format:check`. There is no CI gate enforcing them — match surrounding style and keep diffs clean.
+- ESLint (typescript-eslint + react + react-hooks, prettier-disable on top) and Prettier are wired up via `packages/cli/eslint.config.js` and `packages/cli/.prettierrc.json`. `pnpm -F @hyperwindmill/caretaker-cli lint` / `lint:fix` / `format` / `format:check`. There is no CI gate enforcing them — match surrounding style and keep diffs clean.
 - All paths under `~/.caretaker/` come from accessor functions (`dataDir()`, `configPath()`, …) resolved at call time, not at import time, so tests can swap `CARETAKER_HOME` between suites within the same process.
 - Atomic-write policy for any persisted state: tmp file + rename + Windows-retry. Don't fall back to a direct `writeFile` on the destination path — that's exactly the case the atomicity is meant to protect against.
 - **Automated Versioning (Changesets)**: This monorepo uses `@changesets/cli` for versioning and changelog orchestration. For EVERY feature, package edit, or modification you implement, you MUST draft an appropriate changeset file by running `pnpm run changeset` (or creating a valid markdown changeset under `.changeset/`) detailing the semver impact (patch/minor/major) and explanation. Never omit this.
-- **Cutting a release** (manual, no npm publish — all packages are `private`): the five packages are one Changesets **fixed group**, so they always share one version. Steps:
+- **Cutting a release**: the five packages are one Changesets **fixed group**, so they always share one version. Only `@hyperwindmill/caretaker-cli` is published to npm (the other four stay `private`). Steps:
   1. `pnpm version-packages` (= `changeset version`) — bumps all five to the max pending semver, rewrites CHANGELOGs, deletes consumed changesets, and **auto-commits** with the default `@changesets/cli/commit` message `RELEASING: Releasing 5 package(s)` (the `commit` config in `.changeset/config.json`). No manual commit needed.
-  2. Tag it with an **annotated** tag: `git tag -a v<newVersion> -m v<newVersion>` (tags are `vX.Y.Z`, one per release — Changesets does **not** tag automatically since we never run `changeset publish`). The tag **must** be annotated: `git push --follow-tags` only pushes annotated tags, so a lightweight `git tag v<v>` silently won't reach the remote and the release workflow never fires.
+  2. Tag it with an **annotated** tag: `git tag -a v<newVersion> -m v<newVersion>` (tags are `vX.Y.Z`, one per release). The tag **must** be annotated: `git push --follow-tags` only pushes annotated tags, so a lightweight `git tag v<v>` silently won't reach the remote and the release workflow never fires.
   3. `git push origin main --follow-tags` (pushes the branch and the annotated tag together). If you created a lightweight tag by mistake, push it explicitly: `git push origin v<newVersion>`.
-  Pushing the `v*` tag triggers `.github/workflows/release.yml`, which builds the Electron `.deb`/`.exe` and the VSIX and attaches them to the GitHub Release. This whole flow is manual by design — there is no tag/version automation in the repo.
+  Pushing the `v*` tag triggers `.github/workflows/release.yml`: the `publish-npm` job publishes `@hyperwindmill/caretaker-cli` to npm via **OIDC trusted publishing** (`pnpm publish`, no `NPM_TOKEN` — requires the trusted publisher configured on npmjs.com for this repo+workflow, pnpm 10, Node ≥ 22.14), and the other jobs build the Electron `.deb`/`.exe` and the VSIX and attach them to the GitHub Release. Version bump and tagging stay manual; publishing is automated from the tag.
 - `docs/roadmap.md` exists but is **stale** — do not rely on it for current state. Use `git log`, the code, and this file instead.
