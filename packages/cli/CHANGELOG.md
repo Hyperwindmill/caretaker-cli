@@ -1,5 +1,22 @@
 # caretaker-cli
 
+## 0.10.0
+
+### Minor Changes
+
+- 8f3112d: Claude Code as an optional runner: new provider type `claude-code` runs agents
+  through `claude -p` (stream-json) on every surface — chat, headless, scheduler,
+  and autonomous tasks (task tools exposed via a token-guarded HTTP MCP bridge).
+  Agents on such providers use Claude Code's own tools and permission modes
+  (new per-agent permission-mode setting; unattended runs force bypassPermissions).
+
+### Patch Changes
+
+- 7466cd2: Final-review fixes for the Claude Code runner: the task bridge URL now honors `--host` instead of hardcoding `127.0.0.1`; claude-code task heartbeat and review cycles are now bounded by a 15-minute wall-clock timeout (the Claude Code CLI has no `--max-turns`); a stale/GC'd `--resume` session id is retried once without `--resume` instead of wedging the session forever; and Windows spawn-error messages now hint at pointing the provider `command` at `claude.exe` instead of an npm `.cmd` shim.
+- Updated dependencies [8f3112d]
+  - caretaker-types@0.10.0
+  - webview-ui@0.10.0
+
 ## 0.9.0
 
 ### Minor Changes
