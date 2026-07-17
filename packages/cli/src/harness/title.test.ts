@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanTitle } from './title.js';
+import { cleanTitle, generateTitle } from './title.js';
 
 test('cleanTitle: pass-through on already-clean input', () => {
   assert.equal(cleanTitle('Hello world test'), 'Hello world test');
@@ -37,4 +37,14 @@ test('cleanTitle: caps long titles with ellipsis', () => {
 
 test('cleanTitle: combined cleanup', () => {
   assert.equal(cleanTitle('  "**Hello   world.**"  '), 'Hello world');
+});
+
+test('generateTitle returns null for claude-code providers', async () => {
+  const title = await generateTitle({
+    agent: { id: 'a', name: 'a', systemPrompt: '', provider: 'cc', model: 'sonnet', allowedTools: [], maxTurns: 30 },
+    provider: { name: 'cc', type: 'claude-code', endpoint: '' },
+    firstUserPrompt: 'hello',
+    firstAssistantText: 'world',
+  });
+  assert.equal(title, null);
 });

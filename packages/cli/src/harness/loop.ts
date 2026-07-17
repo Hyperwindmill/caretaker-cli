@@ -106,6 +106,12 @@ export interface RunResult {
 }
 
 export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunResult> {
+  if (opts.provider.type === 'claude-code') {
+    // Single dispatch point: claude-code providers get the whole loop
+    // replaced by the Claude Code CLI (see claude_code_runner.ts).
+    const { runClaudeCode } = await import('./claude_code_runner.js');
+    return runClaudeCode(opts, cb);
+  }
   const { agent, provider, tools, prompt } = opts;
   const baseUrl = provider.endpoint.replace(/\/+$/, '');
   const endpoint = `${baseUrl}/v1/chat/completions`;
