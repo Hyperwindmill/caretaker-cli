@@ -43,6 +43,26 @@ test('tooluse fixture: tool_use, tool_result, assistant parts, cost', () => {
   assert.ok(am.every((e) => typeof e.id === 'string' && e.id.length > 0));
 });
 
+test('empty thinking block in assistant message is dropped', () => {
+  // Opus with extended thinking off emits an empty thinking block; must not persist.
+  const line = JSON.stringify({
+    type: 'assistant',
+    message: {
+      id: 'msg_1',
+      content: [
+        { type: 'thinking', thinking: '   ' },
+        { type: 'text', text: 'hello' },
+      ],
+    },
+  });
+  const [evt] = parseClaudeStreamLine(line) as any[];
+  assert.equal(evt.kind, 'assistant_message');
+  assert.deepEqual(
+    evt.parts.map((p: any) => p.type),
+    ['text'],
+  );
+});
+
 test('garbage and unknown lines yield no events', () => {
   assert.deepEqual(parseClaudeStreamLine('not json'), []);
   assert.deepEqual(parseClaudeStreamLine(''), []);

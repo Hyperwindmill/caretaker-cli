@@ -87,7 +87,13 @@ export function parseClaudeStreamLine(rawLine: string): ClaudeStreamEvent[] {
       for (const block of msg.content) {
         if (block?.type === 'text' && typeof block.text === 'string') {
           parts.push({ type: 'text', text: block.text });
-        } else if (block?.type === 'thinking' && typeof block.thinking === 'string') {
+        } else if (
+          block?.type === 'thinking' &&
+          typeof block.thinking === 'string' &&
+          block.thinking.trim().length > 0
+        ) {
+          // Opus (extended thinking off) emits empty thinking blocks in the final
+          // assistant message; persisting them renders as empty boxes on reload.
           parts.push({ type: 'thinking', text: block.thinking });
         } else if (block?.type === 'tool_use') {
           parts.push({ type: 'tool_use', id: block.id, name: block.name, args: block.input });
