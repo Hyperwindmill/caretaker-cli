@@ -114,6 +114,12 @@ async function doProbe(): Promise<ShellEnvResult> {
       timeout,
       // Don't inherit stdio - we want to capture output
       stdio: ["ignore", "pipe", "pipe"],
+      // Run in its own session (setsid). An interactive shell (`-i`) enables
+      // job control and grabs the controlling terminal; sharing our TTY makes
+      // it send SIGTTIN/SIGTTOU to our process group, which STOPS the TUI
+      // ("[1]+ Stopped") right after boot. Detaching removes the controlling
+      // terminal so bash disables job control — .bashrc is still sourced.
+      detached: true,
     });
 
     proc.stdout.on("data", (data) => {

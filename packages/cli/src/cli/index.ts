@@ -16,8 +16,13 @@ export async function runCli(argv: string[]): Promise<void> {
   // No subcommand and no flags → TUI. Anything else flows through commander
   // so `--help`, `--version` and unknown-command diagnostics behave normally.
   if (argv.length <= 2) {
-    render(createElement(App));
-    return;
+    // Wait for Ink to unmount (ESC / Quit call useApp().exit()), then force the
+    // process down. Without this the event loop stays alive on background boot
+    // handles (MCP pool, model-limits fetch, refresh-on-start) and the TUI
+    // appears frozen after exit until the user hits Ctrl+C.
+    const { waitUntilExit } = render(createElement(App));
+    await waitUntilExit();
+    process.exit(0);
   }
 
   const program = new Command();
