@@ -53,6 +53,7 @@ interface TaskMessage {
   messageType: 'chat' | 'heartbeat' | 'heartbeat_live' | 'system' | 'block' | 'tool_call' | 'yield' | 'review' | 'plan';
   content: string;
   toolCallId?: string | null;
+  agentLabel?: string | null;
   createdAt: string;
 }
 
@@ -128,7 +129,8 @@ function taskMessagesToChatItems(
       continue;
     }
     if (msg.messageType === 'plan') {
-      items.push({ kind: 'assistant', text: `**📋 Plan submitted**\n\n${msg.content}`, streaming: false, label: labels?.planner });
+      // Stored per-message identity wins; plan is structurally always the planner.
+      items.push({ kind: 'assistant', text: `**📋 Plan submitted**\n\n${msg.content}`, streaming: false, label: msg.agentLabel || labels?.planner });
       continue;
     }
     if (msg.role === 'user') {
@@ -152,7 +154,10 @@ function taskMessagesToChatItems(
       }
     }
     if (thinking) items.push({ kind: 'thinking', text: thinking });
-    items.push({ kind: 'assistant', text, streaming: false, label: labels?.developer });
+    // Stored per-message identity (captured at run time — accurate for the phase
+    // that produced it) wins; fall back to the developer heuristic for older
+    // messages and for chat bubbles the agent wrote via task_add_message.
+    items.push({ kind: 'assistant', text, streaming: false, label: msg.agentLabel || labels?.developer });
   }
   return items;
 }
