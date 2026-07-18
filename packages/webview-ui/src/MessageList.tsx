@@ -14,27 +14,39 @@ export interface MessageListProps {
   agentName?: string;
 }
 
+const STICK_THRESHOLD = 100;
+
 export function MessageList({ items, sessionId = null, trailing, isStreaming, agentName }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const prevItemsLengthRef = useRef(items.length);
+  // Whether the view is pinned to the bottom. Starts true so opening a
+  // chat/task lands on the latest content; the scroll handler flips it off the
+  // moment the user scrolls up, and back on when they return to the bottom.
+  const stickRef = useRef(true);
+
+  const onScroll = () => {
+    const c = containerRef.current;
+    if (!c) return;
+    stickRef.current = c.scrollHeight - c.scrollTop - c.clientHeight <= STICK_THRESHOLD;
+  };
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const isNewMessage = items.length > prevItemsLengthRef.current;
+    const grew = items.length > prevItemsLengthRef.current;
     prevItemsLengthRef.current = items.length;
 
-    // Check if the user is close to the bottom (within 100px)
-    const threshold = 100;
-    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight <= threshold;
+    // Sending your own message re-pins to the bottom, matching every chat app.
+    const lastIsUser = items.length > 0 && items[items.length - 1]!.kind === 'user';
+    if (grew && lastIsUser) stickRef.current = true;
 
-    if (isNewMessage || isNearBottom) {
-      // Use 'smooth' scroll when a new distinct message is added and we are not in streaming mode.
-      // Use 'auto' scroll during high-frequency streaming to prevent animation lag.
-      const behavior = isNewMessage && !isStreaming ? 'smooth' : 'auto';
-      bottomRef.current?.scrollIntoView({ behavior, block: 'end' });
+    // Otherwise only follow new content when the user is already at the bottom.
+    // Scroll the container directly (not scrollIntoView, which walks every
+    // scrollable ancestor and can jerk the surrounding task layout). 'auto'
+    // overrides the CSS smooth-scroll so high-frequency streaming doesn't lag.
+    if (stickRef.current) {
+      container.scrollTo({ top: container.scrollHeight, behavior: 'auto' });
     }
   }, [items, trailing, isStreaming]);
 
@@ -47,7 +59,7 @@ export function MessageList({ items, sessionId = null, trailing, isStreaming, ag
   }
 
   return (
-    <div ref={containerRef} className="messages">
+    <div ref={containerRef} className="messages" onScroll={onScroll}>
       {items.map((item, i) => (
         <Item key={i} item={item} sessionId={sessionId} />
       ))}
@@ -58,7 +70,6 @@ export function MessageList({ items, sessionId = null, trailing, isStreaming, ag
           <span className="messages__loading-text">{agentName || 'Caretaker'} is thinking</span>
         </div>
       )}
-      <div ref={bottomRef} />
     </div>
   );
 }
