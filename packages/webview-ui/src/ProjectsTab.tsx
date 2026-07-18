@@ -12,6 +12,7 @@ interface Project {
   agentId: string;
   active: boolean;
   plannerAgentId?: string | null;
+  reviewerAgentId?: string | null;
 }
 
 interface ChecklistItem {
@@ -105,7 +106,7 @@ function saveShowArchived(v: boolean): void {
 // reuses the normal chat renderer (MessageList) instead of bespoke inline JSX.
 function taskMessagesToChatItems(
   msgs: TaskMessage[],
-  labels?: { developer?: string; planner?: string },
+  labels?: { developer?: string; planner?: string; reviewer?: string },
 ): ChatItem[] {
   const items: ChatItem[] = [];
   for (const msg of msgs) {
@@ -131,6 +132,12 @@ function taskMessagesToChatItems(
     if (msg.messageType === 'plan') {
       // Stored per-message identity wins; plan is structurally always the planner.
       items.push({ kind: 'assistant', text: `**📋 Plan submitted**\n\n${msg.content}`, streaming: false, label: msg.agentLabel || labels?.planner });
+      continue;
+    }
+    if (msg.messageType === 'review') {
+      // Stored role is 'user' (replayed as agent feedback), but the reviewer agent
+      // produced it — render as a labeled bubble so it's clear who reviewed.
+      items.push({ kind: 'assistant', text: `**🔎 Code review**\n\n${msg.content}`, streaming: false, label: msg.agentLabel || labels?.reviewer });
       continue;
     }
     if (msg.role === 'user') {
@@ -593,16 +600,12 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
     const a = agents.find((x) => x.id === agentId);
     return a ? `${a.name} · ${a.model}` : undefined;
   };
+  const developerId = selectedTask?.agentId || selectedProject?.agentId || agents[0]?.id;
   const taskAgentLabels = selectedTask
     ? {
-        developer: agentLabelFor(selectedTask.agentId || selectedProject?.agentId || agents[0]?.id),
-        planner: agentLabelFor(
-          selectedTask.plannerAgentId ||
-            selectedProject?.plannerAgentId ||
-            selectedTask.agentId ||
-            selectedProject?.agentId ||
-            agents[0]?.id,
-        ),
+        developer: agentLabelFor(developerId),
+        planner: agentLabelFor(selectedTask.plannerAgentId || selectedProject?.plannerAgentId || developerId),
+        reviewer: agentLabelFor(selectedTask.reviewerAgentId || selectedProject?.reviewerAgentId || developerId),
       }
     : undefined;
 
@@ -1180,7 +1183,7 @@ function TaskListView({
 interface TaskLogViewProps {
   task: Task;
   taskMessages: TaskMessage[];
-  agentLabels?: { developer?: string; planner?: string };
+  agentLabels?: { developer?: string; planner?: string; reviewer?: string };
   isActiveLike: boolean;
   reviewRound: number;
   composerText: string;
