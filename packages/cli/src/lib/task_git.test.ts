@@ -14,9 +14,8 @@ const CT_HOME = await mkdtemp(join(tmpdir(), 'ct-git-home-'));
 process.env.CARETAKER_HOME = CT_HOME;
 
 // Import AFTER setting the env var (dataDir() reads it at call time, but keep the order explicit).
-const { isGitRepo, ensureWorktree, commitWip, finalizeDone, discardWorktree, agentDirIn } = await import(
-  './task_git.js'
-);
+const { isGitRepo, ensureWorktree, commitWip, finalizeDone, discardWorktree, agentDirIn, runBootstrap } =
+  await import('./task_git.js');
 
 async function makeRepo(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'ct-repo-'));
@@ -28,6 +27,25 @@ async function makeRepo(): Promise<string> {
   await g(dir, ['commit', '-q', '-m', 'init']);
   return dir;
 }
+
+test('runBootstrap runs commands in order and stops at the first failure', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ct-boot-'));
+
+  // Success path: both commands run, second one's file proves order.
+  await runBootstrap(dir, ['echo a > a.txt', 'echo b > b.txt']);
+  assert.ok((await stat(join(dir, 'a.txt'))).isFile());
+  assert.ok((await stat(join(dir, 'b.txt'))).isFile());
+
+  // Failure path: the failing command aborts before the third runs.
+  await assert.rejects(
+    () => runBootstrap(dir, ['echo ok > ok.txt', 'exit 3', 'echo never > never.txt']),
+    /Bootstrap command failed/,
+  );
+  assert.ok((await stat(join(dir, 'ok.txt'))).isFile());
+  await assert.rejects(() => stat(join(dir, 'never.txt')));
+
+  await rm(dir, { recursive: true, force: true });
+});
 
 test('isGitRepo true inside a repo, false outside', async () => {
   const repo = await makeRepo();

@@ -24,6 +24,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
   const [planningEnabled, setPlanningEnabled] = useState<boolean | null>(null);
   const [reviewEnabled, setReviewEnabled] = useState<boolean | null>(null);
   const [sddEnabled, setSddEnabled] = useState<boolean | null>(null);
+  const [bootstrapText, setBootstrapText] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const projects = config.projects || [];
@@ -40,6 +41,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
     setPlanningEnabled(proj.planningEnabled !== undefined ? proj.planningEnabled : null);
     setReviewEnabled(proj.reviewEnabled !== undefined ? proj.reviewEnabled : null);
     setSddEnabled(proj.sddEnabled !== undefined ? proj.sddEnabled : null);
+    setBootstrapText((proj.bootstrapCommands || []).join('\n'));
     setErrorMsg(null);
   };
 
@@ -55,6 +57,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
     setPlanningEnabled(null);
     setReviewEnabled(null);
     setSddEnabled(null);
+    setBootstrapText('');
     setErrorMsg(null);
   };
 
@@ -82,6 +85,11 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
       return;
     }
 
+    const bootstrapCommands = bootstrapText
+      .split('\n')
+      .map((c) => c.trim())
+      .filter(Boolean);
+
     const updatedProjects = [...projects];
 
     if (isCreating) {
@@ -98,6 +106,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
         planningEnabled,
         reviewEnabled,
         sddEnabled,
+        bootstrapCommands,
       };
       updatedProjects.push(newProj);
     } else if (editingProject) {
@@ -114,6 +123,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
           planningEnabled,
           reviewEnabled,
           sddEnabled,
+          bootstrapCommands,
         };
       }
     }
@@ -291,6 +301,23 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
             phase. How and where they are written is up to this project's own conventions
             (AGENTS.md, agent prompt — e.g. superpowers specs). Everything else stays read-only.
           </p>
+
+          <div className="form-group">
+            <label htmlFor="project-bootstrap">Bootstrap Commands (one per line)</label>
+            <textarea
+              id="project-bootstrap"
+              value={bootstrapText}
+              onChange={(e) => setBootstrapText(e.target.value)}
+              placeholder={'pnpm install\npnpm build'}
+              rows={3}
+              style={{ fontFamily: 'var(--font-mono)', fontSize: '11px' }}
+            />
+            <p style={{ fontSize: '11px', opacity: 0.65, margin: '6px 0 0 0' }}>
+              Run once, in order, right after a task worktree is created (git projects only) — before
+              the agent's first cycle, so it doesn't spend tokens on setup like <code>pnpm install</code>.
+              The run stops and the task is blocked if any command fails.
+            </p>
+          </div>
 
           <div className="form-actions">
             <button className="btn btn--secondary" onClick={cancelForm}>

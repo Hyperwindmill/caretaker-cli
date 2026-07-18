@@ -182,6 +182,31 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
       await saveTask(task);
       workingDir = wt.agentWorkingDir;
       console.log(`[task_heartbeat] Task #${task.id} worktree ${wt.worktreePath} (branch ${wt.branch})`);
+
+      // Project bootstrap: run once in the fresh worktree before the agent's first
+      // cycle (e.g. `pnpm install`). A failing command blocks the task so the user
+      // sees why setup broke instead of the agent flailing in an unbuilt tree.
+      const bootstrap = (project.bootstrapCommands || []).filter((c) => c.trim());
+      if (bootstrap.length > 0) {
+        try {
+          console.log(`[task_heartbeat] Task #${task.id} running ${bootstrap.length} bootstrap command(s)`);
+          await runBootstrap(workingDir, bootstrap);
+        } catch (bootErr) {
+          const reason = bootErr instanceof Error ? bootErr.message : String(bootErr);
+          task.status = 'blocked';
+          task.blockedReason = reason;
+          task.updatedAt = new Date().toISOString();
+          await saveTask(task);
+          await addTaskMessage({
+            taskId: task.id,
+            role: 'assistant',
+            messageType: 'block',
+            content: `Bootstrap failed — task blocked.\n\n${reason}`,
+          });
+          console.error(`[task_heartbeat] Task #${task.id} bootstrap failed, blocked:`, reason);
+          return;
+        }
+      }
     }
     // Non-git projects fall through: workingDir stays baseWorkingDir (run in place).
 
