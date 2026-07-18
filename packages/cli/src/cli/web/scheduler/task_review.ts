@@ -1,7 +1,7 @@
 import * as harness from '../../../harness/index.js';
 import type { AgentConfig, ProviderConfig } from '../../../types.js';
 import type { Tool } from '../../../harness/tools/types.js';
-import { CLAUDE_CODE_MAX_RUN_MS } from './task_roles.js';
+import { CLAUDE_CODE_DEFAULT_RUN_SECONDS } from './task_roles.js';
 
 export const MAX_REVIEW_ROUNDS = 3;
 
@@ -51,6 +51,8 @@ export async function runDoneReview(opts: {
   workingDir: string;
   round: number;
   signal?: AbortSignal;
+  /** Wall-clock budget (seconds) for the review run. Defaults to the claude-code default. */
+  maxRunSeconds?: number;
 }): Promise<{ verdict: 'pass' | 'changes'; text: string }> {
   // Strip task-state tools: the reviewer must not mutate the task; the harness decides.
   const reviewTools = opts.tools.filter((t) => !t.name.startsWith('mcp__task__'));
@@ -59,16 +61,15 @@ export async function runDoneReview(opts: {
   // mcpServers still pass through inside the runner).
   const isClaudeCode = opts.provider.type === 'claude-code';
   const claudeCode = isClaudeCode ? { permissionMode: 'bypassPermissions' as const } : undefined;
-  // Same wall-clock backstop as the task heartbeat: the Claude Code CLI has
-  // no --max-turns equivalent, so a runaway review pass would otherwise stall
-  // the reviewing gate indefinitely.
-  let ccTimer: NodeJS.Timeout | undefined;
-  let signal: AbortSignal | undefined = opts.signal;
-  if (isClaudeCode) {
-    const ccController = new AbortController();
-    ccTimer = setTimeout(() => ccController.abort(), CLAUDE_CODE_MAX_RUN_MS);
-    signal = opts.signal ? AbortSignal.any([opts.signal, ccController.signal]) : ccController.signal;
-  }
+  // Wall-clock backstop for the review pass, enforced for every provider (the
+  // Claude Code CLI has no --max-turns equivalent). Combined with any external
+  // signal (a Pause landing mid-review) so either can abort the run.
+  const budgetMs = (opts.maxRunSeconds ?? CLAUDE_CODE_DEFAULT_RUN_SECONDS) * 1000;
+  const budgetController = new AbortController();
+  const runTimer = setTimeout(() => budgetController.abort(), budgetMs);
+  const signal: AbortSignal = opts.signal
+    ? AbortSignal.any([opts.signal, budgetController.signal])
+    : budgetController.signal;
   try {
     const result = await harness.run(
       {
@@ -87,6 +88,6 @@ export async function runDoneReview(opts: {
     );
     return { verdict: parseReviewVerdict(result.text), text: result.text };
   } finally {
-    if (ccTimer) clearTimeout(ccTimer);
+    clearTimeout(runTimer);
   }
 }

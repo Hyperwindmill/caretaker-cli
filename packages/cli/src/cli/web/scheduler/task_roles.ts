@@ -7,11 +7,24 @@ import type { Tool } from '../../../harness/tools/types.js';
 
 export type TaskRole = 'planner' | 'developer' | 'reviewer';
 
-// ponytail: hard wall-clock cap; make configurable if real runs need more
-// The Claude Code CLI has no --max-turns equivalent, so a claude-code run has
-// no native turn cap. Without a wall-clock backstop a runaway run would stall
-// the whole heartbeat (and, for reviews, the review gate) indefinitely.
-export const CLAUDE_CODE_MAX_RUN_MS = 15 * 60_000;
+// Per-invocation wall-clock budget defaults, in seconds. A run is aborted when
+// it exceeds the resolved budget — for every provider. claude-code gets a larger
+// default because the CLI has no --max-turns equivalent (native runs are also
+// turn-bounded by agent.maxTurns), so without a generous backstop a claude-code
+// run would stall the heartbeat (and, for reviews, the review gate).
+export const DEFAULT_RUN_SECONDS = 120;
+export const CLAUDE_CODE_DEFAULT_RUN_SECONDS = 15 * 60;
+
+/** Resolve the per-invocation budget (seconds): task → project → provider default. */
+export function resolveMaxRunSeconds(
+  task: Pick<Task, 'maxRunSeconds'>,
+  project: Pick<ProjectConfig, 'maxRunSeconds'> | null | undefined,
+  isClaudeCode: boolean,
+): number {
+  const configured = task.maxRunSeconds ?? project?.maxRunSeconds;
+  if (typeof configured === 'number' && configured > 0) return configured;
+  return isClaudeCode ? CLAUDE_CODE_DEFAULT_RUN_SECONDS : DEFAULT_RUN_SECONDS;
+}
 
 export function resolveRoleAgent(
   role: TaskRole,

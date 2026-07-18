@@ -14,9 +14,9 @@ import {
   resolveRoleAgent,
   resolveReviewEnabled,
   resolveSddEnabled,
+  resolveMaxRunSeconds,
   filterPlannerTools,
   TaskRole,
-  CLAUDE_CODE_MAX_RUN_MS,
 } from './task_roles.js';
 
 function buildPrompt(
@@ -247,7 +247,10 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
 
     // Max turns: standard sonnet settings or maxTurns
     const maxTurns = agent.maxTurns || 30;
-    const maxRunSeconds = 120; // 2 minutes
+    const isClaudeCode = provider.type === 'claude-code';
+    // Per-invocation wall-clock budget (task → project → provider default),
+    // enforced below via the abort timer for every provider.
+    const maxRunSeconds = resolveMaxRunSeconds(task, project, isClaudeCode);
 
     // 5. Construct prompt
     const prompt = planning
@@ -299,15 +302,13 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
     // claude-code agents get role-scoped permission/tool extras and, when a
     // task bridge is running, an injected mcp__task server so the CLI can
     // still call task_get_state/task_submit_plan/etc despite --strict-mcp-config.
-    const isClaudeCode = provider?.type === 'claude-code';
     let bridgeToken: string | undefined;
     let claudeCode: RunOptions['claudeCode'];
-    // Claude Code runs have no native turn cap (the CLI has no --max-turns),
-    // so bound them with a wall-clock timeout instead; native runs stay
-    // governed by maxTurns as usual.
-    let ccTimer: NodeJS.Timeout | undefined;
-    // Same handle Pause aborts; claude-code adds a wall-clock timeout on top.
+    // Same handle Pause aborts; the wall-clock budget (resolved above) also
+    // aborts it. Enforced for every provider — native runs stay additionally
+    // turn-bounded by maxTurns.
     const signal: AbortSignal = abortController.signal;
+    const runTimer: NodeJS.Timeout = setTimeout(() => abortController.abort(), maxRunSeconds * 1000);
     if (isClaudeCode) {
       const bridgeUrl = getTaskBridgeUrl();
       bridgeToken = bridgeUrl ? issueBridgeToken() : undefined;
@@ -319,7 +320,6 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
       if (!bridgeUrl) {
         console.warn('[tasks] claude-code agent without task bridge URL — task tools unavailable this run');
       }
-      ccTimer = setTimeout(() => abortController.abort(), CLAUDE_CODE_MAX_RUN_MS);
     }
 
     try {
@@ -353,7 +353,7 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
       );
     } finally {
       if (bridgeToken) revokeBridgeToken(bridgeToken);
-      if (ccTimer) clearTimeout(ccTimer);
+      clearTimeout(runTimer);
     }
 
     // Finalize live message
@@ -453,6 +453,7 @@ async function runReviewCycle(opts: {
   signal?: AbortSignal;
 }): Promise<void> {
   const { task, project, agent, provider, tools, workingDir, signal } = opts;
+  const maxRunSeconds = resolveMaxRunSeconds(task, project, provider.type === 'claude-code');
   if (!task.worktreePath) return; // reviewing implies a worktree; nothing to review otherwise
 
   // Review gate disabled (task or project level): finalize directly, no review.
@@ -490,6 +491,7 @@ async function runReviewCycle(opts: {
       workingDir,
       round,
       signal,
+      maxRunSeconds,
     });
     verdict = review.verdict;
     reviewText = review.text;

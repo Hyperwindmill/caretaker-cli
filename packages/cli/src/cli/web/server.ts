@@ -273,7 +273,7 @@ export async function startServer(port: number, host: string): Promise<void> {
   app.post('/api/projects', async (c) => {
     try {
       const body = await c.req.json();
-      const { name, description, workingDir, agentId, plannerAgentId, reviewerAgentId, planningEnabled, reviewEnabled, sddEnabled, bootstrapCommands } = body;
+      const { name, description, workingDir, agentId, plannerAgentId, reviewerAgentId, planningEnabled, reviewEnabled, sddEnabled, bootstrapCommands, maxRunSeconds } = body;
       const config = await loadConfig();
       if (!config.projects) {
         config.projects = [];
@@ -294,6 +294,7 @@ export async function startServer(port: number, host: string): Promise<void> {
         bootstrapCommands: Array.isArray(bootstrapCommands)
           ? bootstrapCommands.map((c: unknown) => String(c).trim()).filter(Boolean)
           : null,
+        maxRunSeconds: typeof maxRunSeconds === 'number' && maxRunSeconds > 0 ? maxRunSeconds : null,
       };
       config.projects.push(project);
       await saveConfig(config);
@@ -336,7 +337,7 @@ export async function startServer(port: number, host: string): Promise<void> {
   app.post('/api/projects/:id/tasks', async (c) => {
     const projectId = Number(c.req.param('id'));
     const body = await c.req.json();
-    const { title, objective, checklist, startActive, agentId, plannerAgentId, reviewerAgentId, planningEnabled, reviewEnabled, sddEnabled } = body;
+    const { title, objective, checklist, startActive, agentId, plannerAgentId, reviewerAgentId, planningEnabled, reviewEnabled, sddEnabled, maxRunSeconds } = body;
 
     // Validate that the specified agents exist (if provided).
     const idsToValidate = [agentId, plannerAgentId, reviewerAgentId].filter(Boolean) as string[];
@@ -379,6 +380,7 @@ export async function startServer(port: number, host: string): Promise<void> {
       planningEnabled: taskPlanning,
       reviewEnabled: typeof reviewEnabled === 'boolean' ? reviewEnabled : null,
       sddEnabled: typeof sddEnabled === 'boolean' ? sddEnabled : null,
+      maxRunSeconds: typeof maxRunSeconds === 'number' && maxRunSeconds > 0 ? maxRunSeconds : null,
     });
     return c.json({ ok: true });
   });
@@ -599,6 +601,9 @@ export async function startServer(port: number, host: string): Promise<void> {
     if ('sddEnabled' in body) {
       task.sddEnabled = typeof body.sddEnabled === 'boolean' ? body.sddEnabled : null;
     }
+    if ('maxRunSeconds' in body) {
+      task.maxRunSeconds = typeof body.maxRunSeconds === 'number' && body.maxRunSeconds > 0 ? body.maxRunSeconds : null;
+    }
     task.updatedAt = new Date().toISOString();
     await saveTask(task);
 
@@ -607,6 +612,7 @@ export async function startServer(port: number, host: string): Promise<void> {
       planningEnabled: task.planningEnabled ?? null,
       reviewEnabled: task.reviewEnabled ?? null,
       sddEnabled: task.sddEnabled ?? null,
+      maxRunSeconds: task.maxRunSeconds ?? null,
     });
   });
 

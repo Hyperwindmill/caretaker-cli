@@ -45,6 +45,12 @@ export type ProjectConfig = {
    * `pnpm install`. The run stops at the first command that fails.
    */
   bootstrapCommands?: string[] | null;
+  /**
+   * Wall-clock budget (seconds) for a single heartbeat invocation, enforced as
+   * an abort for every provider. Tasks inherit it. Unset = default (120s native,
+   * 900s for claude-code).
+   */
+  maxRunSeconds?: number | null;
 };
 
 export type CaretakerConfig = {

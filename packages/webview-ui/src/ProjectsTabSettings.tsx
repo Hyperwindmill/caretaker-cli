@@ -25,6 +25,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
   const [reviewEnabled, setReviewEnabled] = useState<boolean | null>(null);
   const [sddEnabled, setSddEnabled] = useState<boolean | null>(null);
   const [bootstrapText, setBootstrapText] = useState('');
+  const [maxRunSecondsText, setMaxRunSecondsText] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const projects = config.projects || [];
@@ -42,6 +43,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
     setReviewEnabled(proj.reviewEnabled !== undefined ? proj.reviewEnabled : null);
     setSddEnabled(proj.sddEnabled !== undefined ? proj.sddEnabled : null);
     setBootstrapText((proj.bootstrapCommands || []).join('\n'));
+    setMaxRunSecondsText(proj.maxRunSeconds ? String(proj.maxRunSeconds) : '');
     setErrorMsg(null);
   };
 
@@ -58,6 +60,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
     setReviewEnabled(null);
     setSddEnabled(null);
     setBootstrapText('');
+    setMaxRunSecondsText('');
     setErrorMsg(null);
   };
 
@@ -90,6 +93,9 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
       .map((c) => c.trim())
       .filter(Boolean);
 
+    const parsedMaxRun = parseInt(maxRunSecondsText.trim(), 10);
+    const maxRunSeconds = Number.isFinite(parsedMaxRun) && parsedMaxRun > 0 ? parsedMaxRun : null;
+
     const updatedProjects = [...projects];
 
     if (isCreating) {
@@ -107,6 +113,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
         reviewEnabled,
         sddEnabled,
         bootstrapCommands,
+        maxRunSeconds,
       };
       updatedProjects.push(newProj);
     } else if (editingProject) {
@@ -124,6 +131,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
           reviewEnabled,
           sddEnabled,
           bootstrapCommands,
+          maxRunSeconds,
         };
       }
     }
@@ -316,6 +324,22 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
               Run once, in order, right after a task worktree is created (git projects only) — before
               the agent's first cycle, so it doesn't spend tokens on setup like <code>pnpm install</code>.
               The run stops and the task is blocked if any command fails.
+            </p>
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="project-max-run">Max run seconds per cycle (optional)</label>
+            <input
+              id="project-max-run"
+              type="number"
+              min={1}
+              value={maxRunSecondsText}
+              onChange={(e) => setMaxRunSecondsText(e.target.value)}
+              placeholder="Default: 120 (native) / 900 (claude-code)"
+            />
+            <p style={{ fontSize: '11px', opacity: 0.65, margin: '6px 0 0 0' }}>
+              Wall-clock budget for a single heartbeat cycle, enforced as an abort for every provider.
+              Tasks inherit this and can override it. Leave empty for the default.
             </p>
           </div>
 

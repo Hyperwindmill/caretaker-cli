@@ -13,6 +13,7 @@ const {
   resolvePlanningEnabled,
   resolveReviewEnabled,
   resolveSddEnabled,
+  resolveMaxRunSeconds,
   activationStatus,
   filterPlannerTools,
 } = await import('./task_roles.js');
@@ -55,6 +56,19 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 function makeProject(overrides: Partial<ProjectConfig> = {}): ProjectConfig {
   return { id: 1, name: 'p', description: '', workingDir: '/w', agentId: 'a-proj', active: true, ...overrides };
 }
+
+test('resolveMaxRunSeconds: task -> project -> provider default', () => {
+  // Task overrides everything.
+  assert.equal(resolveMaxRunSeconds(makeTask({ maxRunSeconds: 300 }), makeProject({ maxRunSeconds: 200 }), false), 300);
+  // Falls back to project.
+  assert.equal(resolveMaxRunSeconds(makeTask(), makeProject({ maxRunSeconds: 200 }), false), 200);
+  // Neither set -> native default 120, claude-code default 900.
+  assert.equal(resolveMaxRunSeconds(makeTask(), makeProject(), false), 120);
+  assert.equal(resolveMaxRunSeconds(makeTask(), makeProject(), true), 900);
+  // Non-positive/invalid configured values are ignored (fall through to default).
+  assert.equal(resolveMaxRunSeconds(makeTask({ maxRunSeconds: 0 }), makeProject(), false), 120);
+  assert.equal(resolveMaxRunSeconds(makeTask({ maxRunSeconds: null }), null, true), 900);
+});
 
 test('developer chain: task.agentId -> project.agentId -> agents[0]', () => {
   assert.equal(resolveRoleAgent('developer', makeTask({ agentId: 'a-dev' }), makeProject(), AGENTS)!.id, 'a-dev');
