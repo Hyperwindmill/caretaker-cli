@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { getDb, ChecklistItem, Project, Task, TaskMessage, getTaskById, saveTask, createTask, addTaskMessage, deleteTask } from '../../../store/db.js';
+import { getDb, ChecklistItem, Project, Task, TaskMessage, getTaskById, saveTask, createTask, addTaskMessage, deleteTask, tryNormalizeChecklistStatus } from '../../../store/db.js';
 import { loadConfig, loadAgents } from '../../../store/json.js';
 import type { Tool, ToolResult } from '../types.js';
 import { discardWorktree } from '../../../lib/task_git.js';
@@ -83,7 +83,12 @@ export const updateChecklistItemTool: Tool = {
     const db = getDb();
     const taskId = Number(args.task_id);
     const itemId = String(args.item_id);
-    const status = args.status as any;
+    const statusInput = args.status;
+
+    const status = tryNormalizeChecklistStatus(statusInput);
+    if (!status) {
+      return err(`Invalid checklist item status "${statusInput}". Allowed values are: pending, in_progress, done, skipped.`);
+    }
 
     const task = await getTaskById(taskId);
     if (!task) return err(`Task ${taskId} not found`);
@@ -131,12 +136,20 @@ export const updateChecklistTool: Tool = {
     const task = await getTaskById(taskId);
     if (!task) return err(`Task ${taskId} not found`);
 
-    const checklist: ChecklistItem[] = checklistInput.map((item, idx) => ({
-      id: item.id || randomUUID(),
-      text: item.text,
-      status: item.status,
-      order: idx,
-    }));
+    const checklist: ChecklistItem[] = [];
+    for (let idx = 0; idx < checklistInput.length; idx++) {
+      const item = checklistInput[idx];
+      const status = tryNormalizeChecklistStatus(item.status);
+      if (!status) {
+        return err(`Invalid checklist item status "${item.status}" for item "${item.text}". Allowed values are: pending, in_progress, done, skipped.`);
+      }
+      checklist.push({
+        id: item.id || randomUUID(),
+        text: item.text,
+        status,
+        order: idx,
+      });
+    }
 
     task.checklist = checklist;
     task.updatedAt = new Date().toISOString();

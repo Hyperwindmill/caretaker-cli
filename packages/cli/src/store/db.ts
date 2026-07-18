@@ -83,6 +83,23 @@ export function getDb(): Store {
 
 let queryQueue: Promise<any> = Promise.resolve();
 
+export function tryNormalizeChecklistStatus(status: any): 'pending' | 'in_progress' | 'done' | 'skipped' | null {
+  const s = String(status || '').trim().toLowerCase();
+  if (s === 'completed' || s === 'complete' || s === 'done') {
+    return 'done';
+  }
+  if (s === 'in_progress' || s === 'progress') {
+    return 'in_progress';
+  }
+  if (s === 'skipped' || s === 'skip') {
+    return 'skipped';
+  }
+  if (s === 'pending') {
+    return 'pending';
+  }
+  return null;
+}
+
 export async function runQuery(sql: string): Promise<any> {
   const op = () => getDb().query(sql);
   const resultPromise = queryQueue.then(op);

@@ -11,7 +11,7 @@ const CT_HOME = await mkdtemp(join(tmpdir(), 'ct-tasktools-home-'));
 process.env.CARETAKER_HOME = CT_HOME;
 
 const { createTask, getTaskById, saveTask, deleteTask, addTaskMessage, runQuery } = await import('../../../store/db.js');
-const { completeTaskTool, taskArchiveTool, taskUnarchiveTool, taskDeleteTool, taskSearchTool, taskSetAgentTool, taskCreateTool, submitPlanTool, taskActivateTool, taskUnpauseTool, getTaskStateTool } = await import('./task_tools.js');
+const { completeTaskTool, taskArchiveTool, taskUnarchiveTool, taskDeleteTool, taskSearchTool, taskSetAgentTool, taskCreateTool, submitPlanTool, taskActivateTool, taskUnpauseTool, getTaskStateTool, updateChecklistItemTool, updateChecklistTool } = await import('./task_tools.js');
 const { runningTasks } = await import('../../../cli/web/scheduler/locks.js');
 const { saveConfig, saveAgents } = await import('../../../store/json.js');
 
@@ -399,6 +399,39 @@ test('task_create persists sdd_enabled; task_get_state exposes it', async () => 
   const state = JSON.parse((await getTaskStateTool.execute({ task_id: parsed.task_id }, ctx())).content);
   assert.equal(state.sddEnabled, true);
   await saveConfig({ port: 3000, providers: [] } as any);
+});
+
+test('updateChecklistItemTool and updateChecklistTool return error on invalid status', async () => {
+  const t = await createTask({
+    ...base,
+    title: 'Validation test task',
+    checklist: [{ id: '1', text: 'Item 1', status: 'pending', order: 0 }],
+  });
+
+  // Invalid single item update status
+  const res1 = await updateChecklistItemTool.execute({ task_id: t.id, item_id: '1', status: 'invalid-status' }, ctx());
+  const parsed1 = JSON.parse(res1.content);
+  assert.ok(parsed1.error);
+  assert.ok(parsed1.error.includes('Invalid checklist item status'));
+
+  // Valid single item update status (should pass)
+  const res2 = await updateChecklistItemTool.execute({ task_id: t.id, item_id: '1', status: 'completed' }, ctx());
+  const parsed2 = JSON.parse(res2.content);
+  assert.ok(parsed2.ok);
+  const after2 = await getTaskById(t.id);
+  assert.equal(after2!.checklist[0]!.status, 'done');
+
+  // Invalid multiple checklist update status
+  const res3 = await updateChecklistTool.execute({
+    task_id: t.id,
+    checklist: [
+      { id: '1', text: 'Item 1', status: 'done' },
+      { id: '2', text: 'Item 2', status: 'wrong-status' },
+    ],
+  }, ctx());
+  const parsed3 = JSON.parse(res3.content);
+  assert.ok(parsed3.error);
+  assert.ok(parsed3.error.includes('Invalid checklist item status'));
 });
 
 test.after(async () => {
