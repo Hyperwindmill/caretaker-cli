@@ -1,5 +1,60 @@
 # caretaker-cli
 
+## 0.12.0
+
+### Minor Changes
+
+- 6011525: feat(tasks): configurable per-cycle run budget (maxRunSeconds) at project and task level
+
+  The per-invocation wall-clock budget is now configurable instead of a hardcoded
+  value, and it's a real enforced abort for every provider — not just prompt text
+  for native runs. `maxRunSeconds` resolves task → project → provider default
+  (120s native, 900s claude-code) via `resolveMaxRunSeconds`, and the run (plus
+  the review pass) aborts when it exceeds the budget, reusing the same
+  AbortController that Pause fires. Set it on the project settings form or per task
+  in the task settings; leave empty to inherit. Native runs stay additionally
+  turn-bounded by `agent.maxTurns`.
+
+- 5372744: feat(tasks): project-level bootstrap commands run once on worktree setup
+
+  Projects gain an optional `bootstrapCommands` list. When a task worktree is
+  first created (git projects only), the commands run once in order — before the
+  agent's first cycle — so the agent doesn't spend tokens on setup like
+  `pnpm install`. The run stops at the first command that fails and blocks the
+  task with the failed command and its output as the reason. Configured via a new
+  "Bootstrap Commands" field in the project settings form.
+
+### Patch Changes
+
+- 69d442d: fix(tasks): restore the Pause/Activate button in the task log view and make it available during planning and reviewing
+
+  The refactor dropped the pause control from the task log header, so an autonomous
+  task viewed in its log could no longer be paused. The button is back in the log
+  header and, together with the task detail view, now treats `planning` and
+  `reviewing` as pausable (not just `active`) — pausing an off-track agent aborts
+  the current cycle (the heartbeat skips post-processing on a paused task) and
+  prevents the next one, whatever phase the task is in.
+
+- 4cbc578: fix(tasks): Pause now aborts the in-flight autonomous run, not just the next tick
+
+  Pausing (or blocking) a running autonomous task previously only kept the _next_
+  heartbeat from claiming it — the current cycle kept running to the end of its
+  turn budget, so an agent gone off the rails (e.g. a model looping on empty tool
+  calls) appeared to ignore Pause. The heartbeat now registers an AbortController
+  per running task (`runningTaskControllers` in `scheduler/locks.ts`) and threads
+  its signal into the developer/planner run and the review pass; the
+  `POST /api/tasks/:id/status` pause path calls `abortRunningTask`, so the loop
+  stops between turns. Native runs previously got no abort signal at all (only
+  claude-code did); this closes that gap for both.
+
+- 8a27f64: feat(tasks): show the agent name and model on assistant bubbles in the task log
+
+  Assistant messages in the task execution thread said only "assistant". They now
+  carry the responsible agent's `name · model` — the developer agent for cycle
+  output, the planner agent for the submitted plan — resolved with the same
+  task → project → default fallback chain the runtime uses. Regular chat is
+  unchanged (still "assistant").
+
 ## 0.11.2
 
 ### Patch Changes
