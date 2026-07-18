@@ -1871,11 +1871,14 @@ body.vscode-light .settings-panel__tab-btn--active {
   gap: var(--spacing-md);
   box-shadow: var(--glow-shadow);
   animation: slideFormUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  max-height: 85vh;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 100%;
 }
 
 .glass-form__body {
-  flex: 1;
+  flex: 1 1 0;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -1971,6 +1974,7 @@ body.vscode-light .settings-panel__tab-btn--active {
 
 .form-row > .form-group {
   flex: 1;
+  min-width: 0;
 }
 
 .form-actions {
