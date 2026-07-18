@@ -3,12 +3,17 @@ import { promisify } from 'node:util';
 import { rm } from 'node:fs/promises';
 import { join, relative, dirname } from 'node:path';
 import { dataDir } from '../store/db.js';
+import { commandEnv } from '../harness/tools/builtin/shell-env.js';
 
 const exec = promisify(execFile);
 const execShell = promisify(execCb);
 
 async function git(cwd: string, args: string[]): Promise<string> {
-  const { stdout } = await exec('git', args, { cwd, maxBuffer: 32 * 1024 * 1024 });
+  const { stdout } = await exec('git', args, {
+    cwd,
+    env: commandEnv(),
+    maxBuffer: 32 * 1024 * 1024,
+  });
   return stdout.trim();
 }
 
@@ -75,7 +80,12 @@ export async function runBootstrap(cwd: string, commands: string[]): Promise<voi
     const cmd = command.trim();
     if (!cmd) continue;
     try {
-      await execShell(cmd, { cwd, timeout: 10 * 60 * 1000, maxBuffer: 32 * 1024 * 1024 });
+      await execShell(cmd, {
+        cwd,
+        env: commandEnv(),
+        timeout: 10 * 60 * 1000,
+        maxBuffer: 32 * 1024 * 1024,
+      });
     } catch (err) {
       const e = err as { stderr?: string; stdout?: string; message?: string };
       const detail = (e.stderr || e.stdout || e.message || '').toString().trim();

@@ -218,3 +218,53 @@ export function mergeShellEnv(
 
   return merged;
 }
+
+/**
+ * Env var patterns scrubbed from spawned command envs. Shared by the bash
+ * tool and by bootstrap/git spawns so unattended runs don't leak tokens.
+ * Mirrors the caretaker server's policy in src/mcp/shell.ts.
+ */
+export const SECRET_ENV_PATTERNS = [
+  /^OPENCODE_/,
+  /^CLAUDE_/,
+  /_TOKEN$/,
+  /_KEY$/,
+  /_SECRET$/,
+];
+
+/**
+ * Base env for spawned shells: process.env with secret vars scrubbed.
+ * Used by both the bash tool and the task bootstrap/git helpers so the
+ * same scrub policy applies everywhere a command is spawned.
+ */
+export function scrubbedEnv(): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (SECRET_ENV_PATTERNS.some((re) => re.test(k))) continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * Build the env for a spawned shell command: scrubbed process.env, with the
+ * probed interactive-shell PATH and version-manager vars merged in on Linux.
+ * macOS/Windows return the scrubbed env unchanged (login shells there already
+ * source profiles correctly). Mirrors what the `bash` tool uses.
+ */
+export function commandEnv(): NodeJS.ProcessEnv {
+  const base = scrubbedEnv();
+  if (process.platform === "linux") {
+    return mergeShellEnv(base);
+  }
+  return base;
+}
+
+/**
+ * @internal Test-only: set the cached probe result directly so tests can
+ * exercise the env-merge path without running a real interactive shell probe.
+ * Production code never calls this.
+ */
+export function setShellEnvForTest(env: Record<string, string>): void {
+  cachedResult = { env, success: true };
+}
