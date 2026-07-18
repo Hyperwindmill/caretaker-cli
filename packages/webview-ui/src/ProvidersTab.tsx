@@ -158,6 +158,7 @@ export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps)
       {showForm ? (
         <div className="glass-form">
           <h4>{isCreating ? 'Add Provider' : `Edit Provider: ${editingProvider?.name}`}</h4>
+          <div className="glass-form__body">
           <div className="form-group">
             <label htmlFor="provider-type">Type</label>
             <select
@@ -219,6 +220,7 @@ export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps)
               </div>
             </>
           )}
+          </div>
           <div className="form-actions">
             <button className="btn btn--secondary" onClick={cancelForm}>
               Cancel
