@@ -39,6 +39,12 @@ export type ProjectConfig = {
   reviewEnabled?: boolean | null;
   /** SDD mode default for tasks in this project: planner may write .md files. Unset = disabled. */
   sddEnabled?: boolean | null;
+  /**
+   * Shell commands run once, in order, right after a task worktree is created
+   * (worktree/git projects only), before the agent's first cycle — e.g.
+   * `pnpm install`. The run stops at the first command that fails.
+   */
+  bootstrapCommands?: string[] | null;
 };
 
 export type CaretakerConfig = {

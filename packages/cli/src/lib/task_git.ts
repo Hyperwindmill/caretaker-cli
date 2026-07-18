@@ -1,10 +1,11 @@
-import { execFile } from 'node:child_process';
+import { execFile, exec as execCb } from 'node:child_process';
 import { promisify } from 'node:util';
 import { rm } from 'node:fs/promises';
 import { join, relative, dirname } from 'node:path';
 import { dataDir } from '../store/db.js';
 
 const exec = promisify(execFile);
+const execShell = promisify(execCb);
 
 async function git(cwd: string, args: string[]): Promise<string> {
   const { stdout } = await exec('git', args, { cwd, maxBuffer: 32 * 1024 * 1024 });
@@ -60,6 +61,27 @@ export async function ensureWorktree(
   const rel = relative(repoRoot, projectWorkingDir);
   const agentWorkingDir = rel ? join(worktreePath, rel) : worktreePath;
   return { branch, worktreePath, agentWorkingDir };
+}
+
+/**
+ * Run project bootstrap commands once in a freshly created worktree, in order.
+ * Stops at the first non-zero exit and throws with the failed command + its
+ * output, so the caller can surface why setup failed. Each command gets a
+ * generous timeout so a hung install can't wedge the scheduler tick.
+ * ponytail: 10-min per-command timeout; make it configurable if a real project needs longer.
+ */
+export async function runBootstrap(cwd: string, commands: string[]): Promise<void> {
+  for (const command of commands) {
+    const cmd = command.trim();
+    if (!cmd) continue;
+    try {
+      await execShell(cmd, { cwd, timeout: 10 * 60 * 1000, maxBuffer: 32 * 1024 * 1024 });
+    } catch (err) {
+      const e = err as { stderr?: string; stdout?: string; message?: string };
+      const detail = (e.stderr || e.stdout || e.message || '').toString().trim();
+      throw new Error(`Bootstrap command failed: \`${cmd}\`\n${detail}`);
+    }
+  }
 }
 
 async function hasGitIdentity(cwd: string): Promise<boolean> {

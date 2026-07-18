@@ -273,7 +273,7 @@ export async function startServer(port: number, host: string): Promise<void> {
   app.post('/api/projects', async (c) => {
     try {
       const body = await c.req.json();
-      const { name, description, workingDir, agentId, plannerAgentId, reviewerAgentId, planningEnabled, reviewEnabled, sddEnabled } = body;
+      const { name, description, workingDir, agentId, plannerAgentId, reviewerAgentId, planningEnabled, reviewEnabled, sddEnabled, bootstrapCommands } = body;
       const config = await loadConfig();
       if (!config.projects) {
         config.projects = [];
@@ -291,6 +291,9 @@ export async function startServer(port: number, host: string): Promise<void> {
         planningEnabled: typeof planningEnabled === 'boolean' ? planningEnabled : null,
         reviewEnabled: typeof reviewEnabled === 'boolean' ? reviewEnabled : null,
         sddEnabled: typeof sddEnabled === 'boolean' ? sddEnabled : null,
+        bootstrapCommands: Array.isArray(bootstrapCommands)
+          ? bootstrapCommands.map((c: unknown) => String(c).trim()).filter(Boolean)
+          : null,
       };
       config.projects.push(project);
       await saveConfig(config);
