@@ -8,7 +8,7 @@ import { serve } from '@hono/node-server';
 import { WebSocketServer, WebSocket } from 'ws';
 
 import * as harness from '../../harness/index.js';
-import { getDb, Task, getTaskById, saveTask, createTask, addTaskMessage, deleteTask, runQuery } from '../../store/db.js';
+import { getDb, Task, getTaskById, saveTask, createTask, addTaskMessage, deleteTask, runQuery, tryNormalizeChecklistStatus } from '../../store/db.js';
 import { discardWorktree } from '../../lib/task_git.js';
 import { runningTasks } from './scheduler/locks.js';
 import { registerTaskBridge, setTaskBridgeUrl } from './mcp_bridge.js';
@@ -525,7 +525,12 @@ export async function startServer(port: number, host: string): Promise<void> {
   app.post('/api/tasks/:id/checklist-item', async (c) => {
     const taskId = Number(c.req.param('id'));
     const body = await c.req.json();
-    const { itemId, status } = body;
+    const { itemId, status: statusInput } = body;
+
+    const status = tryNormalizeChecklistStatus(statusInput);
+    if (!status) {
+      return c.json({ ok: false, error: `Invalid status "${statusInput}"` }, 400);
+    }
 
     const task = await getTaskById(taskId);
     if (task) {
