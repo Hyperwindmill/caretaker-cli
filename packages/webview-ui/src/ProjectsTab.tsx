@@ -632,6 +632,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
               isSending={isSending}
               onBack={backToList}
               onToggleChecklistItem={handleToggleChecklistItem}
+              onToggleStatus={handleToggleTaskStatus}
               statusColor={statusColor}
             />
           ) : view === 'edit' && selectedTask ? (
@@ -1136,6 +1137,7 @@ interface TaskLogViewProps {
   isSending: boolean;
   onBack: () => void;
   onToggleChecklistItem: (t: Task, item: ChecklistItem) => void;
+  onToggleStatus: (t: Task) => void;
   statusColor: (s: Task['status']) => string;
 }
 
@@ -1150,6 +1152,7 @@ function TaskLogView({
   isSending,
   onBack,
   onToggleChecklistItem,
+  onToggleStatus,
   statusColor,
 }: TaskLogViewProps) {
   const completedCount = task.checklist.filter((c) => c.status === 'done').length;
@@ -1181,12 +1184,32 @@ function TaskLogView({
             </span>
           </div>
         </div>
-        <span
-          className="task-table__badge"
-          style={{ background: statusColor(task.status) }}
-        >
-          {task.status}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {task.status !== 'done' && (
+            <button
+              className="confirm__btn confirm__btn--primary"
+              onClick={() => onToggleStatus(task)}
+              title={isActiveLike ? 'Pause this task (aborts the running agent)' : 'Activate this task'}
+              style={{ padding: '3px 10px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+            >
+              {isActiveLike ? (
+                <>
+                  <PauseIcon size={12} /> Pause
+                </>
+              ) : (
+                <>
+                  <ActivateIcon size={12} /> Activate
+                </>
+              )}
+            </button>
+          )}
+          <span
+            className="task-table__badge"
+            style={{ background: statusColor(task.status) }}
+          >
+            {task.status}
+          </span>
+        </div>
       </header>
 
       {/* Body: checklist sidebar (left) + message thread (right) */}
@@ -1373,7 +1396,7 @@ function TaskEditView({
             onClick={() => onToggleStatus(task)}
             style={{ padding: '3px 10px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
           >
-            {task.status === 'active' || task.status === 'reviewing' ? (
+            {task.status === 'active' || task.status === 'reviewing' || task.status === 'planning' ? (
               <>
                 <PauseIcon size={12} /> Pause
               </>
