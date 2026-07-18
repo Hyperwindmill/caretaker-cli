@@ -1,5 +1,33 @@
 # caretaker-vscode
 
+## 0.12.2
+
+### Patch Changes
+
+- 9517ff3: feat(tasks): show the reviewer agent identity on review output in the task log
+
+  Review output was rendered as a plain user bubble, so it wasn't clear which
+  agent ran the review. The `review` message now stores the reviewer's
+  `name · model` (captured at run time, like the per-cycle developer/planner
+  label) and renders as a labeled "🔎 Code review" bubble, confirming the review
+  was done by the expected agent.
+
+- aac46b1: fix(tasks): persist the running agent identity on each cycle message so the log distinguishes planner from developer
+
+  The previous label resolved the agent live in the UI by message type, which
+  couldn't tell a planning cycle's heartbeat output from a developer cycle's — so
+  planning bubbles showed the developer name. The per-cycle message now stores
+  `agentLabel` (`name · model`) captured at run time from the role-resolved agent,
+  and the thread renders that. It's text of the moment, so it stays correct even
+  if the agent is later renamed or re-modelled. The live UI heuristic remains only
+  as a fallback for older messages.
+
+- Updated dependencies [d078b90]
+- Updated dependencies [9517ff3]
+- Updated dependencies [aac46b1]
+  - @hyperwindmill/caretaker-cli@0.12.2
+  - webview-ui@0.12.2
+
 ## 0.12.1
 
 ### Patch Changes
