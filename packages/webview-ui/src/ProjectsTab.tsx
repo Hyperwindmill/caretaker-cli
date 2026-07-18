@@ -11,6 +11,7 @@ interface Project {
   workingDir: string;
   agentId: string;
   active: boolean;
+  plannerAgentId?: string | null;
 }
 
 interface ChecklistItem {
@@ -101,7 +102,10 @@ function saveShowArchived(v: boolean): void {
 
 // Adapt stored TaskMessages to the shared ChatItem shape so the task thread
 // reuses the normal chat renderer (MessageList) instead of bespoke inline JSX.
-function taskMessagesToChatItems(msgs: TaskMessage[]): ChatItem[] {
+function taskMessagesToChatItems(
+  msgs: TaskMessage[],
+  labels?: { developer?: string; planner?: string },
+): ChatItem[] {
   const items: ChatItem[] = [];
   for (const msg of msgs) {
     if (msg.messageType === 'system' || msg.messageType === 'block') {
@@ -124,7 +128,7 @@ function taskMessagesToChatItems(msgs: TaskMessage[]): ChatItem[] {
       continue;
     }
     if (msg.messageType === 'plan') {
-      items.push({ kind: 'assistant', text: `**📋 Plan submitted**\n\n${msg.content}`, streaming: false });
+      items.push({ kind: 'assistant', text: `**📋 Plan submitted**\n\n${msg.content}`, streaming: false, label: labels?.planner });
       continue;
     }
     if (msg.role === 'user') {
@@ -148,7 +152,7 @@ function taskMessagesToChatItems(msgs: TaskMessage[]): ChatItem[] {
       }
     }
     if (thinking) items.push({ kind: 'thinking', text: thinking });
-    items.push({ kind: 'assistant', text, streaming: false });
+    items.push({ kind: 'assistant', text, streaming: false, label: labels?.developer });
   }
   return items;
 }
@@ -577,6 +581,26 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
   const selectedTask = tasks.find((t) => t.id === selectedTaskId);
   const selectedProjectAgentName = agents.find((a) => a.id === selectedProject?.agentId)?.name || 'Default Agent';
 
+  // Resolve the agent identity (name · model) behind each assistant bubble in the
+  // task thread, so it's not just "assistant". Same fallback chain as the runtime:
+  // task role id → project role id → project developer → first agent.
+  const agentLabelFor = (agentId?: string | null): string | undefined => {
+    const a = agents.find((x) => x.id === agentId);
+    return a ? `${a.name} · ${a.model}` : undefined;
+  };
+  const taskAgentLabels = selectedTask
+    ? {
+        developer: agentLabelFor(selectedTask.agentId || selectedProject?.agentId || agents[0]?.id),
+        planner: agentLabelFor(
+          selectedTask.plannerAgentId ||
+            selectedProject?.plannerAgentId ||
+            selectedTask.agentId ||
+            selectedProject?.agentId ||
+            agents[0]?.id,
+        ),
+      }
+    : undefined;
+
   const reviewRound = selectedTask
     ? taskMessages.filter((m) => m.messageType === 'review').length + 1
     : 1;
@@ -644,6 +668,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
             <TaskLogView
               task={selectedTask}
               taskMessages={taskMessages}
+              agentLabels={taskAgentLabels}
               isActiveLike={isActiveLike}
               reviewRound={reviewRound}
               composerText={composerText}
@@ -1150,6 +1175,7 @@ function TaskListView({
 interface TaskLogViewProps {
   task: Task;
   taskMessages: TaskMessage[];
+  agentLabels?: { developer?: string; planner?: string };
   isActiveLike: boolean;
   reviewRound: number;
   composerText: string;
@@ -1165,6 +1191,7 @@ interface TaskLogViewProps {
 function TaskLogView({
   task,
   taskMessages,
+  agentLabels,
   isActiveLike,
   reviewRound,
   composerText,
@@ -1300,7 +1327,7 @@ function TaskLogView({
           {taskMessages.length === 0 ? (
             <div className="messages messages--empty">No messages in this execution yet. Agent will start on next tick.</div>
           ) : (
-            <MessageList items={taskMessagesToChatItems(taskMessages)} sessionId={null} />
+            <MessageList items={taskMessagesToChatItems(taskMessages, agentLabels)} sessionId={null} />
           )}
 
           {/* Composer */}

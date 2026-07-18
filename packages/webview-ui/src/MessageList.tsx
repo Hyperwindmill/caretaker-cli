@@ -129,7 +129,7 @@ function Item({ item, sessionId }: { item: ChatItem; sessionId: string | null })
     case 'assistant':
       return (
         <div className="bubble bubble--assistant">
-          <div className="bubble__role">assistant</div>
+          <div className="bubble__role">{item.label || 'assistant'}</div>
           <div className="bubble__text">
             <MarkdownText content={item.text} />
             {item.streaming && <span className="bubble__caret">▌</span>}

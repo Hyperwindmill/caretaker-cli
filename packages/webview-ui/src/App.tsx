@@ -46,6 +46,8 @@ export interface AssistantItem {
   text: string;
   /** false once a tool call closes this span or `done` arrives */
   streaming: boolean;
+  /** Optional role label shown instead of "assistant" (e.g. the task agent name · model). */
+  label?: string;
 }
 export interface ToolItem {
   kind: 'tool';
