@@ -1,5 +1,12 @@
 # caretaker-cli
 
+## 0.11.2
+
+### Patch Changes
+
+- 8e81883: Reject unrecognized checklist item status values at the `task_update_checklist_item`/`task_update_checklist` tool boundary and the `/api/tasks/:id/checklist-item` endpoint, instead of silently persisting whatever string the agent sent. Fixes checklist items getting stuck unchecked when an agent sends a synonym like "completed" instead of the exact enum value "done".
+- 14efee3: Fix aggressive auto-scroll in the chat and task message views. Following new content is now gated on a proper stick-to-bottom flag tracked from the scroll position: the view only follows when you are already at the bottom, detaches the instant you scroll up, and re-attaches when you scroll back down (sending your own message always re-pins). Scrolling now targets the message container directly instead of `scrollIntoView`, so it no longer jerks the surrounding task layout.
+
 ## 0.11.1
 
 ### Patch Changes
