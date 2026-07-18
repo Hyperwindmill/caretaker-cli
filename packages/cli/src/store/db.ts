@@ -59,6 +59,9 @@ export interface TaskMessage {
   content: string;
   toolCallId?: string | null;
   agentId?: string | null;
+  /** Identity of the agent that produced this message, captured at creation as
+   *  `name · model` text (of that moment — survives later agent reconfig/rename). */
+  agentLabel?: string | null;
   createdAt: string;
 }
 

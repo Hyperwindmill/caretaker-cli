@@ -265,6 +265,10 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
       role: 'assistant',
       messageType: 'heartbeat_live',
       content: '',
+      // Capture the role-resolved agent behind this cycle, so the thread shows
+      // who actually ran (planner during planning, developer during active) —
+      // as text of the moment, not resolved live in the UI.
+      agentLabel: `${agent.name} · ${agent.model}`,
     });
     liveMsgId = liveMsg.id;
 
