@@ -518,6 +518,9 @@ async function runReviewCycle(opts: {
       role: 'user',
       messageType: 'review',
       content: `[CODE REVIEW round ${round}/${MAX_REVIEW_ROUNDS}] verdict=${verdict}\n\n${reviewText}`,
+      // role is 'user' so the verdict replays into the agent's history as feedback,
+      // but the reviewer agent produced it — capture that for the log display.
+      agentLabel: `${agent.name} · ${agent.model}`,
     });
   }
   console.log(`[task_heartbeat] Task #${task.id} review round ${round}: ${verdict}`);
