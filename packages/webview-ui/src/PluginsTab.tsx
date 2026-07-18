@@ -171,6 +171,7 @@ export function PluginsTab({
         <div className="glass-form">
           <h4>{isCreating ? 'Register Plugin Source' : 'Edit Plugin Source'}</h4>
           
+          <div className="glass-form__body">
           <div className="form-group">
             <label>Source Type</label>
             <div className="radio-group">
@@ -252,6 +253,7 @@ export function PluginsTab({
               />
               <span>Automatically refresh on startup</span>
             </label>
+          </div>
           </div>
 
           <div className="form-actions">

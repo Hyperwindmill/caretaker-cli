@@ -185,7 +185,8 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
       {showForm ? (
         <div className="glass-form">
           <h4>{isCreating ? 'Register New Project' : `Edit Project: ${editingProject?.name}`}</h4>
-          
+
+          <div className="glass-form__body">
           <div className="form-group">
             <label htmlFor="project-name">Project Name</label>
             <input
@@ -267,7 +268,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
           </div>
 
           <div className="form-group" style={{ display: 'flex', gap: '16px' }}>
-            <div style={{ flex: 1 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <label htmlFor="project-planning-enabled">Planning Phase</label>
               <select
                 id="project-planning-enabled"
@@ -279,7 +280,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
                 <option value="off">Off</option>
               </select>
             </div>
-            <div style={{ flex: 1 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <label htmlFor="project-review-enabled">Review at DONE</label>
               <select
                 id="project-review-enabled"
@@ -291,7 +292,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
                 <option value="off">Off</option>
               </select>
             </div>
-            <div style={{ flex: 1 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <label htmlFor="project-sdd-enabled">SDD Mode</label>
               <select
                 id="project-sdd-enabled"
@@ -341,6 +342,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
               Wall-clock budget for a single heartbeat cycle, enforced as an abort for every provider.
               Tasks inherit this and can override it. Leave empty for the default.
             </p>
+          </div>
           </div>
 
           <div className="form-actions">

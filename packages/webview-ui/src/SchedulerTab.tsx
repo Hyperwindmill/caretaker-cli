@@ -299,6 +299,7 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
         <div className="glass-form">
           <h4>{isCreating ? 'Add Scheduled Task' : `Edit Task: ${editingTask?.name}`}</h4>
           
+          <div className="glass-form__body">
           <div className="form-group">
             <label htmlFor="task-name">Task Name</label>
             <input
@@ -477,6 +478,7 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
               </div>
             </>
           )}
+          </div>
 
           <div className="form-actions">
             <button className="btn btn--secondary" onClick={cancelForm}>
