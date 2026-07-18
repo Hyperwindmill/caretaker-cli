@@ -10,7 +10,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import * as harness from '../../harness/index.js';
 import { getDb, Task, getTaskById, saveTask, createTask, addTaskMessage, deleteTask, runQuery, tryNormalizeChecklistStatus } from '../../store/db.js';
 import { discardWorktree } from '../../lib/task_git.js';
-import { runningTasks } from './scheduler/locks.js';
+import { runningTasks, abortRunningTask } from './scheduler/locks.js';
 import { registerTaskBridge, setTaskBridgeUrl } from './mcp_bridge.js';
 import {
   loadAgents,
@@ -436,6 +436,9 @@ export async function startServer(port: number, host: string): Promise<void> {
         task.blockedReason = null;
       } else {
         task.status = status;
+        // Pausing/blocking must abort the in-flight run, not just skip the next
+        // tick — an off-the-rails agent has to stop now.
+        abortRunningTask(taskId);
       }
       task.updatedAt = new Date().toISOString();
       await saveTask(task);

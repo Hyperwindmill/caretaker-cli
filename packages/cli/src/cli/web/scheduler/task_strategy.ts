@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto';
 import * as harness from '../../../harness/index.js';
 import { loadAgents, loadConfig } from '../../../store/json.js';
 import { getDb, Task, Project, TaskMessage, getTaskById, saveTask, addTaskMessage, updateTaskMessageContent, runQuery } from '../../../store/db.js';
-import { runningTasks } from './locks.js';
-import { isGitRepo, ensureWorktree, agentDirIn, commitWip, finalizeDone } from '../../../lib/task_git.js';
+import { runningTasks, runningTaskControllers } from './locks.js';
+import { isGitRepo, ensureWorktree, agentDirIn, commitWip, finalizeDone, runBootstrap } from '../../../lib/task_git.js';
 import { runDoneReview, MAX_REVIEW_ROUNDS } from './task_review.js';
 import type { AgentConfig, ProviderConfig, ProjectConfig } from '../../../types.js';
 import type { Tool } from '../../../harness/tools/types.js';
@@ -135,6 +135,9 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
   }
 
   runningTasks.add(lockKey);
+  // Register an abort handle so Pause/block can kill this run mid-cycle.
+  const abortController = new AbortController();
+  runningTaskControllers.set(task.id, abortController);
   console.log(`[task_heartbeat] Claimed task #${task.id}: "${task.title}"`);
 
   // Update lockedAt in DB
@@ -229,7 +232,7 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
     // review gate flag is read at decision time: disabling it while a task sits
     // in reviewing finalizes the task directly on the next tick.
     if (task.status === 'reviewing') {
-      await runReviewCycle({ task, project, agent: effectiveAgent, provider, tools, workingDir });
+      await runReviewCycle({ task, project, agent: effectiveAgent, provider, tools, workingDir, signal: abortController.signal });
       return; // the finally{} block still runs and releases the lock
     }
 
@@ -303,7 +306,8 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
     // so bound them with a wall-clock timeout instead; native runs stay
     // governed by maxTurns as usual.
     let ccTimer: NodeJS.Timeout | undefined;
-    let signal: AbortSignal | undefined;
+    // Same handle Pause aborts; claude-code adds a wall-clock timeout on top.
+    const signal: AbortSignal = abortController.signal;
     if (isClaudeCode) {
       const bridgeUrl = getTaskBridgeUrl();
       bridgeToken = bridgeUrl ? issueBridgeToken() : undefined;
@@ -315,9 +319,7 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
       if (!bridgeUrl) {
         console.warn('[tasks] claude-code agent without task bridge URL — task tools unavailable this run');
       }
-      const ccController = new AbortController();
-      ccTimer = setTimeout(() => ccController.abort(), CLAUDE_CODE_MAX_RUN_MS);
-      signal = ccController.signal;
+      ccTimer = setTimeout(() => abortController.abort(), CLAUDE_CODE_MAX_RUN_MS);
     }
 
     try {
@@ -436,6 +438,7 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
       await saveTask(finalCheck);
     }
     runningTasks.delete(lockKey);
+    runningTaskControllers.delete(task.id);
     console.log(`[task_heartbeat] Lock released for task #${task.id}`);
   }
 }
@@ -447,8 +450,9 @@ async function runReviewCycle(opts: {
   provider: ProviderConfig;
   tools: Tool[];
   workingDir: string;
+  signal?: AbortSignal;
 }): Promise<void> {
-  const { task, project, agent, provider, tools, workingDir } = opts;
+  const { task, project, agent, provider, tools, workingDir, signal } = opts;
   if (!task.worktreePath) return; // reviewing implies a worktree; nothing to review otherwise
 
   // Review gate disabled (task or project level): finalize directly, no review.
@@ -485,6 +489,7 @@ async function runReviewCycle(opts: {
       branch: task.branch || '(unknown)',
       workingDir,
       round,
+      signal,
     });
     verdict = review.verdict;
     reviewText = review.text;

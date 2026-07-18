@@ -50,6 +50,7 @@ export async function runDoneReview(opts: {
   branch: string;
   workingDir: string;
   round: number;
+  signal?: AbortSignal;
 }): Promise<{ verdict: 'pass' | 'changes'; text: string }> {
   // Strip task-state tools: the reviewer must not mutate the task; the harness decides.
   const reviewTools = opts.tools.filter((t) => !t.name.startsWith('mcp__task__'));
@@ -62,11 +63,11 @@ export async function runDoneReview(opts: {
   // no --max-turns equivalent, so a runaway review pass would otherwise stall
   // the reviewing gate indefinitely.
   let ccTimer: NodeJS.Timeout | undefined;
-  let signal: AbortSignal | undefined;
+  let signal: AbortSignal | undefined = opts.signal;
   if (isClaudeCode) {
     const ccController = new AbortController();
     ccTimer = setTimeout(() => ccController.abort(), CLAUDE_CODE_MAX_RUN_MS);
-    signal = ccController.signal;
+    signal = opts.signal ? AbortSignal.any([opts.signal, ccController.signal]) : ccController.signal;
   }
   try {
     const result = await harness.run(
