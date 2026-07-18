@@ -45,6 +45,8 @@ export interface Task {
   planningEnabled?: boolean | null;
   reviewEnabled?: boolean | null;
   sddEnabled?: boolean | null;
+  /** Per-invocation wall-clock budget (seconds). Inherits from the project; unset = default. */
+  maxRunSeconds?: number | null;
   createdAt: string;
   updatedAt: string;
 }

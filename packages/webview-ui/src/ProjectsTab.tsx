@@ -40,6 +40,7 @@ interface Task {
   planningEnabled?: boolean | null;
   reviewEnabled?: boolean | null;
   sddEnabled?: boolean | null;
+  maxRunSeconds?: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -545,6 +546,25 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
     }
   };
 
+  const handleSetTaskMaxRun = async (task: Task, value: number | null) => {
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/flags`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ maxRunSeconds: value }),
+      });
+      if (res.ok) {
+        if (selectedProjectId !== null) fetchTasks(selectedProjectId);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setTaskError(data.error || 'Failed to update task setting');
+      }
+    } catch (err) {
+      console.error('Failed to set task max run seconds:', err);
+      setTaskError('Failed to update task setting');
+    }
+  };
+
   // Back to the list view (keeps selected project).
   const backToList = () => {
     setView('list');
@@ -647,6 +667,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
               onToggleChecklistItem={handleToggleChecklistItem}
               onSetAgent={handleSetTaskAgent}
               onSetFlag={handleSetTaskFlag}
+              onSetMaxRun={handleSetTaskMaxRun}
               onOpenLog={() => setView('log')}
               statusColor={statusColor}
             />
@@ -1329,6 +1350,7 @@ interface TaskEditViewProps {
   onToggleChecklistItem: (t: Task, item: ChecklistItem) => void;
   onSetAgent: (t: Task, role: 'developer' | 'planner' | 'reviewer', agentId: string) => void;
   onSetFlag: (t: Task, flag: 'planningEnabled' | 'reviewEnabled' | 'sddEnabled', value: boolean | null) => void;
+  onSetMaxRun: (t: Task, value: number | null) => void;
   onOpenLog: () => void;
   statusColor: (s: Task['status']) => string;
 }
@@ -1344,6 +1366,7 @@ function TaskEditView({
   onToggleChecklistItem,
   onSetAgent,
   onSetFlag,
+  onSetMaxRun,
   onOpenLog,
   statusColor,
 }: TaskEditViewProps) {
@@ -1532,6 +1555,25 @@ function TaskEditView({
               </label>
             ))}
           </div>
+          <label style={{ fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '12px', maxWidth: '260px' }}>
+            Max run seconds per cycle
+            <input
+              type="number"
+              min={1}
+              defaultValue={task.maxRunSeconds ?? ''}
+              key={task.maxRunSeconds ?? 'default'}
+              placeholder="Project default"
+              title="Wall-clock budget for one cycle, enforced as an abort. Empty = inherit the project (or the 120s native / 900s claude-code default)."
+              onBlur={(e) => {
+                const raw = e.target.value.trim();
+                const n = raw === '' ? null : parseInt(raw, 10);
+                const next = n !== null && Number.isFinite(n) && n > 0 ? n : null;
+                if (next !== (task.maxRunSeconds ?? null)) onSetMaxRun(task, next);
+              }}
+              onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+              style={{ background: 'var(--vscode-input-background, #252526)', color: 'var(--vscode-input-foreground)', border: '1px solid var(--vscode-input-border, #3c3c3c)', borderRadius: '4px', padding: '6px 8px', fontSize: '12px', outline: 'none' }}
+            />
+          </label>
         </div>
 
         {task.status === 'blocked' && task.blockedReason && (
