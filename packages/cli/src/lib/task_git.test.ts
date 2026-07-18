@@ -120,3 +120,31 @@ test('commitWip bypasses a failing pre-commit hook and works without configured 
   await finalizeDone(worktreePath);
   await rm(repo, { recursive: true, force: true });
 });
+
+test('runBootstrap uses the probed shell environment (PATH) for commands', async () => {
+  // Directly populate the shell-env cache as if probeShellEnv() had run, so a
+  // binary that only exists on the probed PATH is found by runBootstrap.
+  const { setShellEnvForTest } = await import('../harness/tools/builtin/shell-env.js');
+  const binDir = await mkdtemp(join(tmpdir(), 'ct-path-'));
+  // A fake "pnpm" that just writes a marker file into the cwd.
+  const fakePnpm = join(binDir, 'pnpm');
+  await writeFile(fakePnpm, '#!/bin/sh\necho ran > marker.txt\n');
+  await chmod(fakePnpm, 0o755);
+
+  const dir = await mkdtemp(join(tmpdir(), 'ct-boot-env-'));
+  // On Linux the probed PATH is prepended, so a bare `pnpm` resolves to our shim.
+  // On macOS/Windows the probe is a no-op, so skip there (no probed PATH to honour).
+  if (process.platform === 'linux') {
+    setShellEnvForTest({ PATH: binDir });
+    try {
+      await runBootstrap(dir, ['pnpm install']);
+      assert.ok((await stat(join(dir, 'marker.txt'))).isFile());
+    } finally {
+      await rm(binDir, { recursive: true, force: true });
+      await rm(dir, { recursive: true, force: true });
+    }
+  } else {
+    await rm(binDir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true });
+  }
+});

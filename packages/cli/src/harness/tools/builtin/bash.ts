@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 import type { Tool } from '../types.js';
-import { mergeShellEnv } from './shell-env.js';
+import { commandEnv } from './shell-env.js';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 /** Cap on stdout+stderr we echo back to the model. The harness applies a
@@ -9,32 +9,13 @@ const DEFAULT_TIMEOUT_MS = 30_000;
  *  the bash tool itself for very chatty commands. */
 const MAX_OUTPUT_BYTES = 50_000;
 
-// Env var patterns scrubbed from the spawned child env. Mirrors caretaker
-// server's policy in src/mcp/shell.ts: keep tokens/keys/secrets out of
-// command-line tools the agent runs.
-const SECRET_ENV_PATTERNS = [/^OPENCODE_/, /^CLAUDE_/, /_TOKEN$/, /_KEY$/, /_SECRET$/];
-
-function scrubbedEnv(): NodeJS.ProcessEnv {
-  const out: NodeJS.ProcessEnv = {};
-  for (const [k, v] of Object.entries(process.env)) {
-    if (SECRET_ENV_PATTERNS.some((re) => re.test(k))) continue;
-    out[k] = v;
-  }
-  return out;
-}
-
 /**
- * Build the environment for bash subprocesses.
- * On Linux, merges the probed interactive shell environment to capture
- * PATH and version manager variables (NVM, volta, fnm, etc.) that
- * .bashrc sets but which are missing in non-interactive shells.
+ * Build the environment for bash subprocesses. Delegates to the shared
+ * `commandEnv()` so the bash tool and the task bootstrap/git helpers use
+ * one scrub + probe-merge policy.
  */
 function bashEnv(): NodeJS.ProcessEnv {
-  const base = scrubbedEnv();
-  if (process.platform === 'linux') {
-    return mergeShellEnv(base);
-  }
-  return base;
+  return commandEnv();
 }
 
 export const bashTool: Tool = {
