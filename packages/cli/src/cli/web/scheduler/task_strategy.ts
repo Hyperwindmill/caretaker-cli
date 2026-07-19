@@ -19,7 +19,8 @@ import {
   resolveDockerImage,
   TaskRole,
 } from './task_roles.js';
-import { ensureContainer, removeContainer, containerName, dockerDevAllowlist, containerHasGit } from '../../../lib/docker.js';
+import { resolve as resolvePath, dirname } from 'node:path';
+import { ensureContainer, removeContainer, containerName, dockerDevAllowlist, containerHasGit, isDockerfilePath, buildImage, containerRunning } from '../../../lib/docker.js';
 
 function buildPrompt(
   systemPrompt: string,
@@ -210,7 +211,19 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
         if (commonDir) extraMounts.push(commonDir);
       }
       try {
-        await ensureContainer(name, dockerImage, mountRoot, workingDir, extraMounts);
+        // dockerImage may be a Dockerfile path (starts with . / \) → build a
+        // per-project image from it (cached; only when we'll (re)create the
+        // container); otherwise it is a pullable image ref used as-is.
+        let imageRef = dockerImage;
+        if (isDockerfilePath(dockerImage)) {
+          imageRef = `caretaker-project-${task.projectId}:latest`;
+          if (!(await containerRunning(name))) {
+            const dockerfile = resolvePath(baseWorkingDir, dockerImage);
+            console.log(`[task_heartbeat] Task #${task.id} building image ${imageRef} from ${dockerfile}`);
+            await buildImage(dockerfile, dirname(dockerfile), imageRef);
+          }
+        }
+        await ensureContainer(name, imageRef, mountRoot, workingDir, extraMounts);
         dockerContainer = name;
         if (task.dockerContainer !== name) {
           task.dockerContainer = name;
