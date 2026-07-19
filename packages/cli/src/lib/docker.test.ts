@@ -24,6 +24,13 @@ test('containerRunArgs: omits --user when uid/gid undefined', () => {
   assert.equal(args.includes('--user'), false);
 });
 
+test('containerRunArgs: adds identical-path -v for each extra mount (git common dir)', () => {
+  const args = containerRunArgs('c1', 'node:22', '/wt', '/wt/app', 1000, 1000, ['/repo/.git']);
+  // primary mount + extra mount, both identical-path
+  const vFlags = args.reduce<string[]>((acc, a, i) => (a === '-v' ? [...acc, args[i + 1]!] : acc), []);
+  assert.deepEqual(vFlags, ['/wt:/wt', '/repo/.git:/repo/.git']);
+});
+
 test('containerExecArgs wraps in sh -lc', () => {
   assert.deepEqual(containerExecArgs('c1', '/wt/app', 'ls -a'), [
     'exec', '-w', '/wt/app', 'c1', 'sh', '-lc', 'ls -a',

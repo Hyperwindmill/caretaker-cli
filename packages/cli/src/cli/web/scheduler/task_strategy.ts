@@ -3,7 +3,7 @@ import * as harness from '../../../harness/index.js';
 import { loadAgents, loadConfig } from '../../../store/json.js';
 import { getDb, Task, Project, TaskMessage, getTaskById, saveTask, addTaskMessage, updateTaskMessageContent, runQuery } from '../../../store/db.js';
 import { runningTasks, runningTaskControllers } from './locks.js';
-import { isGitRepo, ensureWorktree, agentDirIn, commitWip, finalizeDone, runBootstrap } from '../../../lib/task_git.js';
+import { isGitRepo, ensureWorktree, agentDirIn, commitWip, finalizeDone, runBootstrap, gitCommonDir } from '../../../lib/task_git.js';
 import { runDoneReview, MAX_REVIEW_ROUNDS } from './task_review.js';
 import type { AgentConfig, ProviderConfig, ProjectConfig } from '../../../types.js';
 import type { Tool } from '../../../harness/tools/types.js';
@@ -19,7 +19,7 @@ import {
   resolveDockerImage,
   TaskRole,
 } from './task_roles.js';
-import { ensureContainer, removeContainer, containerName, dockerDevAllowlist } from '../../../lib/docker.js';
+import { ensureContainer, removeContainer, containerName, dockerDevAllowlist, containerHasGit } from '../../../lib/docker.js';
 
 function buildPrompt(
   systemPrompt: string,
@@ -199,14 +199,28 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
     // the docker error — same policy as a failed bootstrap command.
     const dockerImage = resolveDockerImage(task, project);
     let dockerContainer: string | undefined;
+    let dockerHasGit = true;
     if (dockerImage) {
       const name = containerName(task.projectId, task.id);
+      // Also mount the git common dir so a linked worktree's gitdir resolves
+      // inside the container (identical-path). Only for git-worktree tasks.
+      const extraMounts: string[] = [];
+      if (task.worktreePath) {
+        const commonDir = await gitCommonDir(workingDir);
+        if (commonDir) extraMounts.push(commonDir);
+      }
       try {
-        await ensureContainer(name, dockerImage, mountRoot, workingDir);
+        await ensureContainer(name, dockerImage, mountRoot, workingDir, extraMounts);
         dockerContainer = name;
         if (task.dockerContainer !== name) {
           task.dockerContainer = name;
           await saveTask(task);
+        }
+        // In-container git is best-effort: warn the agent (via the prompt) when
+        // the image ships no git. The harness commits host-side regardless.
+        dockerHasGit = await containerHasGit(name);
+        if (!dockerHasGit) {
+          console.warn(`[task_heartbeat] Task #${task.id} container image "${dockerImage}" has no git — agent git commands will fail (commits are host-side).`);
         }
       } catch (dockErr) {
         const reason = dockErr instanceof Error ? dockErr.message : String(dockErr);
@@ -296,10 +310,16 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
       ? buildPlanningPrompt(agent.systemPrompt, task.id, task.title, maxRunSeconds, maxTurns, workingDir, sdd)
       : buildPrompt(agent.systemPrompt, task.id, task.title, maxRunSeconds, maxTurns, workingDir);
 
-    const effectivePrompt =
-      isClaudeCode && dockerContainer && !planning
-        ? `${prompt}\n\n**Execution environment:** your shell commands run inside a Docker container (image \`${dockerImage}\`) mounted at \`${workingDir}\`. File reads/writes are confined to this directory.`
-        : prompt;
+    // Tell the dev agent (either provider) it is containerized, and warn when
+    // git is unavailable in the image so it doesn't waste turns on failing git.
+    let effectivePrompt = prompt;
+    if (dockerContainer && !planning) {
+      let env = `\n\n**Execution environment:** your shell commands run inside a Docker container (image \`${dockerImage}\`) mounted at \`${workingDir}\`. File reads/writes are confined to this directory.`;
+      if (!dockerHasGit) {
+        env += ` Note: \`git\` is NOT available in this container — do not run git commands (commits are handled automatically for you).`;
+      }
+      effectivePrompt = `${prompt}${env}`;
+    }
 
     const checklistBefore = (task.checklist || []).filter((item) => item.status !== 'pending').length;
 

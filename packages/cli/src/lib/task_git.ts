@@ -40,6 +40,21 @@ function worktreePathFor(projectId: number, taskId: number): string {
   return join(dataDir(), 'worktrees', `${projectId}-${taskId}`);
 }
 
+/**
+ * Absolute git common dir for a (linked) worktree — the main repo's shared
+ * `.git`, which holds the object store and `worktrees/<id>`. A worktree's own
+ * `.git` file points inside here, so mounting this path into a container (at
+ * an identical path) is what makes in-container git resolve. Returns null when
+ * it can't be determined (e.g. not a git dir).
+ */
+export async function gitCommonDir(worktreePath: string): Promise<string | null> {
+  try {
+    return await git(worktreePath, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
+  } catch {
+    return null;
+  }
+}
+
 export async function agentDirIn(worktreePath: string, projectWorkingDir: string): Promise<string> {
   // Preserve a sub-directory working dir when the project points below the repo root.
   const repoRoot = await git(projectWorkingDir, ['rev-parse', '--show-toplevel']);
