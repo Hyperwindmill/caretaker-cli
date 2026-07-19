@@ -204,6 +204,37 @@ Docker unavailable / `docker run` failure / image pull failure → task to
 - `README.md`: the new project setting (user-facing).
 - Changeset: **minor**.
 
+## Amendments (post-implementation review, 2026-07-20)
+
+Whole-branch review surfaced two issues; resolved as follows.
+
+1. **In-container git was broken for worktree tasks.** A linked worktree's `.git`
+   points to `<mainrepo>/.git/worktrees/<id>`, outside the worktree bind mount, so
+   `git` inside the container failed (`fatal: not a git repository`). **Fix:** mount
+   the git common dir at an identical path too (`gitCommonDir()` in `task_git.ts` →
+   extra `-v` in `containerRunArgs`). Verified with real Docker + `--user`:
+   `git status`/`log`/`diff` return 0 inside the container. In-container git is
+   **best-effort** — a minimal image may ship none; the agent is warned via the
+   prompt (`containerHasGit()` check at ensure time) and the WIP commit stays
+   host-side, so a missing git never breaks the lifecycle.
+
+2. **The DONE-review runs on the host, not the container** (correcting the goal's
+   "all cycles in the container"). Rationale: the review is git-diff-driven and
+   read-mostly, so its isolation value is low while its git dependency is high; the
+   host has git guaranteed regardless of the image. Only developer/planner cycles
+   are containerized. No code change (the review path already ran host-side) — this
+   amendment records it as intentional.
+
+## Future directions (NOT in scope — do not preclude)
+
+- **Agent-level docker isolation** (chat + heartbeat + all surfaces): the primitives
+  are already task-agnostic (name as a parameter). A later `AgentConfig` image field
+  + a longer-lived container lifecycle would be additive.
+- **Remote / push mode**: a cloud-executed variant (à la a remote GitHub agent) that
+  runs on a server and pushes the task branch to a remote. Deferred — it needs remote
+  credentials + auth, which the local-worktree model deliberately avoids. The current
+  design does not preclude it (remote + auth would be additive).
+
 ## Execution note
 
 The implementation plan is written for a fast external executor (Gemini): tasks
