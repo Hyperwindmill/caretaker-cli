@@ -26,6 +26,19 @@ export function resolveMaxRunSeconds(
   return isClaudeCode ? CLAUDE_CODE_DEFAULT_RUN_SECONDS : DEFAULT_RUN_SECONDS;
 }
 
+/**
+ * Resolve the docker image for a task's runs. Phase-1: project-level only, so
+ * the task arg is accepted (for a future per-task override tier) but unused.
+ * This is the single config chokepoint — a later agent-level tier is added here.
+ */
+export function resolveDockerImage(
+  _task: Pick<Task, 'projectId'>,
+  project: Pick<ProjectConfig, 'dockerImage'> | null | undefined,
+): string | null {
+  const img = project?.dockerImage?.trim();
+  return img ? img : null;
+}
+
 export function resolveRoleAgent(
   role: TaskRole,
   task: Task,
