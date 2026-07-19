@@ -144,9 +144,14 @@ export function dockerClaudeSettings(
 }
 
 /** Confine claude-code file tools to the working dir. Bash is allowed (the docker
- *  hook contains it); writers are path-scoped to workdir; mcp__task stays open. */
+ *  hook contains it); readers/writers are path-scoped to workdir; mcp__task stays
+ *  open. NOTE: Claude Code's Read/Edit/Write rule syntax uses `//path` for an
+ *  ABSOLUTE path and `/path` for project-relative. `workdir` is absolute (leads
+ *  with `/`), so the rule must be `//<workdir>/**` — hence the extra leading `/`.
+ *  With a single slash the rule is read as project-relative, matches nothing, and
+ *  `--permission-mode manual` then denies every file-tool call (even in-workspace). */
 export function dockerDevAllowlist(workdir: string): string[] {
-  const scope = `${workdir}/**`;
+  const scope = `/${workdir}/**`; // workdir starts with '/', so this yields '//<abs>/**'
   return [
     `Read(${scope})`,
     `Edit(${scope})`,
