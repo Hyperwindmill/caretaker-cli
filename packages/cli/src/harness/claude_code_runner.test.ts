@@ -287,3 +287,11 @@ test('claudeCodeTaskExtras: developer / planner / planner+sdd', () => {
   const noBridge = claudeCodeTaskExtras({ planning: false, sdd: false });
   assert.equal(noBridge.extraMcpServers, undefined);
 });
+
+test('buildClaudeArgs emits --settings when settingsPath is set', () => {
+  const args = buildClaudeArgs({ persistSession: false, settingsPath: '/tmp/s.json' });
+  const i = args.indexOf('--settings');
+  assert.notEqual(i, -1);
+  assert.equal(args[i + 1], '/tmp/s.json');
+});
+

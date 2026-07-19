@@ -23,12 +23,14 @@ import {
 import type { AssistantPart, MessageRecord } from '../session/types.js';
 import { loadMcpServers } from '../store/json.js';
 import { resolvedServerRuntime } from '../mcp/client.js';
+import { DOCKER_BASH_HOOK_SCRIPT, dockerClaudeSettings } from '../lib/docker.js';
 
 export type ClaudeCodeRunExtras = {
   permissionMode?: string;
   allowedTools?: string[];
   disallowedTools?: string[];
   extraMcpServers?: Record<string, { type: 'http'; url: string; headers?: Record<string, string> }>;
+  docker?: { container: string; workdir: string };
 };
 
 // ─── test hooks (same pattern as loop.ts __setFetch) ────────────────────
@@ -73,6 +75,7 @@ export interface ClaudeArgsInput {
   allowedTools?: string[];
   disallowedTools?: string[];
   mcpConfigPath?: string;
+  settingsPath?: string;
   resumeId?: string;
   persistSession: boolean;
 }
@@ -85,6 +88,7 @@ export function buildClaudeArgs(i: ClaudeArgsInput): string[] {
   if (i.allowedTools?.length) args.push('--allowedTools', ...i.allowedTools);
   if (i.disallowedTools?.length) args.push('--disallowedTools', ...i.disallowedTools);
   if (i.mcpConfigPath) args.push('--mcp-config', i.mcpConfigPath, '--strict-mcp-config');
+  if (i.settingsPath) args.push('--settings', i.settingsPath);
   if (i.resumeId) args.push('--resume', i.resumeId);
   else if (!i.persistSession) args.push('--no-session-persistence');
   return args;
@@ -331,6 +335,19 @@ export async function runClaudeCode(opts: RunOptions, cb: RunCallbacks = {}): Pr
   // 3. Per-run mcp-config temp file (agent's servers + injected bridge).
   const mcp = await buildMcpConfigFile(agent.mcpServers ?? [], opts.claudeCode?.extraMcpServers);
 
+  // Per-run --settings temp file: registers the PreToolUse Bash-rewrite hook
+  // so claude-code shell commands run inside the task's docker container.
+  let settings: { settingsPath: string; cleanup: () => Promise<void> } | null = null;
+  if (opts.claudeCode?.docker) {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'caretaker-cc-settings-'));
+    const hookPath = path.join(dir, 'docker-hook.mjs');
+    await writeFile(hookPath, DOCKER_BASH_HOOK_SCRIPT, { mode: 0o700 });
+    const settingsPath = path.join(dir, 'settings.json');
+    const obj = dockerClaudeSettings(opts.claudeCode.docker.container, opts.claudeCode.docker.workdir, hookPath);
+    await writeFile(settingsPath, JSON.stringify(obj), { mode: 0o600 });
+    settings = { settingsPath, cleanup: () => rm(dir, { recursive: true, force: true }) };
+  }
+
   const permissionMode =
     opts.claudeCode?.permissionMode ??
     agent.permissionMode ??
@@ -347,6 +364,7 @@ export async function runClaudeCode(opts: RunOptions, cb: RunCallbacks = {}): Pr
       allowedTools: opts.claudeCode?.allowedTools,
       disallowedTools: opts.claudeCode?.disallowedTools,
       mcpConfigPath: mcp?.configPath,
+      settingsPath: settings?.settingsPath,
       resumeId: resume,
       persistSession: Boolean(opts.sessionId),
     });
@@ -417,5 +435,6 @@ export async function runClaudeCode(opts: RunOptions, cb: RunCallbacks = {}): Pr
     return { text, toolCalls, usage: cumulative, stop: 'done' };
   } finally {
     await mcp?.cleanup().catch(() => {});
+    await settings?.cleanup().catch(() => {});
   }
 }
