@@ -24,6 +24,11 @@ identical absolute path** (`-v <wt>:<wt> -w <wt>`), the file tools
 host and container see the same files at the same paths. Only `bash` +
 bootstrap run inside the container.
 
+The file tools operate on the **host** filesystem, so isolation is only complete
+if they are also confined to the working dir (see "File-tool confinement" below);
+otherwise a `Read`/`Write` outside the worktree would hit the host, not the
+container.
+
 ## Config surface
 
 - **`ProjectConfig.dockerImage?: string | null`** — image ref (e.g. `node:22`, or
@@ -34,6 +39,9 @@ bootstrap run inside the container.
   `packages/cli/src/cli/web/server.ts` (alongside `bootstrapCommands`).
 - **Webview**: a text input for the image in the project form (same panel as
   bootstrap commands).
+- **No separate confinement flag.** File-tool confinement to the working dir is
+  coupled to `dockerImage`: setting an image *is* the request to isolate, and
+  isolation includes file access (see "File-tool confinement"). No new tri-state.
 - **Out of scope (deferred):** per-task `Task.dockerImage` override. v1 is
   project-level only; a project-level image is already a complete feature. Add the
   task override when a real need appears.
@@ -121,13 +129,38 @@ instruction) via a temp settings file:
   Claude Code hook invocation, not assumed from memory. The `updatedInput` output
   field is confirmed from the docs.
 - claude runs on the host with cwd = agent working dir; its `Read`/`Edit`/`Write`
-  hit the host worktree (fine, mounted at the same path); its `Bash` is rewritten
-  into `docker exec`.
+  hit the host worktree (fine, mounted at the same path — but confined, see below);
+  its `Bash` is rewritten into `docker exec`.
 - The hook is injected **only** when a docker container is active for the run
   (i.e. `dockerImage` resolved and container created). Ordinary chat / cron /
   Telegram claude-code runs get no such hook.
+- **System-prompt line (claude-code + docker only):** append one line to
+  `--append-system-prompt` telling the agent that its shell commands execute inside
+  a Docker container mounted at `<workdir>`, and that file reads/writes are confined
+  to the working dir. Transparency so the model composes commands correctly.
 - Note: this is unrelated to Claude Code's native sandbox (docker is incompatible
   with that sandbox). The two are separate knobs and are never combined.
+
+## File-tool confinement (when docker is active)
+
+Isolation must cover file access, not just shell commands. When a container is
+active the agent's file tools are confined to the working dir, per provider:
+
+- **Native:** already confined — `sandbox.ts` rejects paths outside `workingDir`
+  on every run (docker or not). No change needed; state it in the plan so it is not
+  re-implemented.
+- **claude-code:** switch this run off `bypassPermissions` onto
+  **`--permission-mode manual` + a working-dir-scoped allowlist**, expressed via
+  `claudeCodeTaskExtras` — the exact mechanism the planner already uses for its
+  read-only/.md restriction. The allowlist must cover the full developer toolset
+  scoped to the worktree: `Read`, `Glob`, `Grep`, `Edit`, `Write`, `MultiEdit`
+  (path-scoped to the worktree), `mcp__task`, and `Bash` (which the PreToolUse hook
+  rewrites into `docker exec`).
+  - ⚠️ **Verify during implementation:** the interplay between the PreToolUse
+    `Bash` rewrite and permission evaluation under `--permission-mode manual` —
+    specifically whether the permission check sees the *original* command or the
+    hook-rewritten `docker exec …` command, which determines what the `Bash`
+    allowlist entry must match. Confirm against a real Claude Code run, not memory.
 
 ## Lifecycle edge cases
 
@@ -159,6 +192,10 @@ Docker unavailable / `docker run` failure / image pull failure → task to
 - **container lifecycle argv:** assert the argv built by `ensureContainer` /
   `removeContainer` (mock `execFile`), including `--user`, identical-path `-v`, and
   the deterministic `--name`.
+- **claude-code confinement extras:** when docker is active, the generated
+  `claudeCodeTaskExtras` for the developer role use `--permission-mode manual` and
+  a worktree-scoped allowlist covering the developer toolset — not
+  `bypassPermissions`.
 
 ## Docs + release
 
