@@ -51,6 +51,14 @@ export type ProjectConfig = {
    * 900s for claude-code).
    */
   maxRunSeconds?: number | null;
+  /**
+   * Docker image the autonomous task agent runs its shell work inside (e.g.
+   * `node:22`). Unset/empty = run on the host worktree in place. Phase-1:
+   * project-level only. The worktree is bind-mounted into the container at an
+   * identical absolute path; only shell commands + bootstrap run in the
+   * container, and file access is confined to the working dir.
+   */
+  dockerImage?: string | null;
 };
 
 export type CaretakerConfig = {

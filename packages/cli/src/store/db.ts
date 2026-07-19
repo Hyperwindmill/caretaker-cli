@@ -47,6 +47,9 @@ export interface Task {
   sddEnabled?: boolean | null;
   /** Per-invocation wall-clock budget (seconds). Inherits from the project; unset = default. */
   maxRunSeconds?: number | null;
+  /** Name of the docker container isolating this task's runs (set when the
+   *  project has a dockerImage). Parallel to branch/worktreePath. */
+  dockerContainer?: string | null;
   createdAt: string;
   updatedAt: string;
 }

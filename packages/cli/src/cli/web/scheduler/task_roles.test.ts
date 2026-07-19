@@ -183,3 +183,12 @@ test('filterPlannerTools without sdd still strips all four (regression)', () => 
   const filtered = filterPlannerTools(['write', 'edit', 'multiedit', 'bash', 'grep'].map(mk));
   assert.deepEqual(filtered.map((t) => t.name), ['grep']);
 });
+import { resolveDockerImage } from './task_roles.js';
+
+test('resolveDockerImage: project image trimmed, else null', () => {
+  assert.equal(resolveDockerImage({ projectId: 1 }, { dockerImage: '  node:22 ' }), 'node:22');
+  assert.equal(resolveDockerImage({ projectId: 1 }, { dockerImage: '' }), null);
+  assert.equal(resolveDockerImage({ projectId: 1 }, { dockerImage: null }), null);
+  assert.equal(resolveDockerImage({ projectId: 1 }, null), null);
+  assert.equal(resolveDockerImage({ projectId: 1 }, undefined), null);
+});
