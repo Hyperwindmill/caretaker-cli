@@ -92,6 +92,8 @@ export interface RunOptions {
   /** claude-code runner extras (ignored by the native loop): permission
    *  mode override, tool allow/deny rules, extra per-run MCP servers. */
   claudeCode?: import('./claude_code_runner.js').ClaudeCodeRunExtras;
+  /** Native-loop only: run `bash` commands inside this docker container. */
+  dockerContainer?: string;
 }
 
 export interface RunResult {
@@ -132,6 +134,7 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
     dispatchDepth: opts.dispatchDepth ?? 0,
     confirmTool: cb.confirmTool,
     sessionId: opts.sessionId,
+    dockerContainer: opts.dockerContainer,
   };
 
   // System prompt assembly, applied unconditionally (the prelude and

@@ -63,6 +63,10 @@ export interface ToolContext {
   liveUsage?: { lastTurn?: AssistantUsage; cumulative: AssistantUsage };
   /** The session ID of the current conversation run. Useful for attachment directories. */
   sessionId?: string;
+  /** When set, the `bash` tool runs commands inside this docker container
+   *  (`docker exec`) instead of on the host. A run-level isolation property —
+   *  the caller decides; the tool only honors it. */
+  dockerContainer?: string;
 }
 
 export interface ToolAttachment {

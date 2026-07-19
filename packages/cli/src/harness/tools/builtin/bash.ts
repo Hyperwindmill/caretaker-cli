@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 import type { Tool } from '../types.js';
 import { commandEnv } from './shell-env.js';
+import { containerExecArgs } from '../../../lib/docker.js';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 /** Cap on stdout+stderr we echo back to the model. The harness applies a
@@ -52,19 +53,27 @@ export const bashTool: Tool = {
       // to capture PATH and version manager variables (NVM, volta, fnm, etc.).
       // On Windows, fall back to cmd.exe via shell:true. On macOS, login
       // shells source profiles correctly so we use the default env.
+      // Docker isolation (run-level): route the command through the task
+      // container instead of the host. Precedes the platform branch — when a
+      // container is set we always use `docker exec`.
       const isWindows = process.platform === 'win32';
-      const child = isWindows
-        ? spawn(a.command as string, [], {
-            cwd: ctx.workingDir,
-            shell: true,
+      const child = ctx.dockerContainer
+        ? spawn('docker', containerExecArgs(ctx.dockerContainer, ctx.workingDir, a.command as string), {
             stdio: ['ignore', 'pipe', 'pipe'],
             env: bashEnv(),
           })
-        : spawn('bash', ['-c', a.command as string], {
-            cwd: ctx.workingDir,
-            stdio: ['ignore', 'pipe', 'pipe'],
-            env: bashEnv(),
-          });
+        : isWindows
+          ? spawn(a.command as string, [], {
+              cwd: ctx.workingDir,
+              shell: true,
+              stdio: ['ignore', 'pipe', 'pipe'],
+              env: bashEnv(),
+            })
+          : spawn('bash', ['-c', a.command as string], {
+              cwd: ctx.workingDir,
+              stdio: ['ignore', 'pipe', 'pipe'],
+              env: bashEnv(),
+            });
 
       const decoder = new StringDecoder('utf8');
       let out = '';

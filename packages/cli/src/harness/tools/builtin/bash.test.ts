@@ -72,3 +72,20 @@ test('bash: secret env vars are scrubbed from the child env', async () => {
     delete process.env.PUBLIC_VAR;
   }
 });
+
+test('bash redirects into docker exec when ctx.dockerContainer is set', async () => {
+  const res = await bashTool.execute(
+    { command: 'echo docker-redirect-marker' },
+    {
+      signal: new AbortController().signal,
+      workingDir: '/tmp',
+      readPaths: new Set(),
+      dockerContainer: '__caretaker_no_such_container__',
+    } as any,
+  );
+  // No such container → docker exec fails fast; the point is the command was
+  // routed to `docker`, not run on the host (host `echo` would have succeeded).
+  assert.match(res.content, /docker|No such container|Cannot connect|not found/i);
+  assert.doesNotMatch(res.content, /docker-redirect-marker/);
+});
+
