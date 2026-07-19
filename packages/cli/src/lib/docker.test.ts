@@ -51,12 +51,16 @@ test('dockerClaudeSettings registers a PreToolUse Bash hook', () => {
   assert.equal(entry.hooks[0].command, 'node /tmp/h.mjs c1 /wt/app');
 });
 
-test('dockerDevAllowlist confines writers to workdir, allows Bash', () => {
+test('dockerDevAllowlist confines writers to workdir with absolute (//) rule prefix', () => {
   const a = dockerDevAllowlist('/wt/app');
   assert.ok(a.includes('Bash'));
   assert.ok(a.includes('mcp__task'));
-  assert.ok(a.some((r) => r.startsWith('Edit(') && r.includes('/wt/app')));
-  assert.ok(a.some((r) => r.startsWith('Write(') && r.includes('/wt/app')));
+  // Claude Code rule syntax: `//abs` = absolute. A single slash would be read as
+  // project-relative and match nothing → manual mode denies everything.
+  assert.ok(a.includes('Read(//wt/app/**)'));
+  assert.ok(a.includes('Edit(//wt/app/**)'));
+  assert.ok(a.includes('Write(//wt/app/**)'));
+  assert.ok(a.includes('MultiEdit(//wt/app/**)'));
 });
 
 test('DOCKER_BASH_HOOK_SCRIPT wraps stdin command in docker exec (base64 round-trip)', () => {
