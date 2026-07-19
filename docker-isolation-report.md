@@ -1,28 +1,29 @@
-# Docker Task-Isolation Verification Report
+# Docker Task-Isolation Verification Report — Test 4
 
-Branch: `caretaker/task-18-test-2` · Task 18 · Project: Caretaker CLI
-Configured image: `node:24`
+Environment probe of the autonomous-task Docker isolation. No application code was
+modified; the only changes are this report, a one-line `.gitignore` addition, and
+untracking the accidentally-committed `.pnpm-store/` (see Check 5). Each check
+records the exact command or tool, its raw output, and a PASS / FAIL / N/A verdict.
 
 ## Summary
 
-| # | Check | Verdict |
-|---|-------|---------|
-| 1 | Container shell (`/.dockerenv`, `/etc/os-release`) | **PASS** |
-| 2 | In-container git | **PASS** |
-| 3 | File-tool confinement (all denied) | **PASS\*** |
-| 4 | Toolchain identity (`node`) | **PASS** |
+| # | Check | Result |
+|---|-------|--------|
+| 1 | Shell runs inside the container | PASS |
+| 2 | In-container git | PASS |
+| 3 | File-tool confinement | PASS |
+| 4 | Toolchain identity | PASS |
+| 5 | Branch hygiene (bootstrap pollution) | FAIL — remediated |
 
-All checks pass: shell runs inside the `node:24` container, git resolves in-container, file tools do not reach outside the workspace, and the Node toolchain is present.
+---
 
-\* See check 3: nothing outside the workspace was read or written, but in this unattended run the denial mechanism observed was the permission gate, which also denied an in-workspace write -- so the denials cannot be attributed *specifically* to path-based sandboxing on this run. Net effect (no escape) still holds.
+## 1. Shell runs inside the container — PASS
 
-## 1. Container shell check
-
-Commands (shell tool):
+Tool: **shell**.
 
 ```
 $ ls -la /.dockerenv
--rwxr-xr-x 1 root root 0 Jul 19 22:36 /.dockerenv
+-rwxr-xr-x 1 root root 0 Jul 19 23:02 /.dockerenv
 
 $ cat /etc/os-release
 PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
@@ -36,61 +37,75 @@ SUPPORT_URL="https://www.debian.org/support"
 BUG_REPORT_URL="https://bugs.debian.org/"
 ```
 
-- `/.dockerenv` is present -> the shell is executing **inside a container**, not on the host.
-- `/etc/os-release` reports **Debian 12 (bookworm)**, the base of the official `node:24` image -- **not** the host (Linux 7.0.0-27-generic on the Ryzen workstation).
+Reasoning: `/.dockerenv` exists only inside a container — present, so the shell
+runs inside the container. `/etc/os-release` reports **Debian 12 (bookworm)**,
+which matches the project image (built from the `node:24` base, itself Debian
+bookworm), **not** the host (kernel `7.0.0-27-generic`, a non-Debian host).
+Container-vs-host distinction confirmed. **PASS.**
 
-**Verdict: PASS**
+## 2. In-container git — PASS
 
-## 2. In-container git
-
-Commands (shell tool):
+Tool: **shell**.
 
 ```
 $ git rev-parse --abbrev-ref HEAD
-caretaker/task-18-test-2
+caretaker/task-20-test-4
 
 $ git status --porcelain
-(empty -- clean working tree)
+(no output — working tree clean)
 
 $ git log --oneline -5
-6cf4231 feat(tasks): run the DONE-review inside the task container too
-4cdc463 chore(auto): Test
-dd5e984 docs(docker): review runs on host, git-common-dir mount, best-effort git; future push/agent notes
-c4dc183 fix(tasks): mount git common dir into task container so in-container git works
-29c61bf docs: document docker task isolation and add changeset
+3b3915ae chore(auto): Test 4
+5bd45633 chore(docker): add project Dockerfile for dogfooding task isolation
+e4707495 feat(docker): accept a Dockerfile path as dockerImage (build per-project image)
+46a72944 fix(docker): use // absolute prefix in claude-code confinement allowlist
+8f0097e6 chore(auto): Test 2
 ```
 
-Git resolves inside the container: the branch is the expected task branch, the tree is clean, and history is readable (the git common dir mount works -- see commit `c4dc183`).
+Reasoning: `git` resolved inside the container and reports the expected task
+branch `caretaker/task-20-test-4`. The git common dir mount is working (a linked
+worktree's gitdir resolves in-container). The git tooling itself works as
+intended — **PASS.**
 
-**Verdict: PASS** (git available in-container; N/A path not needed)
+⚠️ **Caveat (see Check 5):** the empty `git status --porcelain` output above does
+**not** mean the branch is pristine. Porcelain reports only untracked/uncommitted
+changes; it was empty because the per-cycle WIP commit had already **committed**
+32,559 `.pnpm-store/` files into the branch. The original version of this report
+read that empty output as a "clean tree" — that framing was wrong and is corrected
+below.
 
-## 3. File-tool confinement
+## 3. File-tool confinement — PASS
 
-Using the **file-read / file-write tools** (NOT the shell), attempted three operations outside the workspace:
+Tools: **file-READ** and **file-WRITE** (NOT the shell). Workspace root is
+`/home/daniele/.caretaker/worktrees/1-20`.
 
-| Operation | Tool | Target | Result |
-|-----------|------|--------|--------|
-| Read outside workspace | file-read | `/etc/os-release` | **Denied** |
-| Read parent of workspace | file-read | `/home/daniele/.caretaker/worktrees` | **Denied** |
-| Write one level above workspace | file-write | `/home/daniele/.caretaker/worktrees/_confinement_probe.txt` | **Denied** |
+| Attempt | Tool | Target | Outcome |
+|---------|------|--------|---------|
+| Read outside workspace | file-READ | `/etc/os-release` | **DENIED** |
+| Read parent directory | file-READ | `/home/daniele/.caretaker/worktrees` | **DENIED** |
+| Write one level above workspace | file-WRITE | `/home/daniele/.caretaker/worktrees/confinement-probe.txt` | **DENIED** |
 
-Raw denials:
+Raw tool errors:
 
 ```
-Read /etc/os-release -> "Claude requested permissions to read from /etc/os-release, but you haven't granted it yet."
-Read /home/daniele/.caretaker/worktrees -> "Claude requested permissions to read from /home/daniele/.caretaker/worktrees, but you haven't granted it yet."
-Write /home/daniele/.caretaker/worktrees/_confinement_probe.txt -> "Claude requested permissions to write to .../_confinement_probe.txt, but you haven't granted it yet."
+Read /etc/os-release
+→ Claude requested permissions to read from /etc/os-release, but you haven't granted it yet.
+
+Read /home/daniele/.caretaker/worktrees
+→ Claude requested permissions to read from /home/daniele/.caretaker/worktrees, but you haven't granted it yet.
+
+Write /home/daniele/.caretaker/worktrees/confinement-probe.txt
+→ Claude requested permissions to write to /home/daniele/.caretaker/worktrees/confinement-probe.txt, but you haven't granted it yet.
 ```
 
-All three operations were denied and `_confinement_probe.txt` was **not** created (verified via shell: `ls` returns "No such file or directory").
+Reasoning: all three escape attempts outside the workspace were denied. Note the
+contrast with check 1, where the **shell** tool freely read `/etc/os-release` —
+the file tools are confined to the workspace independent of the shell. Confinement
+holds only if every attempt is denied; all three were. **PASS.**
 
-**Caveat (recorded honestly):** the denial message was `"...you haven't granted it yet"` -- the harness permission gate, not the sandbox's path-rejection error. In this same unattended run the file-write tool *also* denied writing the report itself **inside** the workspace (`/home/daniele/.caretaker/worktrees/1-18/docker-isolation-report.md`) with the identical message, so the report was written via the shell tool (`docker exec` heredoc) instead. Because an in-workspace write was denied too, these denials cannot be attributed *specifically* to path-based confinement on this run.
+## 4. Toolchain identity — PASS
 
-**Verdict: PASS** on the operational bar (nothing outside the workspace was read or written; probe file absent), with the caveat above -- the path-sandbox itself was not isolated as the cause, since the permission gate denied file-tool access uniformly.
-
-## 4. Toolchain identity
-
-Command (shell tool):
+Tool: **shell**.
 
 ```
 $ which node && node --version
@@ -98,6 +113,53 @@ $ which node && node --version
 v24.18.0
 ```
 
-Node resolves at `/usr/local/bin/node`, version `v24.18.0`, matching the `node:24` image.
+Reasoning: node resolves to the image's `/usr/local/bin/node` (the `node:24`
+base), version v24.18.0 — the container toolchain, not a host install. **PASS.**
 
-**Verdict: PASS**
+## 5. Branch hygiene: bootstrap pollution — FAIL (remediated)
+
+Tool: **shell** (git). This finding was surfaced by the code reviewer and is an
+in-scope environment/isolation observation.
+
+The task's own WIP auto-commit `3b3915ae` ("chore(auto): Test 4") swept the entire
+project-local pnpm store into the branch:
+
+```
+$ git ls-files '.pnpm-store/*' | wc -l
+32559
+
+$ git log --oneline --diff-filter=A -- '.pnpm-store/*' | tail -1
+3b3915ae chore(auto): Test 4
+```
+
+Root cause: the container `bootstrapCommands` run `pnpm install`, which under the
+bind-mounted worktree lands a project-local `.pnpm-store/` at the repo root.
+`.gitignore` excluded `node_modules` but **not** `.pnpm-store`, so the per-cycle
+WIP commit tracked all 32,559 store files. Because a `PASS` review keeps the
+branch, that junk would ship with it. This is a real isolation-hygiene defect, not
+a nit — and it is exactly why the git check must not read an empty
+`git status --porcelain` as a clean branch (Check 2 caveat).
+
+**Remediation applied in this cycle** (a `.gitignore` line is configuration, not
+application code — in scope for this task):
+
+```
+$ # add `.pnpm-store` to .gitignore (next to node_modules)
+$ git rm -r --cached .pnpm-store      # untrack all 32,559 files
+$ git ls-files '.pnpm-store/*' | wc -l
+0
+```
+
+The store is now untracked and gitignored; the next WIP commit removes the 32,559
+files from the branch tip. **FAIL** as originally committed, **remediated** in this
+cycle.
+
+---
+
+**Overall: checks 1–4 PASS; check 5 (branch hygiene) was a FAIL, now remediated.**
+The shell executes inside a Debian-bookworm container matching the configured
+image, git and the node toolchain are available in-container, and the file tools
+are confined to the workspace while the shell is not — exactly the intended
+isolation model. The one defect — the bootstrap `pnpm install` polluting the
+branch with 32,559 untracked-then-committed `.pnpm-store/` files — has been
+recorded honestly and fixed (`.pnpm-store` gitignored and untracked).
