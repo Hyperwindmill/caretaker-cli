@@ -285,7 +285,7 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
     // review gate flag is read at decision time: disabling it while a task sits
     // in reviewing finalizes the task directly on the next tick.
     if (task.status === 'reviewing') {
-      await runReviewCycle({ task, project, agent: effectiveAgent, provider, tools, workingDir, signal: abortController.signal });
+      await runReviewCycle({ task, project, agent: effectiveAgent, provider, tools, workingDir, signal: abortController.signal, dockerContainer, dockerHasGit });
       return; // the finally{} block still runs and releases the lock
     }
 
@@ -536,8 +536,10 @@ async function runReviewCycle(opts: {
   tools: Tool[];
   workingDir: string;
   signal?: AbortSignal;
+  dockerContainer?: string;
+  dockerHasGit?: boolean;
 }): Promise<void> {
-  const { task, project, agent, provider, tools, workingDir, signal } = opts;
+  const { task, project, agent, provider, tools, workingDir, signal, dockerContainer, dockerHasGit } = opts;
   const maxRunSeconds = resolveMaxRunSeconds(task, project, provider.type === 'claude-code');
   if (!task.worktreePath) return; // reviewing implies a worktree; nothing to review otherwise
 
@@ -581,6 +583,8 @@ async function runReviewCycle(opts: {
       round,
       signal,
       maxRunSeconds,
+      dockerContainer,
+      dockerHasGit,
     });
     verdict = review.verdict;
     reviewText = review.text;
