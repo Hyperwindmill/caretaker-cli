@@ -23,12 +23,17 @@ export function containerRunArgs(
   workdir: string,
   uid?: number,
   gid?: number,
+  extraMounts: string[] = [],
 ): string[] {
   const args = ['run', '-d'];
   if (typeof uid === 'number' && typeof gid === 'number') {
     args.push('--user', `${uid}:${gid}`);
   }
-  args.push('-v', `${mountRoot}:${mountRoot}`, '-w', workdir, '--name', name, image, 'sleep', 'infinity');
+  args.push('-v', `${mountRoot}:${mountRoot}`);
+  // Extra identical-path mounts (e.g. the git common dir, so a linked
+  // worktree's gitdir resolves and in-container git works).
+  for (const m of extraMounts) args.push('-v', `${m}:${m}`);
+  args.push('-w', workdir, '--name', name, image, 'sleep', 'infinity');
   return args;
 }
 
@@ -54,16 +59,26 @@ export async function ensureContainer(
   image: string,
   mountRoot: string,
   workdir: string,
+  extraMounts: string[] = [],
 ): Promise<void> {
   const state = await containerState(name);
   if (state === 'running') return;
   if (state === 'stopped') await removeContainer(name);
   const uid = process.getuid?.();
   const gid = process.getgid?.();
-  await exec('docker', containerRunArgs(name, image, mountRoot, workdir, uid, gid), {
+  await exec('docker', containerRunArgs(name, image, mountRoot, workdir, uid, gid, extraMounts), {
     env: commandEnv(),
     maxBuffer: 8 * 1024 * 1024,
   });
+}
+
+/** True if `git` is on PATH inside the container. In-container git is
+ *  best-effort — a minimal image may not ship it; the harness commits
+ *  host-side regardless, so a missing git only affects the agent's own git
+ *  commands (we warn it via the prompt). */
+export async function containerHasGit(name: string): Promise<boolean> {
+  const { exitCode } = await execInContainer(name, '/', 'command -v git', 5000);
+  return exitCode === 0;
 }
 
 /** Run one command in the container. Never throws on a non-zero exit — returns
