@@ -218,12 +218,18 @@ Whole-branch review surfaced two issues; resolved as follows.
    prompt (`containerHasGit()` check at ensure time) and the WIP commit stays
    host-side, so a missing git never breaks the lifecycle.
 
-2. **The DONE-review runs on the host, not the container** (correcting the goal's
-   "all cycles in the container"). Rationale: the review is git-diff-driven and
-   read-mostly, so its isolation value is low while its git dependency is high; the
-   host has git guaranteed regardless of the image. Only developer/planner cycles
-   are containerized. No code change (the review path already ran host-side) — this
-   amendment records it as intentional.
+2. **All three cycles run in the container — developer, planner, AND the
+   DONE-review** (matching the goal). The review was initially left host-side
+   because the git bug (#1) broke in-container git; once #1 was fixed, keeping the
+   reviewer on the host became an isolation hole (the reviewer has full tools —
+   bash/write — and would execute the code under review on the host) and risked
+   wrong results (tests running against container-built `node_modules` on the host).
+   **Decision:** run the reviewer in the container too, always, best-effort on git —
+   a project that needs git in-container adds it via `bootstrapCommands` (that is
+   what the setting is for). `runDoneReview` (`task_review.ts`) now takes
+   `dockerContainer`/`dockerHasGit` and wires the native `docker exec` redirect /
+   claude-code hook + workdir-scoped allowlist, exactly like the dev cycle; a
+   prompt hint tells the reviewer when git is unavailable so it reads files instead.
 
 ## Future directions (NOT in scope — do not preclude)
 

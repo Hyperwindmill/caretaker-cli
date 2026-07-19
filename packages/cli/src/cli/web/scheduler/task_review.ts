@@ -2,6 +2,7 @@ import * as harness from '../../../harness/index.js';
 import type { AgentConfig, ProviderConfig } from '../../../types.js';
 import type { Tool } from '../../../harness/tools/types.js';
 import { CLAUDE_CODE_DEFAULT_RUN_SECONDS } from './task_roles.js';
+import { dockerDevAllowlist } from '../../../lib/docker.js';
 
 export const MAX_REVIEW_ROUNDS = 3;
 
@@ -53,14 +54,28 @@ export async function runDoneReview(opts: {
   signal?: AbortSignal;
   /** Wall-clock budget (seconds) for the review run. Defaults to the claude-code default. */
   maxRunSeconds?: number;
+  /** When set, the review runs inside this docker container — aligned with the
+   *  dev/planning cycles, so the reviewer can't execute the code under review on
+   *  the host. best-effort git (see dockerHasGit). */
+  dockerContainer?: string;
+  /** Whether git is available inside the container; drives a prompt hint. */
+  dockerHasGit?: boolean;
 }): Promise<{ verdict: 'pass' | 'changes'; text: string }> {
   // Strip task-state tools: the reviewer must not mutate the task; the harness decides.
   const reviewTools = opts.tools.filter((t) => !t.name.startsWith('mcp__task__'));
-  // claude-code reviewer: bypass permissions like the native path, but no task
-  // bridge — parity with the mcp__task__ strip above (the agent's own
-  // mcpServers still pass through inside the runner).
+  // claude-code reviewer: in a docker container it uses the same manual +
+  // workdir-scoped allowlist as the dev cycle (the Bash-rewrite hook is attached
+  // by the runner via `docker`); otherwise bypassPermissions, no task bridge.
   const isClaudeCode = opts.provider.type === 'claude-code';
-  const claudeCode = isClaudeCode ? { permissionMode: 'bypassPermissions' as const } : undefined;
+  const claudeCode = isClaudeCode
+    ? opts.dockerContainer
+      ? {
+          permissionMode: 'manual',
+          allowedTools: dockerDevAllowlist(opts.workingDir),
+          docker: { container: opts.dockerContainer, workdir: opts.workingDir },
+        }
+      : { permissionMode: 'bypassPermissions' as const }
+    : undefined;
   // Wall-clock backstop for the review pass, enforced for every provider (the
   // Claude Code CLI has no --max-turns equivalent). Combined with any external
   // signal (a Pause landing mid-review) so either can abort the run.
@@ -70,16 +85,24 @@ export async function runDoneReview(opts: {
   const signal: AbortSignal = opts.signal
     ? AbortSignal.any([opts.signal, budgetController.signal])
     : budgetController.signal;
+  let prompt = reviewPrompt(opts.objective, opts.branch, opts.round);
+  if (opts.dockerContainer) {
+    prompt += `\n\n**Execution environment:** your shell commands run inside a Docker container mounted at \`${opts.workingDir}\`.`;
+    if (opts.dockerHasGit === false) {
+      prompt += ` Note: \`git\` is NOT available in this container — inspect the changes by reading the files directly instead of running git commands.`;
+    }
+  }
   try {
     const result = await harness.run(
       {
         agent: { ...opts.agent, permissionMode: 'bypassPermissions' }, // unattended: mirror the auto-approve confirm gate
         provider: opts.provider,
         tools: reviewTools,
-        prompt: reviewPrompt(opts.objective, opts.branch, opts.round),
+        prompt,
         history: [],
         workingDir: opts.workingDir,
         signal,
+        dockerContainer: opts.dockerContainer,
         ...(claudeCode ? { claudeCode } : {}),
       },
       {
