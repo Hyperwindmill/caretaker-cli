@@ -3,6 +3,7 @@ import { getDb, ChecklistItem, Project, Task, TaskMessage, getTaskById, saveTask
 import { loadConfig, loadAgents } from '../../../store/json.js';
 import type { Tool, ToolResult } from '../types.js';
 import { discardWorktree } from '../../../lib/task_git.js';
+import { removeContainer } from '../../../lib/docker.js';
 import { runningTasks } from '../../../cli/web/scheduler/locks.js';
 import { resolveReviewEnabled, resolvePlanningEnabled, activationStatus } from '../../../cli/web/scheduler/task_roles.js';
 
@@ -606,6 +607,10 @@ export const taskDiscardWorktreeTool: Tool = {
     if (!task) return err(`Task ${taskId} not found`);
     if (!task.worktreePath) return err(`Task ${taskId} has no active worktree`);
 
+    if (task.dockerContainer) {
+      await removeContainer(task.dockerContainer);
+      task.dockerContainer = null;
+    }
     await discardWorktree(task.worktreePath, task.title);
     task.worktreePath = null;
     task.updatedAt = new Date().toISOString();
@@ -709,6 +714,13 @@ export const taskDeleteTool: Tool = {
     }
 
     // Clean up any active worktree before deleting the task record.
+    if (task.dockerContainer) {
+      try {
+        await removeContainer(task.dockerContainer);
+      } catch {
+        // Best-effort
+      }
+    }
     if (task.worktreePath) {
       try {
         await discardWorktree(task.worktreePath, task.title);

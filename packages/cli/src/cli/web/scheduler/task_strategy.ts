@@ -465,11 +465,15 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
           console.log(`[task_heartbeat] Task #${task.id} committed WIP to ${gitTask.branch}`);
         }
         if (gitTask.status === 'done') {
+          if (gitTask.dockerContainer) {
+            await removeContainer(gitTask.dockerContainer);
+            gitTask.dockerContainer = null;
+          }
           await finalizeDone(gitTask.worktreePath);
           gitTask.worktreePath = null;
           gitTask.updatedAt = new Date().toISOString();
           await saveTask(gitTask);
-          console.log(`[task_heartbeat] Task #${task.id} done (review gate off): worktree removed, branch ${gitTask.branch} kept`);
+          console.log(`[task_heartbeat] Task #${gitTask.id} done (review gate off): worktree removed, branch ${gitTask.branch} kept`);
         }
       } catch (gitErr) {
         console.error(`[task_heartbeat] Task #${task.id} git step failed:`, gitErr);
@@ -522,6 +526,10 @@ async function runReviewCycle(opts: {
     await commitWip(task.worktreePath, task.title);
     const current = await getTaskById(task.id);
     if (!current || current.status !== 'reviewing') return;
+    if (current.dockerContainer) {
+      await removeContainer(current.dockerContainer);
+      current.dockerContainer = null;
+    }
     await finalizeDone(current.worktreePath!);
     current.status = 'done';
     current.worktreePath = null;
@@ -597,6 +605,10 @@ async function runReviewCycle(opts: {
         messageType: 'system',
         content: `Finished as done despite outstanding review findings after ${MAX_REVIEW_ROUNDS} rounds.`,
       });
+    }
+    if (current.dockerContainer) {
+      await removeContainer(current.dockerContainer);
+      current.dockerContainer = null;
     }
     await finalizeDone(current.worktreePath!);
     current.status = 'done';

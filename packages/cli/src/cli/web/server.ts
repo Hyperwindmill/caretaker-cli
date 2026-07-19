@@ -10,6 +10,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import * as harness from '../../harness/index.js';
 import { getDb, Task, getTaskById, saveTask, createTask, addTaskMessage, deleteTask, runQuery, tryNormalizeChecklistStatus } from '../../store/db.js';
 import { discardWorktree } from '../../lib/task_git.js';
+import { removeContainer } from '../../lib/docker.js';
 import { runningTasks, abortRunningTask } from './scheduler/locks.js';
 import { registerTaskBridge, setTaskBridgeUrl } from './mcp_bridge.js';
 import {
@@ -455,6 +456,10 @@ export async function startServer(port: number, host: string): Promise<void> {
     if (!task) return c.json({ ok: false, error: 'not found' }, 404);
     if (!task.worktreePath) return c.json({ ok: false, error: 'no worktree' }, 400);
 
+    if (task.dockerContainer) {
+      await removeContainer(task.dockerContainer);
+      task.dockerContainer = null;
+    }
     await discardWorktree(task.worktreePath, task.title);
     task.worktreePath = null;
     task.updatedAt = new Date().toISOString();
@@ -518,6 +523,13 @@ export async function startServer(port: number, host: string): Promise<void> {
     }
 
     // Clean up any active worktree before deleting the task record.
+    if (task.dockerContainer) {
+      try {
+        await removeContainer(task.dockerContainer);
+      } catch {
+        // Best-effort
+      }
+    }
     if (task.worktreePath) {
       try {
         await discardWorktree(task.worktreePath, task.title);
