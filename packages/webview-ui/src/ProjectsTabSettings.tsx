@@ -26,6 +26,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
   const [sddEnabled, setSddEnabled] = useState<boolean | null>(null);
   const [bootstrapText, setBootstrapText] = useState('');
   const [maxRunSecondsText, setMaxRunSecondsText] = useState('');
+  const [dockerImage, setDockerImage] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const projects = config.projects || [];
@@ -44,6 +45,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
     setSddEnabled(proj.sddEnabled !== undefined ? proj.sddEnabled : null);
     setBootstrapText((proj.bootstrapCommands || []).join('\n'));
     setMaxRunSecondsText(proj.maxRunSeconds ? String(proj.maxRunSeconds) : '');
+    setDockerImage(proj.dockerImage || '');
     setErrorMsg(null);
   };
 
@@ -61,6 +63,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
     setSddEnabled(null);
     setBootstrapText('');
     setMaxRunSecondsText('');
+    setDockerImage('');
     setErrorMsg(null);
   };
 
@@ -96,6 +99,8 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
     const parsedMaxRun = parseInt(maxRunSecondsText.trim(), 10);
     const maxRunSeconds = Number.isFinite(parsedMaxRun) && parsedMaxRun > 0 ? parsedMaxRun : null;
 
+    const trimmedDocker = dockerImage.trim();
+
     const updatedProjects = [...projects];
 
     if (isCreating) {
@@ -114,6 +119,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
         sddEnabled,
         bootstrapCommands,
         maxRunSeconds,
+        dockerImage: trimmedDocker || null,
       };
       updatedProjects.push(newProj);
     } else if (editingProject) {
@@ -132,6 +138,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
           sddEnabled,
           bootstrapCommands,
           maxRunSeconds,
+          dockerImage: trimmedDocker || null,
         };
       }
     }
@@ -343,6 +350,20 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
               Tasks inherit this and can override it. Leave empty for the default.
             </p>
           </div>
+
+          <div className="form-group">
+            <label htmlFor="project-docker-image">Docker image (optional)</label>
+            <input
+              id="project-docker-image"
+              type="text"
+              value={dockerImage}
+              onChange={(e) => setDockerImage(e.target.value)}
+              placeholder="e.g. node:22"
+            />
+            <p style={{ fontSize: '11px', opacity: 0.65, margin: '6px 0 0 0' }}>
+              Run this project's autonomous task agents inside this image. Empty = run on the host.
+            </p>
+          </div>
           </div>
 
           <div className="form-actions">
@@ -367,7 +388,10 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
                     <div className="settings-card__title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><FolderIcon size={14} /> {proj.name}</div>
                     {proj.description && <div className="settings-card__subtitle" style={{ fontSize: '11px', opacity: 0.8, marginBottom: '4px' }}>{proj.description}</div>}
                     <div className="settings-card__subtitle" style={{ fontFamily: 'var(--font-mono)', fontSize: '10px' }}>{proj.workingDir}</div>
-                    <div className="settings-card__badge" style={{ marginTop: '6px' }}>Agent: {assignedAgent}</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
+                      <div className="settings-card__badge">Agent: {assignedAgent}</div>
+                      {proj.dockerImage && <div className="settings-card__badge">Docker: {proj.dockerImage}</div>}
+                    </div>
                   </div>
                   <div className="settings-card__actions">
                     <button

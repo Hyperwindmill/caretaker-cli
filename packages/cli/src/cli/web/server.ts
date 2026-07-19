@@ -274,7 +274,7 @@ export async function startServer(port: number, host: string): Promise<void> {
   app.post('/api/projects', async (c) => {
     try {
       const body = await c.req.json();
-      const { name, description, workingDir, agentId, plannerAgentId, reviewerAgentId, planningEnabled, reviewEnabled, sddEnabled, bootstrapCommands, maxRunSeconds } = body;
+      const { name, description, workingDir, agentId, plannerAgentId, reviewerAgentId, planningEnabled, reviewEnabled, sddEnabled, bootstrapCommands, maxRunSeconds, dockerImage } = body;
       const config = await loadConfig();
       if (!config.projects) {
         config.projects = [];
@@ -296,6 +296,7 @@ export async function startServer(port: number, host: string): Promise<void> {
           ? bootstrapCommands.map((c: unknown) => String(c).trim()).filter(Boolean)
           : null,
         maxRunSeconds: typeof maxRunSeconds === 'number' && maxRunSeconds > 0 ? maxRunSeconds : null,
+        dockerImage: typeof dockerImage === 'string' && dockerImage.trim() ? dockerImage.trim() : null,
       };
       config.projects.push(project);
       await saveConfig(config);
