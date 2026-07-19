@@ -328,10 +328,17 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
               rows={3}
               style={{ fontFamily: 'var(--font-mono)', fontSize: '11px' }}
             />
-            <p style={{ fontSize: '11px', opacity: 0.65, margin: '6px 0 0 0' }}>
+            <p style={{ fontSize: '11px', opacity: 0.65, margin: '6px 0 0 0', lineHeight: 1.5 }}>
               Run once, in order, right after a task worktree is created (git projects only) — before
               the agent's first cycle, so it doesn't spend tokens on setup like <code>pnpm install</code>.
               The run stops and the task is blocked if any command fails.
+              <br />
+              <strong>Heads up on how tasks work:</strong> each task runs on its own git worktree/branch,
+              and every cycle commits <em>all</em> changes in that tree. So anything your bootstrap or the
+              agent writes to the workspace that isn't in <code>.gitignore</code> gets committed to the
+              branch — e.g. a package manager that drops a local store or cache in the repo (pnpm's
+              <code>.pnpm-store/</code> under a bind-mounted Docker worktree is a common one). Make sure
+              build/dependency artifacts are gitignored so they don't bloat the task branch.
             </p>
           </div>
 
