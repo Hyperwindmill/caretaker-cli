@@ -1,0 +1,10 @@
+# The Dockerfile COPYs nothing (the task worktree is bind-mounted at run time),
+# so the build context is unused — keep it tiny so `docker build` stays fast on
+# this large monorepo. Exclude the heavy dirs.
+node_modules
+**/node_modules
+.git
+dist
+**/dist
+packages/desktop/release
+**/*.log
