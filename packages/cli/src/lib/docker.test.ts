@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { containerName, containerRunArgs, containerExecArgs } from './docker.js';
+import { containerName, containerRunArgs, containerExecArgs, isDockerfilePath } from './docker.js';
 
 test('containerName is deterministic', () => {
   assert.equal(containerName(3, 42), 'caretaker-task-3-42');
@@ -35,6 +35,17 @@ test('containerExecArgs wraps in sh -lc', () => {
   assert.deepEqual(containerExecArgs('c1', '/wt/app', 'ls -a'), [
     'exec', '-w', '/wt/app', 'c1', 'sh', '-lc', 'ls -a',
   ]);
+});
+
+test('isDockerfilePath: paths (. / \\) vs pullable image refs', () => {
+  assert.equal(isDockerfilePath('./Dockerfile'), true);
+  assert.equal(isDockerfilePath('../docker/Dockerfile'), true);
+  assert.equal(isDockerfilePath('/abs/Dockerfile'), true);
+  assert.equal(isDockerfilePath('.docker/Dockerfile'), true);
+  assert.equal(isDockerfilePath('\\win\\Dockerfile'), true);
+  assert.equal(isDockerfilePath('node:24'), false);
+  assert.equal(isDockerfilePath('pnpm/pnpm'), false);
+  assert.equal(isDockerfilePath('ghcr.io/org/img:tag'), false);
 });
 
 import { DOCKER_BASH_HOOK_SCRIPT, dockerClaudeSettings, dockerDevAllowlist } from './docker.js';

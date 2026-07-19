@@ -109,6 +109,38 @@ export async function removeContainer(name: string): Promise<void> {
   await exec('docker', ['rm', '-f', name], { env: commandEnv() }).catch(() => {});
 }
 
+/** True if a container of this name is currently running. */
+export async function containerRunning(name: string): Promise<boolean> {
+  return (await containerState(name)) === 'running';
+}
+
+/** True when the dockerImage value is a Dockerfile path rather than a pullable
+ *  image ref. Image refs never start with '.', '/', or '\', so a leading one of
+ *  those unambiguously marks a path (relative `./Dockerfile`, absolute, Windows). */
+export function isDockerfilePath(image: string): boolean {
+  return /^[./\\]/.test(image);
+}
+
+/** Build an image from a Dockerfile into `tag`. `contextDir` is the build
+ *  context. Throws with the build output on failure so the caller can surface
+ *  why setup broke (same policy as a failed bootstrap). */
+export async function buildImage(
+  dockerfilePath: string,
+  contextDir: string,
+  tag: string,
+): Promise<void> {
+  try {
+    await exec('docker', ['build', '-f', dockerfilePath, '-t', tag, contextDir], {
+      env: commandEnv(),
+      maxBuffer: 64 * 1024 * 1024,
+    });
+  } catch (err) {
+    const e = err as { stderr?: string; stdout?: string; message?: string };
+    const detail = (e.stderr || e.stdout || e.message || '').toString().trim();
+    throw new Error(`docker build failed for \`${dockerfilePath}\`:\n${detail}`);
+  }
+}
+
 // PreToolUse hook: rewrite every Bash command so it runs inside the container.
 // Mechanical (not a prompt instruction) — the agent cannot forget. argv:
 // [container, workdir]. base64 dodges nested-quote hell in the wrapped command.

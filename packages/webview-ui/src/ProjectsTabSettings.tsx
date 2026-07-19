@@ -358,10 +358,14 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
               type="text"
               value={dockerImage}
               onChange={(e) => setDockerImage(e.target.value)}
-              placeholder="e.g. node:22"
+              placeholder="e.g. node:22  or  ./Dockerfile"
             />
-            <p style={{ fontSize: '11px', opacity: 0.65, margin: '6px 0 0 0' }}>
-              Run this project's autonomous task agents inside this image. Empty = run on the host.
+            <p style={{ fontSize: '11px', opacity: 0.65, margin: '6px 0 0 0', lineHeight: 1.5 }}>
+              Run this project's autonomous task agents (dev, planning &amp; review) inside this image. Empty = run on the host.
+              <br />
+              A value starting with <code>.</code>, <code>/</code> or <code>\</code> is treated as a path to a <strong>Dockerfile</strong> (built per-project); anything else is a pullable image ref (e.g. <code>node:22</code>).
+              <br />
+              The container runs as your user, so put the package manager <em>in the image</em> (e.g. <code>corepack enable pnpm</code>) — <code>npm i -g</code> fails as non-root. Docker must be installed on the scheduler host.
             </p>
           </div>
           </div>
