@@ -4,6 +4,7 @@ import { rm } from 'node:fs/promises';
 import { join, relative, dirname } from 'node:path';
 import { dataDir } from '../store/db.js';
 import { commandEnv } from '../harness/tools/builtin/shell-env.js';
+import { execInContainer } from './docker.js';
 
 const exec = promisify(execFile);
 const execShell = promisify(execCb);
@@ -75,10 +76,21 @@ export async function ensureWorktree(
  * generous timeout so a hung install can't wedge the scheduler tick.
  * ponytail: 10-min per-command timeout; make it configurable if a real project needs longer.
  */
-export async function runBootstrap(cwd: string, commands: string[]): Promise<void> {
+export async function runBootstrap(
+  cwd: string,
+  commands: string[],
+  dockerContainer?: string,
+): Promise<void> {
   for (const command of commands) {
     const cmd = command.trim();
     if (!cmd) continue;
+    if (dockerContainer) {
+      const { exitCode, output } = await execInContainer(dockerContainer, cwd, cmd, 10 * 60 * 1000);
+      if (exitCode !== 0) {
+        throw new Error(`Bootstrap command failed: \`${cmd}\`\n${output.trim()}`);
+      }
+      continue;
+    }
     try {
       await execShell(cmd, {
         cwd,

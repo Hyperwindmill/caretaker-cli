@@ -16,8 +16,10 @@ import {
   resolveSddEnabled,
   resolveMaxRunSeconds,
   filterPlannerTools,
+  resolveDockerImage,
   TaskRole,
 } from './task_roles.js';
+import { ensureContainer, removeContainer, containerName, dockerDevAllowlist } from '../../../lib/docker.js';
 
 function buildPrompt(
   systemPrompt: string,
@@ -174,26 +176,63 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
 
     const baseWorkingDir = project.workingDir || agent.workingDir || process.cwd();
     let workingDir = baseWorkingDir;
+    let mountRoot = baseWorkingDir;
+    let worktreeJustCreated = false;
 
-    // Worktree isolation for git projects: lazily create a dedicated branch + worktree.
     if (task.worktreePath) {
       workingDir = await agentDirIn(task.worktreePath, baseWorkingDir);
+      mountRoot = task.worktreePath;
     } else if (await isGitRepo(baseWorkingDir)) {
       const wt = await ensureWorktree(baseWorkingDir, task.projectId, task.id, task.title);
       task.branch = wt.branch;
       task.worktreePath = wt.worktreePath;
       await saveTask(task);
       workingDir = wt.agentWorkingDir;
+      mountRoot = wt.worktreePath;
+      worktreeJustCreated = true;
       console.log(`[task_heartbeat] Task #${task.id} worktree ${wt.worktreePath} (branch ${wt.branch})`);
+    }
+    // Non-git projects fall through: workingDir/mountRoot stay baseWorkingDir (run in place).
 
-      // Project bootstrap: run once in the fresh worktree before the agent's first
-      // cycle (e.g. `pnpm install`). A failing command blocks the task so the user
-      // sees why setup broke instead of the agent flailing in an unbuilt tree.
+    // Docker isolation (project-level, phase 1): ensure the task's container is
+    // up (idempotent by name), before bootstrap. A failure blocks the task with
+    // the docker error — same policy as a failed bootstrap command.
+    const dockerImage = resolveDockerImage(task, project);
+    let dockerContainer: string | undefined;
+    if (dockerImage) {
+      const name = containerName(task.projectId, task.id);
+      try {
+        await ensureContainer(name, dockerImage, mountRoot, workingDir);
+        dockerContainer = name;
+        if (task.dockerContainer !== name) {
+          task.dockerContainer = name;
+          await saveTask(task);
+        }
+      } catch (dockErr) {
+        const reason = dockErr instanceof Error ? dockErr.message : String(dockErr);
+        task.status = 'blocked';
+        task.blockedReason = reason;
+        task.updatedAt = new Date().toISOString();
+        await saveTask(task);
+        await addTaskMessage({
+          taskId: task.id,
+          role: 'assistant',
+          messageType: 'block',
+          content: `Docker container setup failed — task blocked.\n\n${reason}`,
+        });
+        console.error(`[task_heartbeat] Task #${task.id} docker setup failed, blocked:`, reason);
+        return;
+      }
+    }
+
+    // Project bootstrap: run once in the fresh worktree (inside the container
+    // when docker is active) before the agent's first cycle. A failure blocks.
+    if (worktreeJustCreated) {
       const bootstrap = (project.bootstrapCommands || []).filter((c) => c.trim());
       if (bootstrap.length > 0) {
         try {
           console.log(`[task_heartbeat] Task #${task.id} running ${bootstrap.length} bootstrap command(s)`);
-          await runBootstrap(workingDir, bootstrap);
+          await runBootstrap(workingDir, bootstrap, dockerContainer);
         } catch (bootErr) {
           const reason = bootErr instanceof Error ? bootErr.message : String(bootErr);
           task.status = 'blocked';
@@ -256,6 +295,11 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
     const prompt = planning
       ? buildPlanningPrompt(agent.systemPrompt, task.id, task.title, maxRunSeconds, maxTurns, workingDir, sdd)
       : buildPrompt(agent.systemPrompt, task.id, task.title, maxRunSeconds, maxTurns, workingDir);
+
+    const effectivePrompt =
+      isClaudeCode && dockerContainer && !planning
+        ? `${prompt}\n\n**Execution environment:** your shell commands run inside a Docker container (image \`${dockerImage}\`) mounted at \`${workingDir}\`. File reads/writes are confined to this directory.`
+        : prompt;
 
     const checklistBefore = (task.checklist || []).filter((item) => item.status !== 'pending').length;
 
@@ -321,6 +365,18 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
         sdd,
         bridge: bridgeUrl && bridgeToken ? { url: bridgeUrl, token: bridgeToken } : undefined,
       });
+      // Docker isolation for claude-code (non-planning): swap bypassPermissions
+      // for manual + a workdir-scoped allowlist and attach the Bash-rewrite hook.
+      // Planning stays as-is (read-only; no shell to contain).
+      if (dockerContainer && !planning) {
+        claudeCode = {
+          ...claudeCode,
+          permissionMode: 'manual',
+          allowedTools: dockerDevAllowlist(workingDir),
+          disallowedTools: undefined,
+          docker: { container: dockerContainer, workdir: workingDir },
+        };
+      }
       if (!bridgeUrl) {
         console.warn('[tasks] claude-code agent without task bridge URL — task tools unavailable this run');
       }
@@ -332,10 +388,11 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
           agent: effectiveAgent,
           provider,
           tools,
-          prompt,
+          prompt: effectivePrompt,
           history: historyRecords,
           workingDir,
           claudeCode,
+          dockerContainer,
           signal,
         },
         {
