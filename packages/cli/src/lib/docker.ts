@@ -93,3 +93,54 @@ export async function execInContainer(
 export async function removeContainer(name: string): Promise<void> {
   await exec('docker', ['rm', '-f', name], { env: commandEnv() }).catch(() => {});
 }
+
+// PreToolUse hook: rewrite every Bash command so it runs inside the container.
+// Mechanical (not a prompt instruction) — the agent cannot forget. argv:
+// [container, workdir]. base64 dodges nested-quote hell in the wrapped command.
+export const DOCKER_BASH_HOOK_SCRIPT = `let raw = '';
+process.stdin.on('data', (c) => { raw += c; });
+process.stdin.on('end', () => {
+  const [container, workdir] = process.argv.slice(2);
+  let cmd = '';
+  try { cmd = JSON.parse(raw)?.tool_input?.command ?? ''; } catch { cmd = ''; }
+  const b64 = Buffer.from(cmd, 'utf8').toString('base64');
+  const wrapped = \`docker exec -w \${workdir} \${container} sh -lc "echo \${b64} | base64 -d | sh"\`;
+  process.stdout.write(JSON.stringify({
+    hookSpecificOutput: { hookEventName: 'PreToolUse', updatedInput: { command: wrapped } },
+  }));
+});
+`;
+
+export function dockerClaudeSettings(
+  container: string,
+  workdir: string,
+  hookScriptPath: string,
+): Record<string, unknown> {
+  return {
+    hooks: {
+      PreToolUse: [
+        {
+          matcher: 'Bash',
+          hooks: [{ type: 'command', command: `node ${hookScriptPath} ${container} ${workdir}` }],
+        },
+      ],
+    },
+  };
+}
+
+/** Confine claude-code file tools to the working dir. Bash is allowed (the docker
+ *  hook contains it); writers are path-scoped to workdir; mcp__task stays open. */
+export function dockerDevAllowlist(workdir: string): string[] {
+  const scope = `${workdir}/**`;
+  return [
+    `Read(${scope})`,
+    `Edit(${scope})`,
+    `Write(${scope})`,
+    `MultiEdit(${scope})`,
+    'Glob',
+    'Grep',
+    'mcp__task',
+    'Bash',
+  ];
+}
+
