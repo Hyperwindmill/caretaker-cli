@@ -2,6 +2,7 @@
   "name": "caretaker-cli-monorepo",
   "private": true,
   "version": "0.0.0",
+  "packageManager": "pnpm@11.15.0",
   "description": "Caretaker — a multi-surface AI agent harness: CLI/TUI, local web GUI, Electron desktop app, and VSCode sidebar.",
   "license": "SEE LICENSE IN LICENSE",
   "author": "Hyperwindmill <hyperwindmill@gmail.com>",
