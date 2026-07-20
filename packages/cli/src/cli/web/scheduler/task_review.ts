@@ -63,14 +63,14 @@ export async function runDoneReview(opts: {
 }): Promise<{ verdict: 'pass' | 'changes'; text: string }> {
   // Strip task-state tools: the reviewer must not mutate the task; the harness decides.
   const reviewTools = opts.tools.filter((t) => !t.name.startsWith('mcp__task__'));
-  // claude-code reviewer: in a docker container it uses the same manual +
+  // claude-code reviewer: in a docker container it uses the same dontAsk +
   // workdir-scoped allowlist as the dev cycle (the Bash-rewrite hook is attached
   // by the runner via `docker`); otherwise bypassPermissions, no task bridge.
   const isClaudeCode = opts.provider.type === 'claude-code';
   const claudeCode = isClaudeCode
     ? opts.dockerContainer
       ? {
-          permissionMode: 'manual',
+          permissionMode: 'dontAsk',
           allowedTools: dockerDevAllowlist(opts.workingDir),
           docker: { container: opts.dockerContainer, workdir: opts.workingDir },
         }

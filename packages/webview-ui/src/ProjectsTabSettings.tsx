@@ -333,6 +333,12 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
               the agent's first cycle, so it doesn't spend tokens on setup like <code>pnpm install</code>.
               The run stops and the task is blocked if any command fails.
               <br />
+              <strong>One line = one command.</strong> Each line is run as a <em>separate</em> shell at
+              the worktree root — this is <em>not</em> a single script. Shell state does not carry over,
+              so a <code>cd</code> on one line has <em>no effect</em> on the next. Chain dependent steps on
+              one line with <code>&amp;&amp;</code> instead, e.g.{' '}
+              <code>cd sub && composer install</code>.
+              <br />
               <strong>Heads up on how tasks work:</strong> each task runs on its own git worktree/branch,
               and every cycle commits <em>all</em> changes in that tree. So anything your bootstrap or the
               agent writes to the workspace that isn't in <code>.gitignore</code> gets committed to the

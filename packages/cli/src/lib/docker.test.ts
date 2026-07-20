@@ -6,16 +6,20 @@ test('containerName is deterministic', () => {
   assert.equal(containerName(3, 42), 'caretaker-task-3-42');
 });
 
-test('containerRunArgs: identical-path mount, --user, --name, sleep infinity', () => {
+test('containerRunArgs: --entrypoint sleep keep-alive overrides the image entrypoint', () => {
   const args = containerRunArgs('c1', 'node:22', '/wt', '/wt/app', 1000, 1000);
   assert.deepEqual(args, [
     'run', '-d',
+    // Override the image ENTRYPOINT so the keep-alive always runs: an image
+    // whose entrypoint boots services (apache/supervisord) and never `exec "$@"`s
+    // would otherwise ignore the CMD and let the container die under us.
+    '--entrypoint', 'sleep',
     '--user', '1000:1000',
     '-v', '/wt:/wt',
     '-w', '/wt/app',
     '--name', 'c1',
     'node:22',
-    'sleep', 'infinity',
+    'infinity',
   ]);
 });
 

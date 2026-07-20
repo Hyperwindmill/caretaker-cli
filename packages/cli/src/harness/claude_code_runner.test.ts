@@ -271,7 +271,7 @@ test('claudeCodeTaskExtras: developer / planner / planner+sdd', () => {
   assert.equal(dev.extraMcpServers?.task.url, bridge.url);
   assert.equal(dev.extraMcpServers?.task.headers?.Authorization, 'Bearer tok');
   const plan = claudeCodeTaskExtras({ planning: true, sdd: false, bridge });
-  assert.equal(plan.permissionMode, 'manual');
+  assert.equal(plan.permissionMode, 'dontAsk');
   assert.deepEqual(plan.allowedTools, ['Read', 'Glob', 'Grep', 'mcp__task']);
   assert.deepEqual(plan.disallowedTools, ['Bash']);
   const sdd = claudeCodeTaskExtras({ planning: true, sdd: true, bridge });

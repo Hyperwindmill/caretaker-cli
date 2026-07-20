@@ -110,12 +110,15 @@ export function claudeCodeTaskExtras(p: {
       }
     : undefined;
   if (!p.planning) return { permissionMode: 'bypassPermissions', extraMcpServers };
-  // Planner: 'manual' mode + explicit allowlist. In -p mode unanswered
-  // permission prompts are denied, so everything off-list is blocked.
-  // (Not 'plan' mode: it could also block mcp task_submit_plan.)
+  // Planner: 'dontAsk' mode + explicit allowlist. dontAsk auto-DENIES (and keeps
+  // running) any tool call not covered by the allowlist — exactly the headless
+  // "confine + never hang" contract. NOT 'default' (in -p an off-list prompt
+  // aborts the whole run, not a clean per-call deny), NOT 'plan' (could also
+  // block mcp task_submit_plan). ('manual' is only a >=2.1.200 alias of 'default'
+  // and errors on older CLIs, so it's the wrong choice on both counts.)
   const allowedTools = ['Read', 'Glob', 'Grep', 'mcp__task'];
   if (p.sdd) allowedTools.push('Write(**/*.md)', 'Edit(**/*.md)', 'MultiEdit(**/*.md)');
-  return { permissionMode: 'manual', allowedTools, disallowedTools: ['Bash'], extraMcpServers };
+  return { permissionMode: 'dontAsk', allowedTools, disallowedTools: ['Bash'], extraMcpServers };
 }
 
 async function buildMcpConfigFile(
