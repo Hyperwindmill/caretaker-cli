@@ -15,6 +15,18 @@ export function containerName(projectId: number, taskId: number): string {
 /** `docker run` argv. Mount is identical-path (`-v <root>:<root>`) so host and
  *  container agree on absolute paths. `--user` keeps written files owned by the
  *  host user (else root-owned files break the host WIP commit / review diff).
+ *
+ *  We keep the container alive with `sleep infinity`, but pass it via
+ *  `--entrypoint sleep` (arg `infinity`) rather than as the CMD. A CMD only
+ *  overrides the image's CMD, not its ENTRYPOINT: a product's runtime image
+ *  commonly defines an ENTRYPOINT that boots services (apache/supervisord/…)
+ *  and never `exec "$@"`s, so our `sleep infinity` would be swallowed as args,
+ *  the entrypoint would run its services (and, under `--user`, fail to setuid to
+ *  root and exit non-zero), and the container would die mid-bootstrap — taking
+ *  every in-flight `docker exec` (bootstrap, the agent) down with it. Overriding
+ *  the entrypoint makes PID 1 be `sleep infinity` regardless of the image, which
+ *  is exactly what we want: caretaker uses the container as an isolated shell
+ *  target via `docker exec`, not to run the image's service stack.
  *  ponytail: if an image lacks a matching /etc/passwd entry, set HOME=/tmp; tune when a real image needs it. */
 export function containerRunArgs(
   name: string,
@@ -25,7 +37,7 @@ export function containerRunArgs(
   gid?: number,
   extraMounts: string[] = [],
 ): string[] {
-  const args = ['run', '-d'];
+  const args = ['run', '-d', '--entrypoint', 'sleep'];
   if (typeof uid === 'number' && typeof gid === 'number') {
     args.push('--user', `${uid}:${gid}`);
   }
@@ -33,7 +45,7 @@ export function containerRunArgs(
   // Extra identical-path mounts (e.g. the git common dir, so a linked
   // worktree's gitdir resolves and in-container git works).
   for (const m of extraMounts) args.push('-v', `${m}:${m}`);
-  args.push('-w', workdir, '--name', name, image, 'sleep', 'infinity');
+  args.push('-w', workdir, '--name', name, image, 'infinity');
   return args;
 }
 
@@ -181,7 +193,7 @@ export function dockerClaudeSettings(
  *  ABSOLUTE path and `/path` for project-relative. `workdir` is absolute (leads
  *  with `/`), so the rule must be `//<workdir>/**` — hence the extra leading `/`.
  *  With a single slash the rule is read as project-relative, matches nothing, and
- *  `--permission-mode manual` then denies every file-tool call (even in-workspace). */
+ *  `--permission-mode dontAsk` then denies every file-tool call (even in-workspace). */
 export function dockerDevAllowlist(workdir: string): string[] {
   const scope = `/${workdir}/**`; // workdir starts with '/', so this yields '//<abs>/**'
   return [

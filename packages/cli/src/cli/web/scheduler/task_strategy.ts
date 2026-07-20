@@ -399,12 +399,14 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
         bridge: bridgeUrl && bridgeToken ? { url: bridgeUrl, token: bridgeToken } : undefined,
       });
       // Docker isolation for claude-code (non-planning): swap bypassPermissions
-      // for manual + a workdir-scoped allowlist and attach the Bash-rewrite hook.
+      // for dontAsk + a workdir-scoped allowlist and attach the Bash-rewrite hook.
+      // dontAsk auto-denies (and keeps running) anything off the allowlist and is
+      // valid on every CLI version, unlike 'manual' (a >=2.1.200 alias of 'default').
       // Planning stays as-is (read-only; no shell to contain).
       if (dockerContainer && !planning) {
         claudeCode = {
           ...claudeCode,
-          permissionMode: 'manual',
+          permissionMode: 'dontAsk',
           allowedTools: dockerDevAllowlist(workingDir),
           disallowedTools: undefined,
           docker: { container: dockerContainer, workdir: workingDir },
