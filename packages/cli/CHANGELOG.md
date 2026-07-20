@@ -1,5 +1,36 @@
 # caretaker-cli
 
+## 0.13.1
+
+### Patch Changes
+
+- f338b8e: Fix autonomous claude-code task runs failing with `option '--permission-mode'
+argument 'manual' is invalid` on Claude Code CLIs older than v2.1.200. The
+  planner, docker dev, and reviewer confinement paths passed
+  `--permission-mode manual`, but `manual` is only a **v2.1.200+ alias for
+  `default`** — older CLIs reject it outright, and even where accepted it resolves
+  to `default`, which in headless `-p` mode aborts the run on the first off-allowlist
+  prompt rather than denying it. These paths now use `--permission-mode dontAsk`,
+  which is valid on every current CLI and auto-denies (without hanging or aborting)
+  any tool call outside the explicit allowlist — the intended "confine to the
+  allowlist, deny the rest, never wait for a human" behavior for unattended runs.
+- f338b8e: Fix task Docker containers dying mid-bootstrap when the image defines its own
+  `ENTRYPOINT`. The keep-alive is now passed as `--entrypoint sleep` (arg
+  `infinity`) instead of as the container CMD: a CMD only overrides the image's
+  CMD, so a product runtime image whose entrypoint boots services (apache,
+  supervisord, sshd, …) and never `exec "$@"`s would swallow the `sleep infinity`,
+  run its service stack — which fails to setuid to root under `--user` and exits
+  non-zero — and let the container die, killing every in-flight `docker exec`
+  (bootstrap, the agent) with it. Overriding the entrypoint makes PID 1 be
+  `sleep infinity` regardless of the image, so caretaker can use any runtime image
+  as an isolated `docker exec` shell target. Fixes bootstrap commands aborting
+  with a truncated, error-less output (e.g. `composer install` cut off partway).
+- d0b44eb: Move the pnpm dependency `overrides` (security version pins) from
+  `package.json`'s `pnpm` field to `pnpm-workspace.yaml`. pnpm 10+ no longer reads
+  settings from `package.json#pnpm` (it warned and ignored them); the pins now live
+  in their supported home. Resolution is unchanged — the lockfile already carried
+  the pins — this only silences the warning and future-proofs the config.
+
 ## 0.13.0
 
 ### Minor Changes
