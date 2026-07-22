@@ -2,10 +2,12 @@
 //   `caretaker`                   → render the Ink TUI (default)
 //   `caretaker run [prompt...]`   → headless one-shot via the harness
 //   `caretaker --help|-h`         → commander's help
+//   `caretaker --version|-v`      → prints the CLI version (from package.json)
 //
 // More subcommands (web, exec, session, agent, plugin, …) plug in
 // alongside `run` via `program.command(…)`.
 
+import { readFileSync } from 'node:fs';
 import { Command } from 'commander';
 import { createElement } from 'react';
 import { render } from 'ink';
@@ -14,7 +16,7 @@ import { runCommand, type OutputFormat } from './run.js';
 
 export async function runCli(argv: string[]): Promise<void> {
   // No subcommand and no flags → TUI. Anything else flows through commander
-  // so `--help`, `--version` and unknown-command diagnostics behave normally.
+  // so `--help`, `--version|-v` and unknown-command diagnostics behave normally.
   if (argv.length <= 2) {
     // Wait for Ink to unmount (ESC / Quit call useApp().exit()), then force the
     // process down. Without this the event loop stays alive on background boot
@@ -25,10 +27,18 @@ export async function runCli(argv: string[]): Promise<void> {
     process.exit(0);
   }
 
+  // Read the version from package.json at runtime (relative to this module, not
+  // the CWD) so it tracks the single Changesets-managed version without a static
+  // JSON import that would break tsc's rootDir constraint.
+  const { version } = JSON.parse(
+    readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+  ) as { version: string };
+
   const program = new Command();
   program
     .name('caretaker-cli')
-    .description('Caretaker — TUI agent harness with subcommands for scripting.');
+    .description('Caretaker — TUI agent harness with subcommands for scripting.')
+    .version(version, '-v, --version', 'output the CLI version and exit');
 
   program
     .command('run [prompt...]')
