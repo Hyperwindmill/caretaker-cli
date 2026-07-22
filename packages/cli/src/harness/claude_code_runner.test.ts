@@ -311,3 +311,19 @@ test('buildClaudeArgs emits --settings when settingsPath is set', () => {
   assert.equal(args[i + 1], '/tmp/s.json');
 });
 
+test('spawn env merges the probed interactive-shell PATH + version-manager vars', async () => {
+  const { setShellEnvForTest } = await import('./tools/builtin/shell-env.js');
+  setShellEnvForTest({ PATH: '/probed/nvm/bin', VOLTA_HOME: '/probed/volta' });
+  try {
+    useFixture('claude_code_stream_text.jsonl');
+    await runClaudeCode({ agent, provider, tools: [], prompt: 'hi' }, {});
+    const env = lastSpawn!.opts.env as NodeJS.ProcessEnv;
+    // probed PATH is prepended so `claude` (and any stdio MCP it spawns) finds node
+    assert.ok(env.PATH!.startsWith('/probed/nvm/bin:'));
+    // version-manager var carried over
+    assert.equal(env.VOLTA_HOME, '/probed/volta');
+  } finally {
+    setShellEnvForTest({});
+  }
+});
+

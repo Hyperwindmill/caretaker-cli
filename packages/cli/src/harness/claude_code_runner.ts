@@ -24,6 +24,7 @@ import type { AssistantPart, MessageRecord } from '../session/types.js';
 import { loadMcpServers } from '../store/json.js';
 import { resolvedServerRuntime } from '../mcp/client.js';
 import { DOCKER_BASH_HOOK_SCRIPT, dockerClaudeSettings } from '../lib/docker.js';
+import { mergeShellEnv } from './tools/builtin/shell-env.js';
 
 export type ClaudeCodeRunExtras = {
   permissionMode?: string;
@@ -225,7 +226,14 @@ async function attemptRun(
 
   const child = spawnImpl(command, args, {
     cwd: workingDir,
-    env: process.env,
+    // Merge the probed interactive-shell PATH + version-manager vars (nvm/fnm/
+    // volta) into the env so the spawned `claude` — and any stdio MCP server it
+    // spawns in turn (e.g. `caretaker-cli mcp`) — can find `node`/`claude` even
+    // when caretaker itself was launched from a non-interactive shell. Uses
+    // mergeShellEnv (not commandEnv) on purpose: PATH is fixed WITHOUT scrubbing
+    // secrets, so env-based auth (ANTHROPIC_API_KEY, CLAUDE_CODE_*) survives.
+    // Degrades to process.env unchanged if the boot-time probe hasn't run.
+    env: mergeShellEnv(process.env),
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 
