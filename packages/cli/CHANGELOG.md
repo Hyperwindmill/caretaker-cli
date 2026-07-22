@@ -1,5 +1,20 @@
 # caretaker-cli
 
+## 0.14.1
+
+### Patch Changes
+
+- 0eae80b: feat(cli): add `-v` / `--version` flag
+
+  `caretaker-cli --version` and `caretaker-cli -v` now print the CLI version (read from
+  `package.json`) and exit cleanly, instead of erroring with "unknown option". The commander
+  program never registered a version flag; it now does, with lowercase `-v` (overriding
+  commander's default `-V`).
+
+- d1f0381: fix(claude-code): merge the probed interactive-shell PATH into the `claude` spawn env
+
+  The Claude Code runner spawned `claude` with the raw `process.env`, so when caretaker itself was launched from a non-interactive shell (no nvm/fnm/volta on PATH), the spawned `claude` — and any stdio MCP server it spawned in turn, e.g. `caretaker-cli mcp` — could not find `node`/`claude` and failed to connect. The runner now uses `mergeShellEnv(process.env)`, prepending the boot-time probed interactive-shell PATH and version-manager vars while leaving secrets untouched (so env-based auth like `ANTHROPIC_API_KEY`/`CLAUDE_CODE_*` survives). Degrades to `process.env` unchanged if the probe has not run.
+
 ## 0.14.0
 
 ### Minor Changes
