@@ -69,5 +69,14 @@ export async function runCli(argv: string[]): Promise<void> {
       await startMcpStdioServer();
     });
 
+  const config = program.command('config').description('Configure caretaker integrations.');
+  config
+    .command('claude')
+    .description("Register caretaker's MCP server in your Claude Code config (user scope).")
+    .action(async () => {
+      const { configureClaude } = await import('./config_claude.js');
+      process.exit(await configureClaude());
+    });
+
   await program.parseAsync(argv);
 }
