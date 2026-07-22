@@ -1,5 +1,23 @@
 # caretaker-desktop
 
+## 0.14.0
+
+### Minor Changes
+
+- 40b303b: New `caretaker-cli config claude` subcommand: one-shot setup that registers caretaker's stdio MCP server (`caretaker-cli mcp`) in your Claude Code user-scope config, so an external Claude Code session can drive caretaker's task/project tools. It checks the `claude` CLI is installed, warns if `caretaker-cli` isn't on PATH, is idempotent (no-op if already configured), and delegates config-writing to `claude mcp add` to stay forward-compatible with Claude Code's config format.
+- 776432c: New `caretaker-cli mcp` subcommand: a general-purpose MCP server over stdio that exposes caretaker's `mcp__task__*` task/project tools to external MCP clients (e.g. Claude Code), so they can inspect and steer autonomous tasks/projects symmetrically with in-harness agents — no running web server and no token. The server reuses the exact task-tool definitions and server-wrapping the per-task HTTP bridge uses (extracted into a shared `mcp/task_server.ts`), and its trust boundary is local process access to `CARETAKER_HOME`. The existing token-guarded, per-task `/api/mcp/task` bridge is unchanged.
+- 401951d: claude-code agents: `--strict-mcp-config` is now **opt-in per agent** via a new `strictMcp` boolean (default off). Previously the per-run MCP config was always strict, which silently ignored the user's own `~/.claude` MCP servers. Now the default **merges** them with caretaker's, so anything set up for Claude Code (e.g. a `caretaker-cli mcp` stdio server for the `task_*` tools) is available in an in-caretaker chat too. The flag applies uniformly, autonomous task runs included. Turn **Strict MCP config** on in the agent form to restore the isolated (caretaker-only) toolset.
+
+  Behavior change: existing claude-code agents with configured `mcpServers` go from strict to merge on upgrade — set `strictMcp: true` to keep the old behavior.
+
+### Patch Changes
+
+- Updated dependencies [40b303b]
+- Updated dependencies [776432c]
+- Updated dependencies [401951d]
+  - @hyperwindmill/caretaker-cli@0.14.0
+  - webview-ui@0.14.0
+
 ## 0.13.1
 
 ### Patch Changes
