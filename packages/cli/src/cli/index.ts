@@ -29,10 +29,20 @@ export async function runCli(argv: string[]): Promise<void> {
 
   // Read the version from package.json at runtime (relative to this module, not
   // the CWD) so it tracks the single Changesets-managed version without a static
-  // JSON import that would break tsc's rootDir constraint.
-  const { version } = JSON.parse(
-    readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
-  ) as { version: string };
+  // JSON import that would break tsc's rootDir constraint. Guarded: this runs for
+  // every subcommand, and package.json is not always co-located with dist/ (e.g.
+  // the Electron desktop bundle ships dist/ only) — an unreadable file must never
+  // take the whole process down, only degrade the reported version.
+  let version = '0.0.0';
+  try {
+    version = (
+      JSON.parse(
+        readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+      ) as { version: string }
+    ).version;
+  } catch {
+    // ponytail: fall back to a placeholder version if package.json isn't bundled
+  }
 
   const program = new Command();
   program
