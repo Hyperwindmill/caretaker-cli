@@ -75,6 +75,9 @@ export interface ClaudeArgsInput {
   allowedTools?: string[];
   disallowedTools?: string[];
   mcpConfigPath?: string;
+  /** Pass --strict-mcp-config alongside --mcp-config so ONLY caretaker's
+   *  servers are used. Off (default) merges the user's native ~/.claude MCP. */
+  strictMcp?: boolean;
   settingsPath?: string;
   resumeId?: string;
   persistSession: boolean;
@@ -87,7 +90,10 @@ export function buildClaudeArgs(i: ClaudeArgsInput): string[] {
   if (i.appendSystemPrompt) args.push('--append-system-prompt', i.appendSystemPrompt);
   if (i.allowedTools?.length) args.push('--allowedTools', ...i.allowedTools);
   if (i.disallowedTools?.length) args.push('--disallowedTools', ...i.disallowedTools);
-  if (i.mcpConfigPath) args.push('--mcp-config', i.mcpConfigPath, '--strict-mcp-config');
+  if (i.mcpConfigPath) {
+    args.push('--mcp-config', i.mcpConfigPath);
+    if (i.strictMcp) args.push('--strict-mcp-config');
+  }
   if (i.settingsPath) args.push('--settings', i.settingsPath);
   if (i.resumeId) args.push('--resume', i.resumeId);
   else if (!i.persistSession) args.push('--no-session-persistence');
@@ -367,6 +373,7 @@ export async function runClaudeCode(opts: RunOptions, cb: RunCallbacks = {}): Pr
       allowedTools: opts.claudeCode?.allowedTools,
       disallowedTools: opts.claudeCode?.disallowedTools,
       mcpConfigPath: mcp?.configPath,
+      strictMcp: agent.strictMcp ?? false,
       settingsPath: settings?.settingsPath,
       resumeId: resume,
       persistSession: Boolean(opts.sessionId),

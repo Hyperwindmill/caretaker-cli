@@ -36,6 +36,7 @@ export function AgentsTab({
   const [maxTurns, setMaxTurns] = useState(30);
   const [workingDir, setWorkingDir] = useState('');
   const [permissionMode, setPermissionMode] = useState('');
+  const [strictMcp, setStrictMcp] = useState(false);
 
   // Selected tool states: record toolName -> true/false
   const [selectedTools, setSelectedTools] = useState<Record<string, boolean>>({});
@@ -74,6 +75,7 @@ export function AgentsTab({
     setMaxTurns(30);
     setWorkingDir('');
     setPermissionMode('');
+    setStrictMcp(false);
 
     // Pre-check some standard tools by default (e.g. read_file, grep_search)
     const initialTools: Record<string, boolean> = {};
@@ -98,6 +100,7 @@ export function AgentsTab({
     setMaxTurns(agent.maxTurns || 30);
     setWorkingDir(agent.workingDir || '');
     setPermissionMode(agent.permissionMode ?? '');
+    setStrictMcp(agent.strictMcp ?? false);
 
     const initialTools: Record<string, boolean> = {};
     const initialConfirm: Record<string, boolean> = {};
@@ -218,6 +221,7 @@ export function AgentsTab({
       maxTurns,
       ...(trimmedWorkingDir ? { workingDir: trimmedWorkingDir } : {}),
       ...(isClaudeCode && permissionMode ? { permissionMode } : {}),
+      ...(isClaudeCode && strictMcp ? { strictMcp: true } : {}),
       // Preserve plugin-managed properties
       ...(editingAgent?.pluginId ? { pluginId: editingAgent.pluginId } : {}),
       ...(editingAgent?.pluginScopedName ? { pluginScopedName: editingAgent.pluginScopedName } : {}),
@@ -360,7 +364,8 @@ export function AgentsTab({
           </div>
 
           {isClaudeCode ? (
-            /* Permission mode (replaces the tool/plugins pickers, which are ignored at runtime) */
+            /* Permission mode + strict-MCP toggle (replace the tool/plugins pickers, ignored at runtime) */
+            <>
             <div className="form-group">
               <label htmlFor="agent-permission-mode">Permission Mode</label>
               <select
@@ -378,6 +383,22 @@ export function AgentsTab({
                 Anthropic may bill programmatic use as extra usage.
               </p>
             </div>
+            <div className="form-group">
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={strictMcp}
+                  onChange={(e) => setStrictMcp(e.target.checked)}
+                />
+                Strict MCP config
+              </label>
+              <p style={{ fontSize: '11px', color: 'var(--vscode-descriptionForeground)', lineHeight: '1.4', margin: '4px 0 0' }}>
+                Off (default): merge your native ~/.claude MCP servers with caretaker's — e.g. add a{' '}
+                <code>caretaker-cli mcp</code> stdio server to ~/.claude for task tools in chat. On: use only
+                caretaker's servers (--strict-mcp-config).
+              </p>
+            </div>
+            </>
           ) : (
             <>
               {/* Tools Selection */}
