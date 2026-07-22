@@ -109,6 +109,15 @@ When a task's project lives in a git repo, the harness gives it a **dedicated wo
 
 Because the container runs as **your host user** (not root — so files it writes stay yours), a global install like `npm install -g pnpm` fails with `EACCES` (the global dir is root-owned). Put your **package manager in the image** (via a Dockerfile path as above, e.g. `FROM node:24` + `RUN corepack enable pnpm`) and use `bootstrapCommands` only for **dependencies** (`pnpm install`). Installing a package manager at runtime as a non-root user (`npm i -g …`) won't work, and one-shot workarounds like `npx pnpm install` don't leave `pnpm` on `PATH` for later cycles.
 
+**Drive it from outside, too.** The same `mcp__task__*` tools are exposed to any external MCP client over stdio by `caretaker-cli mcp` — so a Claude Code session editing your repo can inspect and steer these tasks/projects symmetrically with the in-harness agents, instead of hand-editing the folder DB:
+
+```jsonc
+// .mcp.json  (or: claude mcp add caretaker -- caretaker-cli mcp)
+{ "mcpServers": { "caretaker": { "command": "caretaker-cli", "args": ["mcp"] } } }
+```
+
+No web server and no token are needed: the server operates on the `CARETAKER_HOME` store it inherits from the client's env, and it exposes only the task/project tools — no file/bash/edit builtins (your external client has its own). Its security model is deliberately "local process access to the store" — the very boundary the TUI already trusts (anyone who can spawn it could already edit the store directly). The token-guarded, per-task `/api/mcp/task` HTTP bridge that feeds in-harness `claude-code` agents is a separate, unchanged surface.
+
 ### Scheduler
 
 The web server boots an in-process background scheduler that ticks every 15 s. It runs **three** loops:
@@ -132,6 +141,7 @@ Then run it:
 caretaker-cli                          # launch the TUI
 caretaker-cli web                      # local web GUI (http://127.0.0.1:3000)
 caretaker-cli run "…" --agent <name>   # headless one-shot dispatch
+caretaker-cli mcp                      # stdio MCP server: task/project tools for an external client
 ```
 
 Requires Node ≥ 20. Electron desktop and VSCode sidebar builds are attached to each [GitHub Release](https://github.com/Hyperwindmill/caretaker-cli/releases).
