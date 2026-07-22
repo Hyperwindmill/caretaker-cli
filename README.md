@@ -113,6 +113,15 @@ Because the container runs as **your host user** (not root — so files it write
 
 **`bootstrapCommands` is a list, not a script.** Each entry is run as a *separate* shell invocation at the worktree root (in the container when Docker is active) — shell state does **not** carry across entries, so a `cd` on one entry has no effect on the next; that entry, and every one after it, still runs from the worktree root. Chain dependent steps inside a single entry with `&&` (e.g. `"cd include/libraries && php ../../composer.phar install"`), not as separate list items. The list stops at the first non-zero exit and the task is blocked with the failed command and its output.
 
+**Drive it from outside, too.** The same `mcp__task__*` tools are exposed to any external MCP client over stdio by `caretaker-cli mcp` — so a Claude Code session editing your repo can inspect and steer these tasks/projects symmetrically with the in-harness agents, instead of hand-editing the folder DB:
+
+```jsonc
+// .mcp.json  (or: claude mcp add caretaker -- caretaker-cli mcp)
+{ "mcpServers": { "caretaker": { "command": "caretaker-cli", "args": ["mcp"] } } }
+```
+
+No web server and no token are needed: the server operates on the `CARETAKER_HOME` store it inherits from the client's env, and it exposes only the task/project tools — no file/bash/edit builtins (your external client has its own). Its security model is deliberately "local process access to the store" — the very boundary the TUI already trusts (anyone who can spawn it could already edit the store directly). The token-guarded, per-task `/api/mcp/task` HTTP bridge that feeds in-harness `claude-code` agents is a separate, unchanged surface.
+
 ### Scheduler
 
 The web server boots an in-process background scheduler that ticks every 15 s. It runs **three** loops:
@@ -136,6 +145,7 @@ Then run it:
 caretaker-cli                          # launch the TUI
 caretaker-cli web                      # local web GUI (http://127.0.0.1:3000)
 caretaker-cli run "…" --agent <name>   # headless one-shot dispatch
+caretaker-cli mcp                      # stdio MCP server: task/project tools for an external client
 ```
 
 Requires Node ≥ 20. Electron desktop and VSCode sidebar builds are attached to each [GitHub Release](https://github.com/Hyperwindmill/caretaker-cli/releases).
