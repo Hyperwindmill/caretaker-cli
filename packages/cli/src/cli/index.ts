@@ -61,5 +61,13 @@ export async function runCli(argv: string[]): Promise<void> {
       await startServer(parseInt(opts.port, 10), opts.host);
     });
 
+  program
+    .command('mcp')
+    .description('Serve the caretaker task/project tools over stdio for an external MCP client.')
+    .action(async () => {
+      const { startMcpStdioServer } = await import('./mcp.js');
+      await startMcpStdioServer();
+    });
+
   await program.parseAsync(argv);
 }
