@@ -318,7 +318,10 @@ export default function Agents({ onBack }: { onBack: () => void }) {
         <Text>provider: {selected.provider}</Text>
         <Text>model: {selected.model}</Text>
         {isClaudeCode ? (
-          <Text>permissionMode: {selected.permissionMode || 'Auto (Claude Code default)'}</Text>
+          <>
+            <Text>permissionMode: {selected.permissionMode || 'Auto (Claude Code default)'}</Text>
+            <Text>strictMcp: {selected.strictMcp ? 'on' : 'off (merge ~/.claude MCP)'}</Text>
+          </>
         ) : (
           <>
             <Text>maxTurns: {selected.maxTurns === 0 ? 'unlimited' : selected.maxTurns}</Text>
@@ -420,7 +423,8 @@ type FormStep =
   | 'mcpServers'
   | 'workingDir'
   | 'maxTurns'
-  | 'permissionMode';
+  | 'permissionMode'
+  | 'strictMcp';
 
 const CLAUDE_CODE_PERMISSION_MODES = [
   'acceptEdits',
@@ -440,7 +444,7 @@ function stepSequence(managed: boolean, isClaudeCode: boolean): FormStep[] {
   seq.push('provider', 'model');
   if (!managed) seq.push('systemPrompt');
   if (isClaudeCode) {
-    seq.push('mcpServers', 'workingDir', 'permissionMode');
+    seq.push('mcpServers', 'workingDir', 'permissionMode', 'strictMcp');
   } else {
     seq.push('tools', 'plugins', 'mcpServers', 'workingDir', 'maxTurns');
   }
@@ -471,6 +475,7 @@ function AgentForm({
   const [model, setModel] = useState(initial?.model ?? '');
   const [systemPrompt, setSystemPrompt] = useState(initial?.systemPrompt ?? '');
   const [permissionMode, setPermissionMode] = useState(initial?.permissionMode ?? '');
+  const [strictMcp, setStrictMcp] = useState(initial?.strictMcp ?? false);
   const normalizeTools = (tools: string[]): string[] => {
     const hasTaskTools = tools.some((t) => t.startsWith('mcp__task__'));
     if (hasTaskTools) {
@@ -511,8 +516,9 @@ function AgentForm({
     return idx >= 0 && idx + 1 < steps.length ? steps[idx + 1] : s;
   };
 
-  const finalize = (n: number, permissionModeOverride?: string) => {
+  const finalize = (n: number, permissionModeOverride?: string, strictMcpOverride?: boolean) => {
     const pm = permissionModeOverride ?? permissionMode;
+    const sm = strictMcpOverride ?? strictMcp;
     const a: AgentConfig = {
       id: initial?.id ?? randomUUID(),
       name: name.trim(),
@@ -526,6 +532,7 @@ function AgentForm({
       ...(activeMcp.length > 0 ? { mcpServers: activeMcp } : {}),
       ...(workingDir.trim() ? { workingDir: workingDir.trim() } : {}),
       ...(isClaudeCode && pm ? { permissionMode: pm } : {}),
+      ...(isClaudeCode && sm ? { strictMcp: true } : {}),
       // Preserve plugin-managed origin tags so the next sync recognizes
       // this row instead of orphaning it.
       ...(initial?.pluginId ? { pluginId: initial.pluginId } : {}),
@@ -786,8 +793,7 @@ function AgentForm({
               onSelect={(item) => {
                 setPermissionMode(item.value);
                 setError(null);
-                const n = Number.parseInt(maxTurns.trim(), 10);
-                finalize(Number.isFinite(n) && n >= 0 ? n : 30, item.value);
+                setStep('strictMcp');
               }}
             />
           ) : ['name', 'provider', 'model', 'systemPrompt', 'mcpServers', 'workingDir'].includes(
@@ -800,6 +806,32 @@ function AgentForm({
           <Text dimColor>
             Uses your local Claude Code session; Anthropic may bill programmatic use as extra usage.
           </Text>
+        </Box>
+      )}
+
+      {isClaudeCode && (
+        <Box flexDirection="column">
+          <Text>strictMcp: </Text>
+          {step === 'strictMcp' ? (
+            <SelectInput
+              items={[
+                { label: 'off — merge your ~/.claude MCP servers (default)', value: 'off' },
+                { label: 'on — use only caretaker servers (--strict-mcp-config)', value: 'on' },
+              ]}
+              initialIndex={strictMcp ? 1 : 0}
+              onSelect={(item) => {
+                const val = item.value === 'on';
+                setStrictMcp(val);
+                setError(null);
+                const n = Number.parseInt(maxTurns.trim(), 10);
+                finalize(Number.isFinite(n) && n >= 0 ? n : 30, undefined, val);
+              }}
+            />
+          ) : step === 'permissionMode' ? (
+            <Text dimColor>(pending)</Text>
+          ) : (
+            <Text>{strictMcp ? 'on' : 'off'}</Text>
+          )}
         </Box>
       )}
 

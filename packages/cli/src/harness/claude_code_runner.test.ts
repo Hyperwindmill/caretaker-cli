@@ -88,6 +88,7 @@ test('buildClaudeArgs: full flag surface', () => {
     allowedTools: ['Read', 'mcp__task'],
     disallowedTools: ['Bash'],
     mcpConfigPath: '/tmp/x.json',
+    strictMcp: true,
     resumeId: 'abc',
     persistSession: true,
   });
@@ -117,6 +118,21 @@ test('buildClaudeArgs: full flag surface', () => {
   const oneShot = buildClaudeArgs({ model: 'sonnet', persistSession: false });
   assert.ok(oneShot.includes('--no-session-persistence'));
   assert.ok(!oneShot.includes('--resume'));
+});
+
+test('buildClaudeArgs: --strict-mcp-config is gated on strictMcp (default merge)', () => {
+  const merged = buildClaudeArgs({ mcpConfigPath: '/tmp/x.json', persistSession: false });
+  assert.ok(merged.includes('--mcp-config'));
+  assert.ok(!merged.includes('--strict-mcp-config'));
+  const strict = buildClaudeArgs({
+    mcpConfigPath: '/tmp/x.json',
+    strictMcp: true,
+    persistSession: false,
+  });
+  assert.ok(strict.includes('--strict-mcp-config'));
+  // strictMcp without a config path emits nothing.
+  const none = buildClaudeArgs({ strictMcp: true, persistSession: false });
+  assert.ok(!none.includes('--strict-mcp-config'));
 });
 
 test('runClaudeCode maps stream to callbacks, messages, RunResult', async () => {

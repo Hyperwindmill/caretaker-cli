@@ -267,6 +267,12 @@ export type AgentConfig = {
    *  permissions.defaultMode, falling back to 'acceptEdits'. Unattended
    *  runs (scheduler/tasks) force 'bypassPermissions' regardless. */
   permissionMode?: string;
+  /** claude-code providers only: when true, the per-run MCP config is passed
+   *  with --strict-mcp-config so ONLY caretaker's servers are used. Default
+   *  (unset/false) merges the user's native ~/.claude MCP servers with
+   *  caretaker's — e.g. so a `caretaker-cli mcp` stdio server in ~/.claude is
+   *  available in chat. Applies uniformly, autonomous task runs included. */
+  strictMcp?: boolean;
   // ─── plugin-managed origin ──────────────────────────────────────────
   /** PluginRecord.id this agent was derived from. Set on rows synthesized
    *  from a plugin manifest's `agents/*.md` files. Re-sync rewrites
