@@ -9,23 +9,30 @@ import { initModelLimits } from './harness/model_limits.js';
 import { probeShellEnv } from './harness/tools/builtin/shell-env.js';
 import { runCli } from './cli/index.js';
 
-// Fire refresh-on-start in the background — startup must not block on a
-// slow git fetch. The next agent run reads plugins.json fresh so it picks
-// up newly-discovered plugins automatically.
-void refreshSourcesOnStart().catch((err) => {
-  console.error('[boot] refresh-on-start failed:', err);
-});
+// The `mcp` subcommand serves JSON-RPC over stdout — it must stay pristine
+// (no banner, no log lines) and needs none of these boot side-effects, which
+// also spawn child processes / network fetches. Skip them for that path.
+const isMcpStdio = process.argv[2] === 'mcp';
 
-// Probe the interactive shell environment on Linux to capture PATH and
-// version manager variables (NVM, volta, fnm, etc.) that .bashrc sets.
-// This runs in the background and the result is cached for bash tool use.
-void probeShellEnv().catch((err) => {
-  console.error('[boot] shell-env probe failed:', err);
-});
+if (!isMcpStdio) {
+  // Fire refresh-on-start in the background — startup must not block on a
+  // slow git fetch. The next agent run reads plugins.json fresh so it picks
+  // up newly-discovered plugins automatically.
+  void refreshSourcesOnStart().catch((err) => {
+    console.error('[boot] refresh-on-start failed:', err);
+  });
 
-// Populate the model-context registry from models.dev in the background.
-// Degrades gracefully (percent stays null) until the first fetch lands.
-initModelLimits();
+  // Probe the interactive shell environment on Linux to capture PATH and
+  // version manager variables (NVM, volta, fnm, etc.) that .bashrc sets.
+  // This runs in the background and the result is cached for bash tool use.
+  void probeShellEnv().catch((err) => {
+    console.error('[boot] shell-env probe failed:', err);
+  });
+
+  // Populate the model-context registry from models.dev in the background.
+  // Degrades gracefully (percent stays null) until the first fetch lands.
+  initModelLimits();
+}
 
 // Tear pooled MCP connections down on shutdown so child stdio processes are
 // not orphaned and HTTP sessions get a chance to send DELETE. Best-effort:
