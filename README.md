@@ -115,6 +115,8 @@ Because the container runs as **your host user** (not root — so files it write
 
 **Drive it from outside, too.** The same `mcp__task__*` tools are exposed to any external MCP client over stdio by `caretaker-cli mcp` — so a Claude Code session editing your repo can inspect and steer these tasks/projects symmetrically with the in-harness agents, instead of hand-editing the folder DB:
 
+The easiest way to wire this into your own Claude Code is `caretaker-cli config claude`: it checks that the `claude` CLI is installed, then registers the server in your user-scope Claude Code config (idempotent — a no-op if it's already there). Or do it by hand:
+
 ```jsonc
 // .mcp.json  (or: claude mcp add caretaker -- caretaker-cli mcp)
 { "mcpServers": { "caretaker": { "command": "caretaker-cli", "args": ["mcp"] } } }
@@ -146,6 +148,7 @@ caretaker-cli                          # launch the TUI
 caretaker-cli web                      # local web GUI (http://127.0.0.1:3000)
 caretaker-cli run "…" --agent <name>   # headless one-shot dispatch
 caretaker-cli mcp                      # stdio MCP server: task/project tools for an external client
+caretaker-cli config claude            # register the MCP server in your Claude Code (user scope)
 ```
 
 Requires Node ≥ 20. Electron desktop and VSCode sidebar builds are attached to each [GitHub Release](https://github.com/Hyperwindmill/caretaker-cli/releases).
