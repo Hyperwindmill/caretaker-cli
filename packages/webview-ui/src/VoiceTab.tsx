@@ -65,16 +65,31 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
    *  exactly the case the design doc says must not be silently swallowed. */
   const [backendError, setBackendError] = useState<string | null>(null);
 
+  /** Container state as of the last adopted status. A ref, not state: the 10 s
+   *  poll closes over the mount-time render, so comparing against state would
+   *  compare against `null` forever. */
+  const lastContainer = useRef<BackendStatus['container'] | null>(null);
+  const adoptBackendStatus = (status: BackendStatus) => {
+    lastContainer.current = status.container;
+    setBackendStatus(status);
+  };
+
   const fetchBackendStatus = async () => {
     try {
       const res = await fetch('/api/voice/backend');
       if (!res.ok) return;
       const status = (await res.json()) as BackendStatus;
-      setBackendStatus(status);
-      // A failure from an earlier attempt is stale once the container is up —
-      // whatever else got it there, the red line below would otherwise sit
-      // under a green status until the user pressed a button again.
-      if (status.container === 'running') setBackendError(null);
+      // Clear a leftover failure only when the container comes up *between*
+      // polls — fixed outside caretaker, e.g. a hand-run `docker start`. The
+      // check is a transition, not the state: a model-install failure's own
+      // terminal status already reports 'running' (failures never roll back
+      // the container), and clearing on state would wipe that message on the
+      // next poll — hiding exactly the failure the install step exists to
+      // surface.
+      if (status.container === 'running' && lastContainer.current !== 'running') {
+        setBackendError(null);
+      }
+      adoptBackendStatus(status);
     } catch {
       // Route doesn't exist on this surface (VSCode sidebar) or the request
       // failed outright — no status means the block stays hidden, which is
@@ -119,7 +134,7 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
           }
           if (progress.status) {
             // Terminal line: adopt the fresh status and stop showing progress text.
-            setBackendStatus(progress.status);
+            adoptBackendStatus(progress.status);
             setBackendProgress(null);
             if (progress.step === 'error') setBackendError(progress.message);
           } else {
@@ -141,7 +156,7 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
     setBackendError(null);
     try {
       const res = await fetch('/api/voice/backend/stop', { method: 'POST' });
-      if (res.ok) setBackendStatus((await res.json()) as BackendStatus);
+      if (res.ok) adoptBackendStatus((await res.json()) as BackendStatus);
     } catch {
       // Best-effort — the poll below re-syncs regardless.
     } finally {
