@@ -188,7 +188,10 @@ export function useVoice(opts: {
           stream,
           baseAssetPath: '/vad/',
           onnxWASMBasePath: '/vad/',
-          redemptionFrames: Math.round(END_OF_TURN_MS / 32), // ~32 ms per frame
+          // `redemptionMs`, not `redemptionFrames`: this version derives the frame
+          // count itself (redemptionMs / msPerFrame), so passing frames was ignored
+          // and the end-of-turn silently used the library default of 1400 ms.
+          redemptionMs: END_OF_TURN_MS,
           onSpeechStart: () => {
             heardSpeechRef.current = true;
             clearIdleTimer();
