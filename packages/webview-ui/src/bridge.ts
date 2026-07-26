@@ -100,7 +100,9 @@ export type HostToView =
   | { type: 'refreshingPlugin'; sourceId: string }
   | { type: 'refreshPluginOutcome'; outcome: RefreshOutcome }
   | { type: 'taskRunsLoaded'; taskId: string; runs: any[] }
-  | { type: 'mcpAuthOutcome'; serverId: string; ok: boolean; error?: string };
+  | { type: 'mcpAuthOutcome'; serverId: string; ok: boolean; error?: string }
+  | { type: 'voiceConfig'; voice: VoiceClientConfig | null };
+
 
 export type ViewToHost =
   | { type: 'start'; prompt: string; attachments?: Array<{ name: string; mime: string; base64: string }> }
