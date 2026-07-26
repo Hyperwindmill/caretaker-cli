@@ -14,7 +14,7 @@ import type { VoiceConfig } from 'caretaker-types';
 import { commandEnv } from '../../harness/tools/builtin/shell-env.js';
 import { containerState } from '../../lib/docker.js';
 import { loadConfig } from '../../store/json.js';
-import { voiceAuthHeaders } from './voice_proxy.js';
+import { resolveVoice, voiceAuthHeaders } from './voice_proxy.js';
 
 const exec = promisify(execFile);
 
@@ -387,18 +387,6 @@ async function* startBackendGuarded(voice: VoiceConfig): AsyncGenerator<StartPro
   }
 }
 
-/** Mirrors `resolveVoice` in voice_proxy.ts (not exported from there, so the
- *  two error messages are kept in sync by hand — same wording, same reasons). */
-function resolveVoiceForBackend(voice: VoiceConfig | undefined): { error: string } | { voice: VoiceConfig } {
-  if (!voice || voice.enabled !== true) {
-    return { error: 'Voice mode is disabled. Enable it in Settings → Voice.' };
-  }
-  if (!voice.endpoint || voice.endpoint.trim().length === 0) {
-    return { error: 'No voice endpoint configured. Set one in Settings → Voice.' };
-  }
-  return { voice };
-}
-
 export function registerVoiceBackend(app: Hono): void {
   app.get('/api/voice/backend', async (c) => {
     const config = await loadConfig();
@@ -407,8 +395,7 @@ export function registerVoiceBackend(app: Hono): void {
   });
 
   app.post('/api/voice/backend/start', async (c) => {
-    const config = await loadConfig();
-    const resolved = resolveVoiceForBackend(config.voice);
+    const resolved = await resolveVoice();
     if ('error' in resolved) return c.text(resolved.error, 400);
     const { voice } = resolved;
 

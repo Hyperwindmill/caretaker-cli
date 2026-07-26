@@ -69,7 +69,12 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
     try {
       const res = await fetch('/api/voice/backend');
       if (!res.ok) return;
-      setBackendStatus((await res.json()) as BackendStatus);
+      const status = (await res.json()) as BackendStatus;
+      setBackendStatus(status);
+      // A failure from an earlier attempt is stale once the container is up —
+      // whatever else got it there, the red line below would otherwise sit
+      // under a green status until the user pressed a button again.
+      if (status.container === 'running') setBackendError(null);
     } catch {
       // Route doesn't exist on this surface (VSCode sidebar) or the request
       // failed outright — no status means the block stays hidden, which is
