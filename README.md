@@ -155,7 +155,14 @@ curl -X POST http://127.0.0.1:8969/v1/models/speaches-ai/Kokoro-82M-v1.0-ONNX
 
 Then set **Settings → Voice** to endpoint `http://127.0.0.1:8969/v1`, no API key, transcription model `Systran/faster-whisper-small`, synthesis model `speaches-ai/Kokoro-82M-v1.0-ONNX`.
 
-Pick a voice in the language you actually speak — `af_heart` is US English, so it will read Italian with an American accent. `GET /v1/audio/voices` lists all 54 Kokoro voices with their language; the Italian ones are `if_sara` and `im_nicola`. And `faster-whisper-small` trades accuracy for speed; step up to a larger model if transcriptions come back approximate.
+Pick a voice in the language you actually speak — `af_heart` is US English, so it will read Italian with an American accent. `GET /v1/audio/voices` lists every voice across the models you have installed, with its language.
+
+caretaker holds `ttsVoice` as an opaque string and forwards it verbatim, so which voices exist is entirely the speech server's business (and, under it, the model's):
+
+- **Kokoro** is one model carrying many voices, selected by the `voice` field — but it is trained predominantly on English and shares one phonemizer across languages, so its non-English voices (`if_sara`, `im_nicola` for Italian) keep an English inflection.
+- **Piper** ships one voice per model, trained on that language alone. For Italian, set model `speaches-ai/piper-it_IT-paola-medium` with voice `paola`. `GET /v1/registry?task=text-to-speech` lists all 154 available models.
+
+`faster-whisper-small` trades accuracy for speed; step up to a larger model if transcriptions come back approximate.
 
 ## Install
 
