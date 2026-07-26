@@ -2031,6 +2031,17 @@ body.vscode-light .settings-panel__tab-btn--active {
   flex-shrink: 0;
 }
 
+/* Status line + Start/Stop button for the Voice tab's managed-backend block:
+ * text on the left, action on the right — none of the existing form-* rows
+ * put a button on the opposite end from its label, so this is a new rule
+ * rather than a reuse. */
+.voice-backend-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
 /* Custom vertical grid for tools with allowed / confirm permissions */
 .chips-container-vertical {
   display: flex;
