@@ -268,7 +268,8 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
               Fills the form for a fully local backend (a Speaches container on port
               8969) that caretaker can run for you if Docker is installed. Nothing is
               saved yet — adjust anything, including the port in the endpoint, then
-              press Save; a Start button appears below afterwards.
+              press Save; on the web GUI and desktop app a Start button appears below
+              afterwards.
             </small>
           </div>
         )}

@@ -63,6 +63,10 @@
       "types": "./dist/mcp/server_manager.d.ts",
       "default": "./dist/mcp/server_manager.js"
     },
+    "./voice": {
+      "types": "./dist/cli/web/voice_proxy.d.ts",
+      "default": "./dist/cli/web/voice_proxy.js"
+    },
     "./types": {
       "types": "./dist/types.d.ts",
       "default": "./dist/types.js"
