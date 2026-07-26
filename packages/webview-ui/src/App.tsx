@@ -25,7 +25,8 @@ import type {
   AgentConfig, 
   PluginsFile, 
   McpServerConfig,
-  ToolAttachmentRecord
+  ToolAttachmentRecord,
+  VoiceClientConfig
 } from './bridge.js';
 
 import { MessageList } from './MessageList.js';
@@ -33,8 +34,10 @@ import { Composer } from './Composer.js';
 import { ConfirmCard } from './ConfirmCard.js';
 import { SettingsPanel } from './SettingsPanel.js';
 import { ProjectsTab } from './ProjectsTab.js';
+import { useVoice } from './useVoice.js';
 import { ChatIcon, SettingsIcon, ChevronDownIcon, ChevronUpIcon, ProjectsIcon, WarningIcon, DeleteIcon } from './icons.js';
 import logo from './caretaker_cli.png';
+
 
 export interface UserItem {
   kind: 'user';
@@ -317,6 +320,9 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
   const [refreshOutcome, setRefreshOutcome] = useState<RefreshOutcome | null>(null);
   const [mcpAuthOutcome, setMcpAuthOutcome] = useState<{ serverId: string; ok: boolean; error?: string } | null>(null);
   const [taskRuns, setTaskRuns] = useState<Record<string, any[]>>({});
+  const [voiceConfig, setVoiceConfig] = useState<VoiceClientConfig | null>(null);
+  const [composerDraft, setComposerDraft] = useState('');
+
 
   useEffect(() => {
     postMessage({ type: 'webviewReady' });
@@ -395,11 +401,26 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
         case 'taskRunsLoaded':
           setTaskRuns((prev) => ({ ...prev, [msg.taskId]: msg.runs }));
           return;
+        case 'voiceConfig':
+          setVoiceConfig(msg.voice);
+          return;
       }
     }
     window.addEventListener('message', handle);
     return () => window.removeEventListener('message', handle);
   }, [selectedAgentId]);
+
+  const voice = useVoice({
+    voice: voiceConfig,
+    chatStatus: chatState.status,
+    pendingConfirmCount: chatState.pendingConfirms.length,
+    items: chatState.items,
+    onTranscript: (text, mode) => {
+      if (mode === 'conversation') onSend(text);
+      else setComposerDraft((draft) => (draft ? `${draft} ${text}` : text));
+    },
+  });
+
 
   const onSend = (
     text: string,
@@ -729,13 +750,28 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
                   <ConfirmCard key={p.id} pending={p} onDecide={onConfirm} />
                 ))}
               />
-              {chatState.errorText && <div className="app__error"><WarningIcon size={14} /> {chatState.errorText}</div>}
+              {(chatState.errorText || voice.error) && (
+                <div className="app__error"><WarningIcon size={14} /> {chatState.errorText || voice.error}</div>
+              )}
               <Composer
                 disabled={composerDisabled}
                 onSend={onSend}
                 canAbort={chatState.status === 'streaming'}
                 onAbort={onAbort}
                 contextUsage={chatState.contextUsage}
+                voice={
+                  voice.available
+                    ? {
+                        phase: voice.phase,
+                        mode: voice.mode,
+                        canSpeak: voiceConfig?.canSpeak ?? false,
+                        setMode: voice.setMode,
+                        toggle: voice.toggle,
+                      }
+                    : null
+                }
+                value={composerDraft}
+                onValueChange={setComposerDraft}
               />
             </>
           ) : (
@@ -854,14 +890,30 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
           <ConfirmCard key={p.id} pending={p} onDecide={onConfirm} />
         ))}
       />
-      {chatState.errorText && <div className="app__error"><WarningIcon size={14} /> {chatState.errorText}</div>}
+      {(chatState.errorText || voice.error) && (
+        <div className="app__error"><WarningIcon size={14} /> {chatState.errorText || voice.error}</div>
+      )}
       <Composer
         disabled={composerDisabled}
         onSend={onSend}
         canAbort={chatState.status === 'streaming'}
         onAbort={onAbort}
         contextUsage={chatState.contextUsage}
+        voice={
+          voice.available
+            ? {
+                phase: voice.phase,
+                mode: voice.mode,
+                canSpeak: voiceConfig?.canSpeak ?? false,
+                setMode: voice.setMode,
+                toggle: voice.toggle,
+              }
+            : null
+        }
+        value={composerDraft}
+        onValueChange={setComposerDraft}
       />
+
       {deleteOverlay}
     </div>
   );

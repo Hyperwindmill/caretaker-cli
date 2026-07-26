@@ -8,6 +8,7 @@ import { AgentsTab } from './AgentsTab.js';
 import { PluginsTab } from './PluginsTab.js';
 import { McpTab } from './McpTab.js';
 import { SchedulerTab } from './SchedulerTab.js';
+import { VoiceTab } from './VoiceTab.js';
 import { BackIcon } from './icons.js';
 
 interface SettingsPanelProps {
@@ -32,7 +33,7 @@ interface SettingsPanelProps {
 }
 
 
-type TabId = 'providers' | 'projects' | 'agents' | 'plugins' | 'mcp' | 'scheduler';
+type TabId = 'providers' | 'projects' | 'agents' | 'plugins' | 'mcp' | 'scheduler' | 'voice';
 
 export function SettingsPanel({
   layout = 'compact',
@@ -127,6 +128,14 @@ export function SettingsPanel({
             taskRuns={taskRuns}
           />
         );
+
+      case 'voice':
+        return (
+          <VoiceTab
+            config={config}
+            onSave={(updatedConfig) => postMessage({ type: 'saveConfig', config: updatedConfig })}
+          />
+        );
     }
   };
 
@@ -180,7 +189,14 @@ export function SettingsPanel({
             Scheduler
           </button>
         )}
+        <button
+          className={`settings-panel__tab-btn ${activeTab === 'voice' ? 'settings-panel__tab-btn--active' : ''}`}
+          onClick={() => setActiveTab('voice')}
+        >
+          Voice
+        </button>
       </nav>
+
 
       <main className="settings-panel__content">
         {renderTabContent()}
