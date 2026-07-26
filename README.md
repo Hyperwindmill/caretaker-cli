@@ -144,7 +144,15 @@ The local web GUI and Electron desktop app offer voice control powered by local 
 
 > Voice mode is available in the Web GUI and Electron desktop app; it is omitted from the VSCode sidebar (webview CSP blocks mic access) and TUI.
 
-**Getting a local backend running.** `docker-compose.voice.yml` in the repo root starts a [Speaches](https://github.com/speaches-ai/speaches) container so nothing leaves your machine:
+**Getting a local backend running — the managed way.** If you have Docker, caretaker can run the [Speaches](https://github.com/speaches-ai/speaches) container for you, so nothing leaves your machine and you never open a terminal. Set **Settings → Voice** to endpoint `http://127.0.0.1:8969/v1`, no API key, transcription model `Systran/faster-whisper-small`, synthesis model `speaches-ai/Kokoro-82M-v1.0-ONNX`, and press **Save**. A **Local backend** block then appears at the top of the tab with a **Start** button, plus **Start automatically with caretaker** if you want it up whenever the web server boots.
+
+Start pulls the image if needed (**about 2 GB the first time**, with progress shown), launches the container, waits for it to answer, and installs the two models you configured — that last step matters, because Speaches does *not* fetch models on demand and would otherwise return 404 on your first sentence.
+
+The block only appears when the endpoint points at your own machine (`127.0.0.1`, `localhost`, `[::1]`): **the endpoint you configure is the source of truth, and the container is bound to match it.** caretaker parses the port out of your endpoint and never rewrites it or picks its own — so if that port is already taken, Docker says so and you pick another. For a remote speech server there is nothing local to manage, and the block stays hidden.
+
+**Stop** stops the container and nothing else: the model cache is a named Docker volume that survives, so starting again is quick. To remove the container or reclaim the cache, use `docker` yourself — `docker rm caretaker-speaches` and `docker volume rm caretaker-hf-hub-cache`.
+
+**Or run it yourself.** `docker-compose.voice.yml` in the repo root does the same thing by hand; caretaker adopts an already-running `caretaker-speaches` container rather than fighting it:
 
 ```bash
 docker compose -f docker-compose.voice.yml up -d
@@ -152,8 +160,6 @@ docker compose -f docker-compose.voice.yml up -d
 curl -X POST http://127.0.0.1:8969/v1/models/Systran/faster-whisper-small
 curl -X POST http://127.0.0.1:8969/v1/models/speaches-ai/Kokoro-82M-v1.0-ONNX
 ```
-
-Then set **Settings → Voice** to endpoint `http://127.0.0.1:8969/v1`, no API key, transcription model `Systran/faster-whisper-small`, synthesis model `speaches-ai/Kokoro-82M-v1.0-ONNX`.
 
 Pick a voice in the language you actually speak — `af_heart` is US English, so it will read Italian with an American accent. `GET /v1/audio/voices` lists every voice across the models you have installed, with its language.
 

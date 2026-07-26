@@ -21,3 +21,5 @@ coverage
 # Electron build outputs
 dist-electron
 release
+# Playwright MCP scratch (page snapshots, console logs) from driving the local web GUI
+.playwright-mcp
