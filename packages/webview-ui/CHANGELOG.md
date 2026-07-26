@@ -1,5 +1,19 @@
 # webview-ui
 
+## 0.15.1
+
+### Patch Changes
+
+- e566551: Fix the voice mode select (Dictate / Conversation) rendering its open dropdown
+  white-on-white: the select is deliberately transparent, so Chromium painted the
+  popup panel light while the options inherited the composer's light text. The
+  options now carry the dropdown colors explicitly.
+- f12843b: Hide the Voice settings tab in the VSCode sidebar. Voice mode is out of scope
+  there (the webview CSP blocks microphone access), and settings for a capability
+  a surface cannot offer should not be shown on it — the same pattern that already
+  hides the Projects and Scheduler tabs. Voice is configured from the web GUI or
+  the desktop app, which share the same on-disk config.
+
 ## 0.15.0
 
 ### Minor Changes
