@@ -284,12 +284,17 @@ shows one value cannot serve everyone:
 Two implementation constraints:
 
 - **Assets are self-hosted, not CDN-loaded.** The `.onnx` weights, the
-  `onnxruntime-web` `.wasm`/`.mjs` files and the VAD worklet bundle are copied into
-  the webview-ui build output by `esbuild.config.mjs` and served by the web server.
-  A CDN dependency would break offline use and collide with CSP.
-- **The library is loaded by dynamic `import()` on first voice activation.** This
-  keeps it out of the base bundle for every user who never turns voice on, and means
-  it is never loaded at all in the VSCode webview, which also bundles webview-ui.
+  `onnxruntime-web` `.wasm`/`.mjs` files, the VAD worklet and the library's own
+  `bundle.min.js` are copied into the webview-ui build output by `esbuild.config.mjs`
+  and served by the web server under `/vad/`. A CDN dependency would break offline
+  use and collide with CSP.
+- **The library is not bundled.** It is loaded at first voice activation by injecting
+  a `<script>` tag pointing at the served `/vad/bundle.min.js`, which is the loading
+  path the library documents for self-hosting. Note that a dynamic `import()` would
+  *not* have achieved this: webview-ui builds a single `iife` bundle with no code
+  splitting, so esbuild would inline the import and grow the bundle for every user,
+  voice or not. Loading a served script also means nothing is pulled into the VSCode
+  webview bundle, which builds from the same sources.
 
 ### Licensing
 
