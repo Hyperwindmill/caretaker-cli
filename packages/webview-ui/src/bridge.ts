@@ -63,6 +63,18 @@ export type RefreshOutcome = {
   error: string | null;
 };
 
+/** Voice settings the renderer is allowed to see. The API key is deliberately
+ *  absent: the renderer only talks to the local /api/voice/* proxies. */
+export type VoiceClientConfig = {
+  enabled: boolean;
+  /** An endpoint is configured. The URL itself is not needed client-side. */
+  configured: boolean;
+  /** A synthesis model is configured; conversation mode requires it. */
+  canSpeak: boolean;
+  lang?: string;
+};
+
+
 export type HostToView =
   | { type: 'ready' }
   | { type: 'agentsLoaded'; agents: AgentSummary[] }
