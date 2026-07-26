@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ViewToHost, ModelsResult, RefreshOutcome } from './bridge.js';
+import type { ViewToHost, ModelsResult, RefreshOutcome, VoiceCatalogResult } from './bridge.js';
 import type { CaretakerConfig, AgentConfig, PluginsFile, McpServerConfig } from 'caretaker-types';
 
 import { ProvidersTab } from './ProvidersTab.js';
@@ -22,6 +22,7 @@ interface SettingsPanelProps {
     availableTools: string[];
   } | null;
   modelsResult: ModelsResult | null;
+  voiceCatalogResult: VoiceCatalogResult | null;
   setModelsResult: (res: ModelsResult | null) => void;
   refreshingSourceId: string | null;
   refreshOutcome: RefreshOutcome | null;
@@ -40,6 +41,7 @@ export function SettingsPanel({
   postMessage,
   settingsData,
   modelsResult,
+  voiceCatalogResult,
   setModelsResult,
   refreshingSourceId,
   refreshOutcome,
@@ -134,6 +136,8 @@ export function SettingsPanel({
           <VoiceTab
             config={config}
             onSave={(updatedConfig) => postMessage({ type: 'saveConfig', config: updatedConfig })}
+            postMessage={postMessage}
+            catalogResult={voiceCatalogResult}
           />
         );
     }

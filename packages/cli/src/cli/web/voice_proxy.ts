@@ -2,7 +2,7 @@ import type { Hono } from 'hono';
 import type { CaretakerConfig, VoiceConfig } from 'caretaker-types';
 // One definition, in the bridge — the CLI already imports types from there
 // (server.ts:51) and webview-ui is a workspace dependency.
-import type { VoiceClientConfig } from 'webview-ui/bridge';
+import type { VoiceCatalog, VoiceClientConfig } from 'webview-ui/bridge';
 import { loadConfig } from '../../store/json.js';
 import { decrypt, isEncrypted } from '../../lib/encryption.js';
 
@@ -31,10 +31,16 @@ async function resolveVoice(): Promise<{ voice: VoiceConfig } | { error: string 
   return { voice };
 }
 
+/** Resolve a key that may be stored encrypted (the settings form round-trips the
+ *  stored blob, so what comes back from the view is not necessarily plaintext). */
+function plainKey(apiKey: string | undefined | null): string | null {
+  if (!apiKey) return null;
+  return isEncrypted(apiKey) ? decrypt(apiKey) : apiKey;
+}
+
 function authHeaders(voice: VoiceConfig): Record<string, string> {
-  if (!voice.apiKey) return {};
-  const key = isEncrypted(voice.apiKey) ? decrypt(voice.apiKey) : voice.apiKey;
-  return { authorization: `Bearer ${key}` };
+  const key = plainKey(voice.apiKey);
+  return key ? { authorization: `Bearer ${key}` } : {};
 }
 
 /** Join a base URL and a path without doubling or dropping the slash. */
@@ -113,4 +119,69 @@ export function registerVoiceProxy(app: Hono): void {
       'content-type': upstream.headers.get('content-type') ?? 'audio/mpeg',
     });
   });
+}
+
+/**
+ * Read a speech endpoint's installed models so the settings form can offer real
+ * choices instead of free text.
+ *
+ * Speaches reports `task` per model and embeds each TTS model's own voices — and
+ * those are correctly scoped, unlike the global /v1/audio/voices catalogue, which
+ * ignores its model_id parameter. A plain OpenAI-compatible endpoint reports
+ * neither, so every id is offered for both tasks and the voice stays free text.
+ */
+export async function fetchVoiceCatalog(
+  endpoint: string,
+  apiKey?: string | null,
+): Promise<VoiceCatalog> {
+  const key = plainKey(apiKey);
+  const res = await fetch(url(endpoint, '/models'), {
+    headers: key ? { authorization: `Bearer ${key}` } : {},
+  });
+  if (!res.ok) {
+    throw new Error(`${res.status} ${res.statusText}: ${(await res.text()).slice(0, 300)}`);
+  }
+  const body = (await res.json()) as { data?: unknown };
+  const rows = Array.isArray(body?.data) ? body.data : [];
+
+  const stt: string[] = [];
+  const tts: VoiceCatalog['tts'] = [];
+  const untasked: string[] = [];
+
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue;
+    const model = row as { id?: unknown; task?: unknown; voices?: unknown };
+    if (typeof model.id !== 'string') continue;
+
+    if (model.task === 'automatic-speech-recognition') {
+      stt.push(model.id);
+      continue;
+    }
+    if (model.task === 'text-to-speech') {
+      const voices = Array.isArray(model.voices) ? model.voices : [];
+      tts.push({
+        id: model.id,
+        voices: voices.flatMap((v) => {
+          const voice = v as { id?: unknown; language?: unknown; gender?: unknown };
+          if (typeof voice.id !== 'string') return [];
+          return [
+            {
+              id: voice.id,
+              ...(typeof voice.language === 'string' ? { language: voice.language } : {}),
+              ...(typeof voice.gender === 'string' ? { gender: voice.gender } : {}),
+            },
+          ];
+        }),
+      });
+      continue;
+    }
+    untasked.push(model.id);
+  }
+
+  // No task metadata anywhere: offer everything for both, voices unknown.
+  if (stt.length === 0 && tts.length === 0) {
+    return { stt: untasked, tts: untasked.map((id) => ({ id, voices: [] })) };
+  }
+  // Mixed: keep the untasked ids selectable for transcription, the likelier use.
+  return { stt: [...stt, ...untasked], tts };
 }

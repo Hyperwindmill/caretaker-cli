@@ -26,7 +26,8 @@ import type {
   PluginsFile, 
   McpServerConfig,
   ToolAttachmentRecord,
-  VoiceClientConfig
+  VoiceClientConfig,
+  VoiceCatalogResult
 } from './bridge.js';
 
 import { MessageList } from './MessageList.js';
@@ -321,6 +322,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
   const [mcpAuthOutcome, setMcpAuthOutcome] = useState<{ serverId: string; ok: boolean; error?: string } | null>(null);
   const [taskRuns, setTaskRuns] = useState<Record<string, any[]>>({});
   const [voiceConfig, setVoiceConfig] = useState<VoiceClientConfig | null>(null);
+  const [voiceCatalogResult, setVoiceCatalogResult] = useState<VoiceCatalogResult | null>(null);
   const [composerDraft, setComposerDraft] = useState('');
 
 
@@ -386,6 +388,9 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
           return;
         case 'modelsFetched':
           setModelsResult(msg.result);
+          return;
+        case 'voiceModelsFetched':
+          setVoiceCatalogResult(msg.result);
           return;
         case 'refreshingPlugin':
           setRefreshingSourceId(msg.sourceId);
@@ -576,6 +581,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
           postMessage={postMessage}
           settingsData={settingsData}
           modelsResult={modelsResult}
+          voiceCatalogResult={voiceCatalogResult}
           setModelsResult={setModelsResult}
           refreshingSourceId={refreshingSourceId}
           refreshOutcome={refreshOutcome}
