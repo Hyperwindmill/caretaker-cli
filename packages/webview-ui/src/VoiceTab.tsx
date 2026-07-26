@@ -21,6 +21,17 @@ export interface VoiceTabProps {
 
 const EMPTY: VoiceConfig = { enabled: false, endpoint: '', sttModel: '' };
 
+/** The README's canonical local setup — what the managed Speaches backend runs
+ *  with zero decisions. Prefilled into the form, never saved directly: the user
+ *  still reviews (the endpoint's port is where a busy 8969 gets changed) and
+ *  presses Save themselves. */
+const LOCAL_DEFAULTS = {
+  endpoint: 'http://127.0.0.1:8969/v1',
+  sttModel: 'Systran/faster-whisper-small',
+  ttsModel: 'speaches-ai/Kokoro-82M-v1.0-ONNX',
+  ttsVoice: 'af_heart',
+};
+
 /** Offer the fetched ids, but never drop a value the user already had: an endpoint
  *  that lists nothing (or lists something else) must not silently clear the form. */
 function withCurrent(ids: string[], current: string): string[] {
@@ -239,6 +250,29 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
     <div className="glass-form">
       <h4>Voice</h4>
       <div className="glass-form__body">
+        {!endpoint.trim() && (
+          <div className="form-group">
+            <button
+              type="button"
+              onClick={() => {
+                setEnabled(true);
+                setEndpoint(LOCAL_DEFAULTS.endpoint);
+                setSttModel(LOCAL_DEFAULTS.sttModel);
+                setTtsModel(LOCAL_DEFAULTS.ttsModel);
+                setTtsVoice(LOCAL_DEFAULTS.ttsVoice);
+              }}
+            >
+              Use local defaults
+            </button>
+            <small>
+              Fills the form for a fully local backend (a Speaches container on port
+              8969) that caretaker can run for you if Docker is installed. Nothing is
+              saved yet — adjust anything, including the port in the endpoint, then
+              press Save; a Start button appears below afterwards.
+            </small>
+          </div>
+        )}
+
         {showBackendBlock && backendStatus && (
           <div className="form-group">
             <div className="voice-backend-status">
@@ -265,7 +299,11 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
                 Start automatically with caretaker
               </label>
             </div>
-            <small>The first start downloads about 2 GB.</small>
+            <small>
+              The first start downloads about 2 GB. The container publishes on the
+              port in your endpoint — if that port is taken, change it there and
+              save; caretaker never picks a port for you.
+            </small>
           </div>
         )}
 

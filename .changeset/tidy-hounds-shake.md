@@ -8,6 +8,11 @@
 
 Voice mode: let caretaker manage the local Speaches container
 
+An empty Settings → Voice tab offers **Use local defaults**, prefilling the form
+with the canonical local setup (Speaches on port 8969, whisper-small, Kokoro) for
+the user to review and save — including changing the port in the endpoint if 8969
+is taken on their machine.
+
 Settings → Voice grows a **Local backend** block that detects, starts and stops the
 Docker container behind your speech endpoint, so voice works on a machine with
 Docker without touching a terminal. Start pulls the image (about 2 GB the first
