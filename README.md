@@ -134,7 +134,18 @@ The web server boots an in-process background scheduler that ticks every 15 s. I
 
 Each task gets its own JSONL execution log under `~/.caretaker/scheduler-logs/`; the web GUI's Execution Console shows past runs with full message rendering. Remember: the scheduler only runs where the web server runs (`caretaker-cli web` or the desktop app), never under the bare TUI or VSCode.
 
+### Voice Mode (dictation & hands-free conversation)
+
+The local web GUI and Electron desktop app offer voice control powered by local or remote OpenAI-compatible speech services (such as [Speaches](https://github.com/speaches-ai/speaches) or local Whisper/Kokoro endpoints):
+
+- **Dictation mode** — Click the mic icon in the composer to speak your prompt. Speech is transcribed directly into the message draft without auto-sending, so you can edit before submitting.
+- **Conversation mode** — Hands-free continuous voice loop. Speak a turn; VAD (Silero) detects speech-end, transcribes the audio, sends the prompt, streams the assistant's response, and speaks the response using your chosen TTS model. The mic reopens automatically after playback finishes so you can reply naturally.
+- **Privacy & security** — API keys are encrypted at rest (`~/.caretaker/caretaker.json`) and proxied through the local web server (`/api/voice/transcribe`, `/api/voice/speak`); credentials never leak to browser code. Configure speech endpoints and models from the **Voice** settings tab.
+
+> Voice mode is available in the Web GUI and Electron desktop app; it is omitted from the VSCode sidebar (webview CSP blocks mic access) and TUI.
+
 ## Install
+
 
 ```bash
 npm install -g @hyperwindmill/caretaker-cli
