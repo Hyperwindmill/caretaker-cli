@@ -144,6 +144,19 @@ The local web GUI and Electron desktop app offer voice control powered by local 
 
 > Voice mode is available in the Web GUI and Electron desktop app; it is omitted from the VSCode sidebar (webview CSP blocks mic access) and TUI.
 
+**Getting a local backend running.** `docker-compose.voice.yml` in the repo root starts a [Speaches](https://github.com/speaches-ai/speaches) container so nothing leaves your machine:
+
+```bash
+docker compose -f docker-compose.voice.yml up -d
+# Models are NOT fetched on demand — a request for one that is not installed returns 404.
+curl -X POST http://127.0.0.1:8969/v1/models/Systran/faster-whisper-small
+curl -X POST http://127.0.0.1:8969/v1/models/speaches-ai/Kokoro-82M-v1.0-ONNX
+```
+
+Then set **Settings → Voice** to endpoint `http://127.0.0.1:8969/v1`, no API key, transcription model `Systran/faster-whisper-small`, synthesis model `speaches-ai/Kokoro-82M-v1.0-ONNX`.
+
+Pick a voice in the language you actually speak — `af_heart` is US English, so it will read Italian with an American accent. `GET /v1/audio/voices` lists all 54 Kokoro voices with their language; the Italian ones are `if_sara` and `im_nicola`. And `faster-whisper-small` trades accuracy for speed; step up to a larger model if transcriptions come back approximate.
+
 ## Install
 
 

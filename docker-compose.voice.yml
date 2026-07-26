@@ -1,0 +1,44 @@
+# Local speech backend for caretaker's voice mode (Settings → Voice).
+#
+# This does NOT run caretaker — it runs the STT/TTS server that caretaker's voice
+# endpoints proxy to, so nothing leaves your machine. caretaker bundles no speech
+# model, the same way it bundles no LLM.
+#
+#   docker compose -f docker-compose.voice.yml up -d
+#   curl http://127.0.0.1:8969/v1/models          # confirm it is up (empty at first)
+#
+# Models are NOT downloaded on demand — a request for a model that is not installed
+# returns 404. Pull the two you need once (a few hundred MB each):
+#
+#   curl -X POST http://127.0.0.1:8969/v1/models/Systran/faster-whisper-small
+#   curl -X POST http://127.0.0.1:8969/v1/models/speaches-ai/Kokoro-82M-v1.0-ONNX
+#
+# Then in Settings → Voice:
+#   Endpoint            http://127.0.0.1:8969/v1
+#   API Key             (leave empty — no auth by default)
+#   Transcription Model Systran/faster-whisper-small
+#   Synthesis Model     speaches-ai/Kokoro-82M-v1.0-ONNX
+#   Voice               af_heart
+#
+# Models download on first use and are cached in the named volume below, so the
+# first request of each kind is slow and later ones are not. Note that
+# `docker system prune` does NOT remove named volumes — to reclaim the cache:
+#   docker compose -f docker-compose.voice.yml down -v
+
+services:
+  speaches:
+    # CPU build. Swap for :latest-cuda only on an NVIDIA host (plus the runtime
+    # config CUDA needs) — this tag works everywhere, AMD and Intel included.
+    image: ghcr.io/speaches-ai/speaches:latest-cpu
+    container_name: caretaker-speaches
+    # Bound to loopback on purpose: this is a local backend with no auth, and
+    # publishing it on every interface would expose an open transcription
+    # service to the network.
+    ports:
+      - '127.0.0.1:8969:8000'
+    volumes:
+      - hf-hub-cache:/home/ubuntu/.cache/huggingface/hub
+    restart: unless-stopped
+
+volumes:
+  hf-hub-cache:
