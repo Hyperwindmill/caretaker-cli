@@ -1,6 +1,6 @@
 import { useState, useRef, type KeyboardEvent, type ClipboardEvent, type DragEvent } from 'react';
 import type { ContextUsage } from './bridge.js';
-import { DocIcon, CloseIcon, AttachIcon } from './icons.js';
+import { DocIcon, CloseIcon, AttachIcon, MicIcon } from './icons.js';
 
 export interface ComposerProps {
   disabled: boolean;
@@ -8,10 +8,42 @@ export interface ComposerProps {
   onSend: (text: string, attachments?: Array<{ name: string; mime: string; base64: string }>) => void;
   onAbort: () => void;
   contextUsage: ContextUsage | null;
+  /** Voice control, or null when voice is unavailable on this surface. */
+  voice?: {
+    phase: 'idle' | 'recording' | 'transcribing' | 'awaiting' | 'speaking';
+    mode: 'dictate' | 'conversation';
+    canSpeak: boolean;
+    setMode: (mode: 'dictate' | 'conversation') => void;
+    toggle: () => void;
+  } | null;
+  value?: string;
+  onValueChange?: (val: string) => void;
 }
 
-export function Composer({ disabled, canAbort, onSend, onAbort, contextUsage }: ComposerProps) {
-  const [value, setValue] = useState('');
+export function Composer({
+  disabled,
+  canAbort,
+  onSend,
+  onAbort,
+  contextUsage,
+  voice = null,
+  value: propValue,
+  onValueChange: propOnValueChange,
+}: ComposerProps) {
+  const [internalValue, setInternalValue] = useState('');
+  const value = propValue !== undefined ? propValue : internalValue;
+  const setValue = (val: string | ((prev: string) => string)) => {
+    if (propOnValueChange) {
+      if (typeof val === 'function') {
+        propOnValueChange(val(value));
+      } else {
+        propOnValueChange(val);
+      }
+    } else {
+      setInternalValue(val);
+    }
+  };
+
   const [attachments, setAttachments] = useState<Array<{ name: string; mime: string; base64: string }>>([]);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -159,6 +191,48 @@ export function Composer({ disabled, canAbort, onSend, onAbort, contextUsage }: 
           onChange={(e) => { handleFiles(e.target.files); e.target.value = ''; }}
           multiple
         />
+        {voice && (
+          <div className="composer__voice">
+            <button
+              type="button"
+              className={`composer__action-btn${
+                voice.phase === 'recording'
+                  ? ' composer__action-btn--recording'
+                  : voice.phase === 'speaking'
+                    ? ' composer__action-btn--speaking'
+                    : ''
+              }`}
+              title={voice.phase === 'idle' ? 'Start voice' : 'Stop voice'}
+              aria-label={voice.phase === 'idle' ? 'Start voice' : 'Stop voice'}
+              aria-pressed={voice.phase !== 'idle'}
+              onClick={voice.toggle}
+              disabled={voice.phase === 'transcribing'}
+            >
+              <MicIcon size={16} />
+            </button>
+            {voice.canSpeak && (
+              <select
+                className="composer__voice-mode"
+                value={voice.mode}
+                onChange={(e) => voice.setMode(e.target.value as 'dictate' | 'conversation')}
+                disabled={voice.phase !== 'idle'}
+                aria-label="Voice mode"
+              >
+                <option value="dictate">Dictate</option>
+                <option value="conversation">Conversation</option>
+              </select>
+            )}
+            <span role="status" aria-live="polite" className="composer__voice-status">
+              {voice.phase === 'recording'
+                ? 'Listening…'
+                : voice.phase === 'transcribing'
+                  ? 'Transcribing…'
+                  : voice.phase === 'speaking'
+                    ? 'Speaking…'
+                    : ''}
+            </span>
+          </div>
+        )}
         <div className="composer__usage">
           {contextUsage && (
             <>

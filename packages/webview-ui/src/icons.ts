@@ -38,4 +38,6 @@ export {
   Play as ActivateIcon,
   Circle as StatusIcon,
   Archive as ArchiveIcon,
+  Mic as MicIcon,
+
 } from 'lucide-react';
