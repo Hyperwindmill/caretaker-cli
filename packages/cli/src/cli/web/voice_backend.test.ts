@@ -1,17 +1,70 @@
 import { test, before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import type { VoiceConfig } from 'caretaker-types';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Hono } from 'hono';
+import type { VoiceConfig, CaretakerConfig } from 'caretaker-types';
 import {
   loopbackPort,
   probeBackend,
   startBackend,
   stopBackend,
+  registerVoiceBackend,
+  maybeAutoStartBackend,
+  isBackendStartInFlightForTest,
   setVoiceBackendDepsForTest,
   type StartProgress,
 } from './voice_backend.js';
+import { saveConfig } from '../../store/json.js';
+
+// File-scope only (never inside a describe/test): a per-file isolated store,
+// so these tests never touch the developer's real ~/.caretaker.
+process.env.CARETAKER_HOME = mkdtempSync(join(tmpdir(), 'ct-voice-backend-'));
 
 afterEach(() => setVoiceBackendDepsForTest(null));
+
+function baseConfig(voice?: CaretakerConfig['voice']): CaretakerConfig {
+  return { port: 17777, providers: [], ...(voice ? { voice } : {}) };
+}
+
+async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (predicate()) return;
+    if (Date.now() > deadline) throw new Error('waitFor: condition never became true');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
+/** A tiny local HTTP server that is "ready" from the very first poll, so
+ *  tests exercising the full startBackend flow don't wait out the real
+ *  readiness/backoff timers. */
+async function startReadyServer(): Promise<{ baseUrl: string; close: () => Promise<void> }> {
+  const srv = createServer((req: IncomingMessage, res: ServerResponse) => {
+    const u = req.url ?? '';
+    if (req.method === 'GET' && u === '/v1/models') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{"data":[]}');
+      return;
+    }
+    if (req.method === 'POST' && u.startsWith('/v1/models/')) {
+      res.writeHead(201);
+      res.end();
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  await new Promise<void>((resolve) => srv.listen(0, '127.0.0.1', resolve));
+  const addr = srv.address();
+  if (!addr || typeof addr === 'string') throw new Error('no address');
+  return {
+    baseUrl: `http://127.0.0.1:${addr.port}`,
+    close: () => new Promise<void>((resolve) => srv.close(() => resolve())),
+  };
+}
 
 // --- loopbackPort: pure parsing, no server needed -----------------------
 
@@ -202,4 +255,243 @@ test('stopBackend calls only stopContainer, with the fixed container name', asyn
   setVoiceBackendDepsForTest({ stopContainer: async (name) => void calls.push(name) });
   await stopBackend();
   assert.deepEqual(calls, ['caretaker-speaches']);
+});
+
+// --- registerVoiceBackend: the three routes -------------------------------
+
+test('GET /api/voice/backend probes with the stored endpoint', async () => {
+  setVoiceBackendDepsForTest({
+    dockerInfo: async () => ({ ok: true }),
+    containerState: async () => 'stopped',
+    imagePresent: async () => true,
+  });
+  await saveConfig(
+    baseConfig({ enabled: true, endpoint: 'http://127.0.0.1:9/v1', sttModel: 'stt-x' }),
+  );
+
+  const app = new Hono();
+  registerVoiceBackend(app);
+  const res = await app.request('/api/voice/backend');
+  assert.equal(res.status, 200);
+  const status = (await res.json()) as { docker: string; container: string; port: number | null };
+  assert.equal(status.docker, 'ok');
+  assert.equal(status.container, 'stopped');
+  assert.equal(status.port, 9);
+});
+
+test('GET /api/voice/backend on an unconfigured voice yields a coherent status, not an error', async () => {
+  // No Docker daemon needed for this suite: stub it out even on this "not
+  // loopback" path, where docker classification still runs before port null
+  // short-circuits the rest of the status.
+  setVoiceBackendDepsForTest({ dockerInfo: async () => ({ ok: false, code: 'ENOENT', stderr: '' }) });
+  await saveConfig(baseConfig()); // no voice at all
+  const app = new Hono();
+  registerVoiceBackend(app);
+  const res = await app.request('/api/voice/backend');
+  assert.equal(res.status, 200);
+  const status = (await res.json()) as { port: number | null };
+  assert.equal(status.port, null);
+});
+
+test('POST /api/voice/backend/start with voice disabled returns 400 with a plain-text reason', async () => {
+  await saveConfig(
+    baseConfig({ enabled: false, endpoint: 'http://127.0.0.1:8969/v1', sttModel: 'stt-x' }),
+  );
+  const app = new Hono();
+  registerVoiceBackend(app);
+  const res = await app.request('/api/voice/backend/start', { method: 'POST' });
+  assert.equal(res.status, 400);
+  assert.match(await res.text(), /disabled/i);
+});
+
+test('POST /api/voice/backend/start with no endpoint configured returns 400', async () => {
+  await saveConfig(baseConfig({ enabled: true, endpoint: '', sttModel: 'stt-x' }));
+  const app = new Hono();
+  registerVoiceBackend(app);
+  const res = await app.request('/api/voice/backend/start', { method: 'POST' });
+  assert.equal(res.status, 400);
+  assert.match(await res.text(), /no voice endpoint/i);
+});
+
+test('POST /api/voice/backend/start streams ndjson progress ending in a done status', async () => {
+  const ready = await startReadyServer();
+  try {
+    setVoiceBackendDepsForTest({
+      dockerInfo: async () => ({ ok: true }),
+      imagePresent: async () => true,
+      containerState: async () => 'running',
+    });
+    await saveConfig(
+      baseConfig({ enabled: true, endpoint: `${ready.baseUrl}/v1`, sttModel: '' }),
+    );
+
+    const app = new Hono();
+    registerVoiceBackend(app);
+    const res = await app.request('/api/voice/backend/start', { method: 'POST' });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'application/x-ndjson');
+
+    const lines = (await res.text())
+      .split('\n')
+      .filter((l) => l.trim().length > 0)
+      .map((l) => JSON.parse(l) as StartProgress);
+    assert.ok(lines.length > 0);
+    assert.equal(lines.at(-1)?.step, 'done');
+    assert.equal(lines.at(-1)?.status?.responding, true);
+  } finally {
+    await ready.close();
+    await waitFor(() => !isBackendStartInFlightForTest());
+  }
+});
+
+test('POST /api/voice/backend/stop re-probes rather than throwing when there is no container', async () => {
+  setVoiceBackendDepsForTest({
+    dockerInfo: async () => ({ ok: true }),
+    containerState: async () => 'absent',
+    imagePresent: async () => false,
+    stopContainer: async () => {
+      throw new Error('Error: No such container: caretaker-speaches');
+    },
+  });
+  await saveConfig(
+    baseConfig({ enabled: true, endpoint: 'http://127.0.0.1:9/v1', sttModel: 'stt-x' }),
+  );
+
+  const app = new Hono();
+  registerVoiceBackend(app);
+  const res = await app.request('/api/voice/backend/stop', { method: 'POST' });
+  assert.equal(res.status, 200);
+  const status = (await res.json()) as { container: string };
+  assert.equal(status.container, 'absent');
+});
+
+test('POST /api/voice/backend/start twice concurrently only pulls the image once (in-flight guard)', async () => {
+  const ready = await startReadyServer();
+  try {
+    let pullCalls = 0;
+    setVoiceBackendDepsForTest({
+      dockerInfo: async () => ({ ok: true }),
+      imagePresent: async () => false, // force the pull path, the realistic race window
+      async *pullImage() {
+        pullCalls += 1;
+        yield 'Pulling fs layer...';
+      },
+      containerState: async () => 'running', // skip run/start after the (fake) pull
+    });
+    await saveConfig(
+      baseConfig({ enabled: true, endpoint: `${ready.baseUrl}/v1`, sttModel: '' }),
+    );
+
+    const app = new Hono();
+    registerVoiceBackend(app);
+
+    const [res1, res2] = await Promise.all([
+      app.request('/api/voice/backend/start', { method: 'POST' }),
+      app.request('/api/voice/backend/start', { method: 'POST' }),
+    ]);
+    // Reading the bodies drains each stream fully, which is what drives each
+    // underlying generator (including its `finally`) to completion.
+    const [body1, body2] = await Promise.all([res1.text(), res2.text()]);
+
+    assert.equal(pullCalls, 1, 'exactly one docker pull, whichever request won the race');
+    const turnedAway = [body1, body2].filter((b) => /already in progress/.test(b)).length;
+    assert.equal(turnedAway, 1, 'exactly one of the two responses is turned away, not queued');
+  } finally {
+    await ready.close();
+    await waitFor(() => !isBackendStartInFlightForTest());
+  }
+});
+
+// --- maybeAutoStartBackend: opt-in, fire-and-forget, never fatal ----------
+
+test('maybeAutoStartBackend: does nothing when voice is disabled', async () => {
+  let dockerInfoCalls = 0;
+  setVoiceBackendDepsForTest({
+    dockerInfo: async () => ((dockerInfoCalls += 1), { ok: true }),
+  });
+  await saveConfig(
+    baseConfig({
+      enabled: false,
+      endpoint: 'http://127.0.0.1:8969/v1',
+      sttModel: 'stt-x',
+      autoStartBackend: true,
+    }),
+  );
+
+  maybeAutoStartBackend();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(dockerInfoCalls, 0);
+  assert.equal(isBackendStartInFlightForTest(), false);
+});
+
+test('maybeAutoStartBackend: does nothing when autoStartBackend is unset or explicitly false', async () => {
+  let dockerInfoCalls = 0;
+  setVoiceBackendDepsForTest({
+    dockerInfo: async () => ((dockerInfoCalls += 1), { ok: true }),
+  });
+
+  await saveConfig(
+    baseConfig({ enabled: true, endpoint: 'http://127.0.0.1:8969/v1', sttModel: 'stt-x' }),
+  );
+  maybeAutoStartBackend();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  await saveConfig(
+    baseConfig({
+      enabled: true,
+      endpoint: 'http://127.0.0.1:8969/v1',
+      sttModel: 'stt-x',
+      autoStartBackend: false,
+    }),
+  );
+  maybeAutoStartBackend();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  assert.equal(dockerInfoCalls, 0);
+});
+
+test('maybeAutoStartBackend: does nothing when the endpoint is not loopback', async () => {
+  let dockerInfoCalls = 0;
+  setVoiceBackendDepsForTest({
+    dockerInfo: async () => ((dockerInfoCalls += 1), { ok: true }),
+  });
+  await saveConfig(
+    baseConfig({
+      enabled: true,
+      endpoint: 'http://speaches.example.com:8000/v1',
+      sttModel: 'stt-x',
+      autoStartBackend: true,
+    }),
+  );
+
+  maybeAutoStartBackend();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(dockerInfoCalls, 0);
+});
+
+test('maybeAutoStartBackend: triggers a start when enabled + autoStartBackend + a loopback endpoint', async () => {
+  const ready = await startReadyServer();
+  try {
+    let imagePresentCalls = 0;
+    setVoiceBackendDepsForTest({
+      dockerInfo: async () => ({ ok: true }),
+      imagePresent: async () => ((imagePresentCalls += 1), true),
+      containerState: async () => 'running',
+    });
+    await saveConfig(
+      baseConfig({
+        enabled: true,
+        endpoint: `${ready.baseUrl}/v1`,
+        sttModel: '',
+        autoStartBackend: true,
+      }),
+    );
+
+    maybeAutoStartBackend();
+    await waitFor(() => imagePresentCalls > 0);
+    await waitFor(() => !isBackendStartInFlightForTest());
+    assert.ok(imagePresentCalls >= 2, 'the flow ran to completion (image step + terminal status)');
+  } finally {
+    await ready.close();
+  }
 });

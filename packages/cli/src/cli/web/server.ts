@@ -53,6 +53,7 @@ import { startBackgroundScheduler, loadTaskRuns } from './scheduler.js';
 import { fsRouter } from './fs.js';
 import { activationStatus, resolvePlanningEnabled } from './scheduler/task_roles.js';
 import { registerVoiceProxy, voiceClientConfig, fetchVoiceCatalog } from './voice_proxy.js';
+import { registerVoiceBackend, maybeAutoStartBackend } from './voice_backend.js';
 
 
 // Resolve Webview static files path.
@@ -196,6 +197,7 @@ export async function startServer(port: number, host: string): Promise<void> {
   app.route('/api/fs', fsRouter);
   registerTaskBridge(app);
   registerVoiceProxy(app);
+  registerVoiceBackend(app);
 
 
   // Pure-Node static serving with absolute path validation and fallback
@@ -676,6 +678,10 @@ export async function startServer(port: number, host: string): Promise<void> {
 
   // Start the background scheduler trigger daemon
   startBackgroundScheduler();
+
+  // Opt-in: start the managed local speech backend if configured to. Never
+  // awaited — a first run pulls 2.08 GB and must not hang server boot.
+  maybeAutoStartBackend();
 
   wss.on('connection', async (ws: WebSocket) => {
     let controller: WebSessionController | null = null;
