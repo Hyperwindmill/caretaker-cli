@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CaretakerConfig, VoiceConfig } from 'caretaker-types';
 import type { ViewToHost, VoiceCatalog, VoiceCatalogResult } from './bridge.js';
+import { voiceSignature } from './voice_utils.js';
 
 export interface VoiceTabProps {
   config: CaretakerConfig;
@@ -38,10 +39,37 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
   );
   const [lang, setLang] = useState(current.lang ?? '');
   const [fetching, setFetching] = useState(false);
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  /** Signature of the payload the last Save submitted, awaiting confirmation. */
+  const pendingSave = useRef<string | null>(null);
 
   useEffect(() => {
     if (catalogResult) setFetching(false);
   }, [catalogResult]);
+
+  useEffect(() => {
+    if (saveState !== 'saving' || pendingSave.current === null) return;
+    if (voiceSignature(config.voice as Record<string, unknown>) !== pendingSave.current) return;
+    setSaveState('saved');
+  }, [config.voice, saveState]);
+
+  // The timer lives in its own effect on purpose. Scheduling it in the one above
+  // never worked: `saveState` is one of that effect's dependencies, so flipping to
+  // 'saved' ran its cleanup and cancelled the timeout before it could fire, and the
+  // re-run then returned early. The badge stuck forever.
+  useEffect(() => {
+    if (saveState !== 'saved') return;
+    const clear = setTimeout(() => setSaveState('idle'), 2500);
+    return () => clearTimeout(clear);
+  }, [saveState]);
+
+  // Never sit in 'saving' forever: a failed save reports itself elsewhere, and a
+  // stuck spinner reads as a hung app.
+  useEffect(() => {
+    if (saveState !== 'saving') return;
+    const giveUp = setTimeout(() => setSaveState('idle'), 6000);
+    return () => clearTimeout(giveUp);
+  }, [saveState]);
 
   const catalog: VoiceCatalog | null = catalogResult?.ok ? catalogResult.catalog : null;
   const fetchError = catalogResult && !catalogResult.ok ? catalogResult.error : null;
@@ -72,6 +100,8 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
       voice.ttsSpeed = Math.min(Math.max(speed, 0.5), 2);
     }
     if (lang.trim()) voice.lang = lang.trim();
+    pendingSave.current = voiceSignature(voice as unknown as Record<string, unknown>);
+    setSaveState('saving');
     onSave({ ...config, voice });
   };
 
@@ -260,6 +290,9 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
         <button type="button" onClick={save}>
           Save
         </button>
+        <span role="status" aria-live="polite" className="form-save-state">
+          {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved ✓' : ''}
+        </span>
       </div>
     </div>
   );
