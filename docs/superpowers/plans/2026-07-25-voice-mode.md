@@ -2066,3 +2066,13 @@ type-level changes that tests will happily ignore.
 
 **Verify paths inside `node_modules` before trusting Task 5's list.** pnpm's virtual
 store means the layout may differ from the plan; the plan tells you to check, so check.
+Note that `copyVadAssets` *warns and continues* on a missing file — so a wrong path
+produces a green build and a runtime failure. Confirm with `ls dist/vad/` (Task 5,
+Step 4), not with the build exiting 0.
+
+**The pre-commit hook will block every commit until Task 8.** `.husky/pre-commit`
+requires a `.changeset/*.md` file to be **staged in that same commit** whenever the
+branch is not `main`/`master`. The changeset for this feature is written once, in
+Task 8. So commit Tasks 1-7 with `--no-verify` and let Task 8's commit satisfy the
+hook normally. Do **not** create seven throwaway changesets to appease it — the five
+packages are one fixed group and each file becomes a separate changelog entry.
