@@ -126,3 +126,19 @@ export function lastSpokenText(items: readonly SpokenItem[]): string | null {
   }
   return null;
 }
+
+/** Fields of a saved voice config that a settings round-trip can be compared on.
+ *  `apiKey` is deliberately excluded: it comes back from disk encrypted, so
+ *  including it would make a save with a freshly typed key never look confirmed. */
+export function voiceSignature(v: Record<string, unknown> | undefined | null): string {
+  if (!v) return '';
+  return JSON.stringify([
+    v.enabled === true,
+    v.endpoint ?? '',
+    v.sttModel ?? '',
+    v.ttsModel ?? '',
+    v.ttsVoice ?? '',
+    v.ttsSpeed ?? '',
+    v.lang ?? '',
+  ]);
+}

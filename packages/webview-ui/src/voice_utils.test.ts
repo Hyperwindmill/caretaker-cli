@@ -8,6 +8,7 @@ import {
   END_OF_TURN_MS,
   IDLE_WINDOW_MS,
   POST_PLAYBACK_MS,
+  voiceSignature,
   type SpokenItem,
 } from './voice_utils.js';
 
@@ -193,4 +194,22 @@ test('REGRESSION: turnComplete does not override the other awaiting guards', () 
   assert.equal(nextPhase('awaiting', { ...base, sawStreaming: true, confirmPending: true }), 'awaiting');
   // Never having streamed still holds it.
   assert.equal(nextPhase('awaiting', { ...base, sawStreaming: false, confirmPending: false }), 'awaiting');
+});
+
+test('voiceSignature ignores the api key so an encrypted round-trip still matches', () => {
+  const typed = { enabled: true, endpoint: 'http://x/v1', sttModel: 'w', apiKey: 'sk-plaintext' };
+  const fromDisk = { enabled: true, endpoint: 'http://x/v1', sttModel: 'w', apiKey: 'enc:blob' };
+  assert.equal(voiceSignature(typed), voiceSignature(fromDisk));
+});
+
+test('voiceSignature distinguishes every field that is actually persisted', () => {
+  const base = { enabled: true, endpoint: 'http://x/v1', sttModel: 'w' };
+  assert.notEqual(voiceSignature(base), voiceSignature({ ...base, enabled: false }));
+  assert.notEqual(voiceSignature(base), voiceSignature({ ...base, endpoint: 'http://y/v1' }));
+  assert.notEqual(voiceSignature(base), voiceSignature({ ...base, sttModel: 'w2' }));
+  assert.notEqual(voiceSignature(base), voiceSignature({ ...base, ttsModel: 'k' }));
+  assert.notEqual(voiceSignature(base), voiceSignature({ ...base, ttsVoice: 'if_sara' }));
+  assert.notEqual(voiceSignature(base), voiceSignature({ ...base, ttsSpeed: 1.5 }));
+  assert.notEqual(voiceSignature(base), voiceSignature({ ...base, lang: 'it-IT' }));
+  assert.equal(voiceSignature(undefined), '');
 });

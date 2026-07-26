@@ -3247,3 +3247,10 @@ body.vscode-light .composer__attachment {
   }
 }
 
+
+.form-save-state {
+  margin-left: 10px;
+  font-size: 12px;
+  opacity: 0.75;
+  align-self: center;
+}
