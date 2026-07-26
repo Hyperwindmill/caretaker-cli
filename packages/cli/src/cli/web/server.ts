@@ -52,6 +52,8 @@ import type { ConfirmDecision, HostToView, ViewToHost } from 'webview-ui/bridge'
 import { startBackgroundScheduler, loadTaskRuns } from './scheduler.js';
 import { fsRouter } from './fs.js';
 import { activationStatus, resolvePlanningEnabled } from './scheduler/task_roles.js';
+import { registerVoiceProxy, voiceClientConfig } from './voice_proxy.js';
+
 
 // Resolve Webview static files path.
 // Published npm package ships the assets under dist/webview (see scripts/copy-webview.mjs);
@@ -193,6 +195,8 @@ export async function startServer(port: number, host: string): Promise<void> {
 
   app.route('/api/fs', fsRouter);
   registerTaskBridge(app);
+  registerVoiceProxy(app);
+
 
   // Pure-Node static serving with absolute path validation and fallback
   app.get('/', (c) => {
