@@ -55,26 +55,46 @@ const copyVadAssets = () => {
     [path.join(vadDist, 'silero_vad_legacy.onnx'), 'silero_vad_legacy.onnx'],
   ];
 
-  // onnxruntime-web ships its wasm/mjs runtime files; the VAD loads them by name
-  // from the same base path.
-  if (fs.existsSync(ortDist)) {
-    for (const name of fs.readdirSync(ortDist)) {
-      if (name.startsWith('ort-wasm') && (name.endsWith('.wasm') || name.endsWith('.mjs'))) {
-        files.push([path.join(ortDist, name), name]);
-      }
-    }
+  // Exactly one onnxruntime variant, not every ort-wasm* file. vad-web imports
+  // `onnxruntime-web/wasm` (no WebGPU) and its shipped bundle references only
+  // `ort-wasm-simd-threaded.mjs`, which pulls the matching .wasm. Copying the
+  // asyncify/jsep/jspi builds too added ~66 MB of dead weight to the published
+  // npm package, since scripts/copy-webview.mjs ships this whole tree.
+  for (const name of ['ort-wasm-simd-threaded.mjs', 'ort-wasm-simd-threaded.wasm']) {
+    files.push([path.join(ortDist, name), name]);
   }
 
   let copied = 0;
+  const missing = [];
   for (const [from, to] of files) {
     if (!fs.existsSync(from)) {
-      console.warn(`[webview-ui] VAD asset missing, skipping: ${from}`);
+      missing.push(from);
       continue;
     }
     fs.copyFileSync(from, path.join(dest, to));
     copied++;
   }
-  console.log(`[webview-ui] copied ${copied} VAD assets -> ${dest}`);
+  // Fail loudly: a missing asset used to produce a green build and a runtime
+  // failure, which is the worst of both worlds.
+  if (missing.length > 0) {
+    throw new Error(
+      `[webview-ui] VAD assets missing (the upstream layout changed?):\n  ${missing.join('\n  ')}`,
+    );
+  }
+
+  const bytes = fs
+    .readdirSync(dest)
+    .reduce((sum, name) => sum + fs.statSync(path.join(dest, name)).size, 0);
+  const mb = bytes / 1024 / 1024;
+  // Guard against silently re-inflating the npm tarball. One wasm variant is
+  // ~13 MB; anything near 30 means the glob crept back.
+  if (mb > 30) {
+    throw new Error(
+      `[webview-ui] dist/vad is ${mb.toFixed(1)} MB — expected well under 30. ` +
+        `Only one onnxruntime wasm variant should be copied.`,
+    );
+  }
+  console.log(`[webview-ui] copied ${copied} VAD assets (${mb.toFixed(1)} MB) -> ${dest}`);
 };
 
 copyHtml();
