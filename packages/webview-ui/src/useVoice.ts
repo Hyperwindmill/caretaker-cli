@@ -88,10 +88,13 @@ export function useVoice(opts: {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heardSpeechRef = useRef(false);
-  /** INVARIANT 3: `chatStatus` is still 'idle' between onTranscript and the socket
-   *  round-trip. Without this, the loop would advance immediately and speak the
-   *  previous reply. */
+  /** Secondary guard only. The primary one is `turnComplete` — see the awaiting
+   *  branch of `nextPhase`. This covers a surface that sends without ever
+   *  flipping status to 'streaming'. */
   const sawStreamingRef = useRef(false);
+  /** The reply already spoken when the current turn was sent. Guards against
+   *  re-reading it if this turn produces no new text of its own. */
+  const spokenBaselineRef = useRef<string | null>(null);
 
   const apply = useCallback((event: Parameters<typeof nextPhase>[1]) => {
     setPhase((current) => nextPhase(current, event));
@@ -155,7 +158,13 @@ export function useVoice(opts: {
         const trimmed = (text ?? '').trim();
         const currentMode = modeRef.current;
         if (trimmed) {
-          if (currentMode === 'conversation') sawStreamingRef.current = false;
+          if (currentMode === 'conversation') {
+            sawStreamingRef.current = false;
+            // Remember what had already been said, so a turn that ends without
+            // producing new text (tool calls only, or an empty reply) relistens
+            // instead of re-reading the previous answer.
+            spokenBaselineRef.current = lastSpokenText(itemsRef.current);
+          }
           onTranscriptRef.current(trimmed, currentMode);
         }
         apply({ kind: 'transcribed', mode: currentMode, empty: trimmed.length === 0 });
@@ -220,7 +229,8 @@ export function useVoice(opts: {
   /** Synthesize and play the reply, then reopen the mic on playback end. */
   const speakReply = useCallback(async () => {
     const text = lastSpokenText(itemsRef.current);
-    if (!text) {
+    // Same text as before the send ⇒ this turn added no reply of its own.
+    if (!text || text === spokenBaselineRef.current) {
       apply({ kind: 'playbackEnded', mode: 'conversation' });
       return;
     }
@@ -269,6 +279,10 @@ export function useVoice(opts: {
       kind: 'turnFinished',
       mode: 'conversation',
       canSpeak,
+      // The reducer sets status 'streaming' in the same batch as the send, so
+      // reaching 'awaiting' says nothing about the turn being over. Without this
+      // the loop advances mid-stream and speaks the previous reply.
+      turnComplete: chatStatus === 'idle',
       sawStreaming: sawStreamingRef.current,
       confirmPending: pendingConfirmCount > 0,
     });

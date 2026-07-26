@@ -73,32 +73,32 @@ test('INVARIANT 1: playback finishing is what reopens the mic', () => {
   // The harness turn completing must NOT reopen the mic — that is what makes the
   // agent transcribe itself. From 'speaking' a turnFinished event is inert.
   assert.equal(
-    nextPhase('speaking', { kind: 'turnFinished', mode: 'conversation', canSpeak: true, sawStreaming: true, confirmPending: false }),
+    nextPhase('speaking', { kind: 'turnFinished', mode: 'conversation', canSpeak: true, turnComplete: true, sawStreaming: true, confirmPending: false }),
     'speaking',
   );
 });
 
 test('INVARIANT 2: a pending confirmation holds the loop in awaiting', () => {
   assert.equal(
-    nextPhase('awaiting', { kind: 'turnFinished', mode: 'conversation', canSpeak: true, sawStreaming: true, confirmPending: true }),
+    nextPhase('awaiting', { kind: 'turnFinished', mode: 'conversation', canSpeak: true, turnComplete: true, sawStreaming: true, confirmPending: true }),
     'awaiting',
   );
 });
 
 test('INVARIANT 3: awaiting will not advance until streaming has been observed', () => {
   assert.equal(
-    nextPhase('awaiting', { kind: 'turnFinished', mode: 'conversation', canSpeak: true, sawStreaming: false, confirmPending: false }),
+    nextPhase('awaiting', { kind: 'turnFinished', mode: 'conversation', canSpeak: true, turnComplete: true, sawStreaming: false, confirmPending: false }),
     'awaiting',
   );
   assert.equal(
-    nextPhase('awaiting', { kind: 'turnFinished', mode: 'conversation', canSpeak: true, sawStreaming: true, confirmPending: false }),
+    nextPhase('awaiting', { kind: 'turnFinished', mode: 'conversation', canSpeak: true, turnComplete: true, sawStreaming: true, confirmPending: false }),
     'speaking',
   );
 });
 
 test('without a synthesis model the loop skips speaking and relistens', () => {
   assert.equal(
-    nextPhase('awaiting', { kind: 'turnFinished', mode: 'conversation', canSpeak: false, sawStreaming: true, confirmPending: false }),
+    nextPhase('awaiting', { kind: 'turnFinished', mode: 'conversation', canSpeak: false, turnComplete: true, sawStreaming: true, confirmPending: false }),
     'recording',
   );
 });
@@ -151,4 +151,46 @@ test('timing constants match the spec', () => {
   assert.equal(END_OF_TURN_MS, 1200);
   assert.equal(IDLE_WINDOW_MS, 10_000);
   assert.equal(POST_PLAYBACK_MS, 250);
+});
+
+// --- Regression: the off-by-one that read the previous reply, one turn late. ---
+// The reducer sets status 'streaming' in the same batch as the send, so reaching
+// 'awaiting' says nothing about the turn being over. Advancing there speaks the
+// last COMPLETED assistant item — the previous turn's answer, and nothing at all
+// on the first turn. Reported after the same bug appeared in sp1next.
+
+test('REGRESSION: awaiting does not advance while the turn is still streaming', () => {
+  assert.equal(
+    nextPhase('awaiting', {
+      kind: 'turnFinished',
+      mode: 'conversation',
+      canSpeak: true,
+      turnComplete: false, // status === 'streaming'
+      sawStreaming: true, // already true: set in the same batch as the send
+      confirmPending: false,
+    }),
+    'awaiting',
+  );
+});
+
+test('REGRESSION: awaiting advances only once the turn is complete', () => {
+  assert.equal(
+    nextPhase('awaiting', {
+      kind: 'turnFinished',
+      mode: 'conversation',
+      canSpeak: true,
+      turnComplete: true,
+      sawStreaming: true,
+      confirmPending: false,
+    }),
+    'speaking',
+  );
+});
+
+test('REGRESSION: turnComplete does not override the other awaiting guards', () => {
+  const base = { kind: 'turnFinished', mode: 'conversation', canSpeak: true, turnComplete: true } as const;
+  // A pending confirmation still holds the loop.
+  assert.equal(nextPhase('awaiting', { ...base, sawStreaming: true, confirmPending: true }), 'awaiting');
+  // Never having streamed still holds it.
+  assert.equal(nextPhase('awaiting', { ...base, sawStreaming: false, confirmPending: false }), 'awaiting');
 });
