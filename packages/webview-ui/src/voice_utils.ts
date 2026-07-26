@@ -140,5 +140,6 @@ export function voiceSignature(v: Record<string, unknown> | undefined | null): s
     v.ttsVoice ?? '',
     v.ttsSpeed ?? '',
     v.lang ?? '',
+    v.autoStartBackend === true,
   ]);
 }

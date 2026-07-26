@@ -18,8 +18,10 @@ export function voiceClientConfig(config: CaretakerConfig): VoiceClientConfig | 
   return out;
 }
 
-/** Resolve the usable voice config, or a reason it cannot be used. */
-async function resolveVoice(): Promise<{ voice: VoiceConfig } | { error: string }> {
+/** Resolve the usable voice config, or a reason it cannot be used. Shared with
+ *  voice_backend.ts so the two surfaces refuse for the same reasons, in the same
+ *  words (the HTTP status is the caller's choice, the wording is not). */
+export async function resolveVoice(): Promise<{ voice: VoiceConfig } | { error: string }> {
   const config = await loadConfig();
   const voice = config.voice;
   if (!voice || voice.enabled !== true) {

@@ -211,5 +211,8 @@ test('voiceSignature distinguishes every field that is actually persisted', () =
   assert.notEqual(voiceSignature(base), voiceSignature({ ...base, ttsVoice: 'if_sara' }));
   assert.notEqual(voiceSignature(base), voiceSignature({ ...base, ttsSpeed: 1.5 }));
   assert.notEqual(voiceSignature(base), voiceSignature({ ...base, lang: 'it-IT' }));
+  // Omitted at first: the checkbox is the one field a user can change alone, so
+  // leaving it out made "Saved ✓" appear instantly without any round-trip.
+  assert.notEqual(voiceSignature(base), voiceSignature({ ...base, autoStartBackend: true }));
   assert.equal(voiceSignature(undefined), '');
 });
