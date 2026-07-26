@@ -82,6 +82,9 @@ export type VoiceConfig = {
   ttsSpeed?: number;
   /** BCP-47 language tag. Unset ⇒ the renderer's navigator.language. */
   lang?: string;
+  /** Start the managed local speech container when the web server boots.
+   *  Off by default; manual start/stop needs no flag, it is a button. */
+  autoStartBackend?: boolean;
 };
 
 export type CaretakerConfig = {

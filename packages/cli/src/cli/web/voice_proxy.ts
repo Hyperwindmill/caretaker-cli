@@ -38,7 +38,7 @@ function plainKey(apiKey: string | undefined | null): string | null {
   return isEncrypted(apiKey) ? decrypt(apiKey) : apiKey;
 }
 
-function authHeaders(voice: VoiceConfig): Record<string, string> {
+export function voiceAuthHeaders(voice: VoiceConfig): Record<string, string> {
   const key = plainKey(voice.apiKey);
   return key ? { authorization: `Bearer ${key}` } : {};
 }
@@ -68,7 +68,7 @@ export function registerVoiceProxy(app: Hono): void {
     try {
       upstream = await fetch(url(voice.endpoint, '/audio/transcriptions'), {
         method: 'POST',
-        headers: authHeaders(voice),
+        headers: voiceAuthHeaders(voice),
         body: form,
       });
     } catch (err) {
@@ -106,7 +106,7 @@ export function registerVoiceProxy(app: Hono): void {
     try {
       upstream = await fetch(url(voice.endpoint, '/audio/speech'), {
         method: 'POST',
-        headers: { ...authHeaders(voice), 'content-type': 'application/json' },
+        headers: { ...voiceAuthHeaders(voice), 'content-type': 'application/json' },
         body: JSON.stringify(payload),
       });
     } catch (err) {
