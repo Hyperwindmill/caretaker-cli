@@ -5,6 +5,7 @@ allowBuilds:
   electron-winstaller: true
   esbuild: true
   keytar: true
+  protobufjs: true
 # Security pins (moved here from package.json#pnpm.overrides — pnpm 10+ reads
 # these from pnpm-workspace.yaml, not package.json). Values starting with `>`
 # must be quoted (leading `>` is a YAML block-scalar indicator).
