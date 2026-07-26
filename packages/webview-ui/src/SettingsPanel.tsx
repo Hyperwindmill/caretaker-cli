@@ -193,12 +193,17 @@ export function SettingsPanel({
             Scheduler
           </button>
         )}
-        <button
-          className={`settings-panel__tab-btn ${activeTab === 'voice' ? 'settings-panel__tab-btn--active' : ''}`}
-          onClick={() => setActiveTab('voice')}
-        >
-          Voice
-        </button>
+        {/* Voice is out of scope for the VSCode sidebar (webview CSP blocks the
+            mic), so its settings hide there too — same pattern as Projects and
+            Scheduler above. */}
+        {layout === 'sidebar' && (
+          <button
+            className={`settings-panel__tab-btn ${activeTab === 'voice' ? 'settings-panel__tab-btn--active' : ''}`}
+            onClick={() => setActiveTab('voice')}
+          >
+            Voice
+          </button>
+        )}
       </nav>
 
 
