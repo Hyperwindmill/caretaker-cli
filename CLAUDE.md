@@ -26,7 +26,9 @@ pnpm -F @hyperwindmill/caretaker-cli typecheck         # tsc --noEmit
 pnpm -F @hyperwindmill/caretaker-cli test              # tsx --test "packages/cli/src/**/*.test.ts"
 pnpm -F webview-ui build                # esbuild → packages/webview-ui/dist/
 pnpm -F webview-ui dev                  # esbuild --watch
+pnpm -F webview-ui test                 # tsx --test "packages/webview-ui/src/**/*.test.ts"
 pnpm -F caretaker-vscode build          # build extension host + webview bundles
+
 pnpm desktop:dev                        # build all + launch the Electron desktop app
 pnpm desktop:dist                       # package desktop installers (electron-builder)
 pnpm build                              # build every package (pnpm -r build)
@@ -108,9 +110,22 @@ Three stores under `CARETAKER_HOME`:
 2. **JSONL** for chat sessions (one file per session under `sessions/<agentId>/`) and scheduler logs (`scheduler-logs/`).
 3. **`@morphql/store` folder DB** under `store/` (`packages/cli/src/store/db.ts`) backing the autonomous task/project system: **Projects**, **Tasks** (draft/planning/active/reviewing/paused/blocked/done, with checklist items and no-progress guards, plus `branch`/`worktreePath` for git isolation, `dockerContainer` for task container tracking, `archived` for soft-delete, per-role agent assignment overriding the project default — `agentId` = developer, plus optional `plannerAgentId`/`reviewerAgentId` — tri-state `planningEnabled`/`reviewEnabled`/`sddEnabled` phase gates inheriting from the project, default on for first two, default off for `sddEnabled`, and an optional numeric `maxRunSeconds` per-cycle wall-clock budget inheriting from the project — unset = provider default), and **TaskMessages** (`messageType` includes `review` and `plan`, both replayed into agent history; the per-cycle assistant message and the `review` message also store `agentLabel` — the role-resolved agent's `name · model` captured at run time, so the thread shows who actually ran each cycle (developer/planner) and who reviewed, even after the agent is later reconfigured). Agents drive it through the built-in `mcp__task__*` tools (`task_create` (accepts `sdd_enabled`), `task_get_state` (returns `sddEnabled`), `task_update_checklist_item`, `task_add_message`, `task_complete`, `task_block`, `task_unblock`, `task_yield`, `task_activate`, `task_unpause`, `task_search`, `project_list`, `task_discard_worktree`, `task_archive`, `task_unarchive`, `task_delete`, `task_set_agent` (with a `role` param: developer/planner/reviewer), `task_submit_plan`), one step per invocation; the always-on task heartbeat (layer 5) advances planning/active/reviewing tasks, isolating each in its own git worktree/branch and gating DONE behind a `reviewing` review pass (when `reviewEnabled`). Role resolution is per-role via `scheduler/task_roles.ts` (see layer 5). The web API mirrors the role/flag surface: `PATCH /api/tasks/:id/agent` takes an optional `role`, `PATCH /api/tasks/:id/flags` sets the tri-state gates (including `sddEnabled`) and the numeric `maxRunSeconds`, and task/project creation accepts the role/flag fields (project config also carries `bootstrapCommands`/`maxRunSeconds`/`dockerImage`). Archived tasks are excluded from the heartbeat and hidden from the default task list (toggle with "Show archived"); delete permanently removes a task and all its messages from the store (confirm-gated in the UI).
 
-Secrets at rest (plugin auth tokens, MCP credentials, Telegram bot tokens) are AES-256-GCM encrypted via `packages/cli/src/lib/encryption.ts`; the key is persisted on disk with mode 0600.
+Secrets at rest (plugin auth tokens, MCP credentials, Telegram bot tokens, voice API keys) are AES-256-GCM encrypted via `packages/cli/src/lib/encryption.ts`; the key is persisted on disk with mode 0600.
+
+### 6. Voice Mode (dictation + hands-free conversation)
+
+- **Config & security**: Stored under `voice` in `caretaker.json` (`VoiceConfig`). `apiKey` is encrypted at rest on save (`store/json.ts`). The API key is never delivered to the renderer; a redacted `VoiceClientConfig` is sent via `voiceConfig` host message on connect and config save.
+- **Server proxies**: `POST /api/voice/transcribe` and `POST /api/voice/speak` in `voice_proxy.ts` forward requests to the user-configured OpenAI-compatible speech endpoint. Upstream errors are returned verbatim to surface configuration issues directly.
+- **Renderer loop**: `useVoice.ts` hook manages capture, Silero VAD (`@ricky0123/vad-web`), transcription POST, and audio playback. Pure decision logic lives in `voice_utils.ts` (`nextPhase`, BCP-47 formatting, markdown stripping, assistant reply text extraction).
+- **Three invariants**:
+  1. Mic reopens only on `<audio>` `onended` + 250 ms delay, never on harness `done` event (prevents self-transcription).
+  2. `awaiting → speaking` requires no pending confirmations (`pendingConfirmCount === 0`).
+  3. `awaiting → speaking` requires having observed `chatStatus === 'streaming'` at least once since send (prevents re-speaking previous reply).
+- **Surface matrix**: Offered in the Web GUI and Electron desktop app. Unavailable in the VSCode sidebar (microphone access denied by webview CSP) and TUI.
+- **Electron Web Speech finding**: The Web Speech API is unusable in Electron even though constructors exist: recognition fails with `error:network` (no Google speech API keys in Electron build) and `speechSynthesis` reports zero voices. Capability detection keys off `MediaRecorder`/`getUserMedia`.
 
 ### Tool sandbox
+
 
 `packages/cli/src/harness/tools/sandbox.ts` rejects paths outside the agent's working directory and refuses to follow symlinks out. `write` enforces read-before-write. `edit`/`multiedit` rely on exact `oldString` match as an implicit invariant. This is convenience, not a security boundary.
 
