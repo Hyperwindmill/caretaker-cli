@@ -120,7 +120,7 @@ Secrets at rest (plugin auth tokens, MCP credentials, Telegram bot tokens, voice
 - **Three invariants**:
   1. Mic reopens only on `<audio>` `onended` + 250 ms delay, never on harness `done` event (prevents self-transcription).
   2. `awaiting → speaking` requires no pending confirmations (`pendingConfirmCount === 0`).
-  3. `awaiting → speaking` requires having observed `chatStatus === 'streaming'` at least once since send (prevents re-speaking previous reply).
+  3. `awaiting → speaking` requires `chatStatus === 'idle'` — the turn actually being over. The reducer sets `status: 'streaming'` in the same batch as the send, so reaching `awaiting` says nothing about completion; advancing there speaks the last *completed* assistant item, i.e. the previous turn's reply (and nothing at all on the first turn). Having observed `'streaming'` since the send is a secondary guard only.
 - **Surface matrix**: Offered in the Web GUI and Electron desktop app. Unavailable in the VSCode sidebar (microphone access denied by webview CSP) and TUI.
 - **Electron Web Speech finding**: The Web Speech API is unusable in Electron even though constructors exist: recognition fails with `error:network` (no Google speech API keys in Electron build) and `speechSynthesis` reports zero voices. Capability detection keys off `MediaRecorder`/`getUserMedia`.
 

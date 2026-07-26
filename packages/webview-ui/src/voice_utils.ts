@@ -22,6 +22,8 @@ export type VoiceEvent =
       mode: VoiceMode;
       /** A synthesis model is configured. */
       canSpeak: boolean;
+      /** The harness turn is actually over (`status === 'idle'`). */
+      turnComplete: boolean;
       /** `status === 'streaming'` has been observed since the send. */
       sawStreaming: boolean;
       /** A tool confirmation is currently pending. */
@@ -64,9 +66,14 @@ export function nextPhase(phase: VoicePhase, event: VoiceEvent): VoicePhase {
 
     case 'awaiting':
       if (event.kind !== 'turnFinished') return phase;
-      // INVARIANT 3: `status` is still 'idle' between onSend and the socket
-      // round-trip, so advancing without having seen 'streaming' would speak the
-      // *previous* reply.
+      // INVARIANT 3: the turn must actually be over. The reducer sets
+      // status 'streaming' in the same batch as the send, so "awaiting" alone
+      // says nothing about completion — advancing here speaks the *previous*
+      // reply (and on the very first turn, nothing at all). This is the
+      // off-by-one that shows up as "reads the last message, one turn late".
+      if (!event.turnComplete) return phase;
+      // Belt to that brace: if a surface ever sends without flipping to
+      // 'streaming', completion would read as true immediately.
       if (!event.sawStreaming) return phase;
       // INVARIANT 2: with a confirmation pending the turn never completes; a loop
       // keyed on completion alone would die silently here.

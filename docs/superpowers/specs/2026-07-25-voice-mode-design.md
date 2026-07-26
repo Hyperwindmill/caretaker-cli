@@ -1,7 +1,7 @@
 # Voice mode (dictation + conversation) — design
 
 Date: 2026-07-25
-Status: approved, ready for implementation plan
+Status: implemented
 
 ## Goal
 
@@ -249,10 +249,17 @@ These are not stylistic; each one corresponds to a specific failure.
    conversation with an agent that has confirm-gated tools will therefore stall at the
    confirmation and wait for a click — accepted, and documented as such.
 
-3. **`awaiting → speaking` also requires having observed `status === 'streaming'` at
-   least once since the send.** `status` is still `idle` in the moment between calling
-   `onSend` and the WebSocket round-trip, so a naive check fires immediately and
-   speaks the *previous* reply.
+3. **`awaiting → speaking` requires `status === 'idle'`** — the turn actually being
+   over. `send-user` sets `status: 'streaming'` in the same reducer batch as the send,
+   so reaching `awaiting` says nothing about completion. Advancing there speaks the
+   last *completed* assistant item, which is the previous turn's reply — and on the
+   very first turn there is none, so nothing is spoken at all. The symptom is
+   "reads the last message, one turn late".
+
+   Having observed `status === 'streaming'` since the send is kept as a secondary
+   guard, for a surface that might send without flipping status. It cannot carry the
+   invariant on its own: because status flips in the send's own batch, it is already
+   true the first time the transition is evaluated.
 
 ### Text selection for synthesis
 
