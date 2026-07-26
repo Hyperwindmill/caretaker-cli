@@ -54,7 +54,7 @@ export function containerExecArgs(name: string, cwd: string, cmd: string): strin
 }
 
 /** Returns 'running' | 'stopped' | 'absent' for a container name. */
-async function containerState(name: string): Promise<'running' | 'stopped' | 'absent'> {
+export async function containerState(name: string): Promise<'running' | 'stopped' | 'absent'> {
   try {
     const { stdout } = await exec('docker', ['inspect', '-f', '{{.State.Running}}', name], {
       env: commandEnv(),
