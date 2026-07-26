@@ -12,6 +12,7 @@ import { watch, existsSync, mkdirSync } from 'node:fs';
 import type { FSWatcher } from 'node:fs';
 
 import * as harness from '@hyperwindmill/caretaker-cli/harness';
+import { fetchVoiceCatalog } from '@hyperwindmill/caretaker-cli/voice';
 import {
   loadAgents,
   loadConfig,
@@ -517,6 +518,21 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
         } catch (err) {
           this.post(webview, {
             type: 'modelsFetched',
+            result: { ok: false, error: String(err) },
+          });
+        }
+        return;
+      // Voice itself is unavailable in the sidebar (webview CSP blocks the
+      // mic), but the Voice settings edit the shared ~/.caretaker config the
+      // web GUI and desktop app run with — so the catalogue fetch behind the
+      // pick-lists must work here too, not leave the button stuck "Fetching…".
+      case 'fetchVoiceModels':
+        try {
+          const catalog = await fetchVoiceCatalog(msg.endpoint, msg.apiKey ?? null);
+          this.post(webview, { type: 'voiceModelsFetched', result: { ok: true, catalog } });
+        } catch (err) {
+          this.post(webview, {
+            type: 'voiceModelsFetched',
             result: { ok: false, error: String(err) },
           });
         }
