@@ -3,8 +3,7 @@
 // section). webview-ui has no dependency on the cli package (only on
 // caretaker-types), so these two types mirror the contract exported by
 // packages/cli/src/cli/web/voice_backend.ts by hand — same shape, same
-// fields, kept in sync by hand like `resolveVoiceForBackend`'s comment in
-// that file already flags for its own duplicate.
+// fields, kept in sync by hand.
 export type BackendStatus = {
   /** Why the affordance may be unavailable, distinguished because the fixes differ. */
   docker: 'ok' | 'absent' | 'denied' | 'down';
