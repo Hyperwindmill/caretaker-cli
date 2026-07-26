@@ -7,6 +7,7 @@ import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
+import type { CaretakerConfig, VoiceConfig } from 'caretaker-types';
 import { registerVoiceProxy, voiceClientConfig, fetchVoiceCatalog } from './voice_proxy.js';
 import { saveConfig } from '../../store/json.js';
 
@@ -182,6 +183,42 @@ test('speak forwards text, model and voice, and returns the audio bytes', async 
   assert.equal(lastRequest?.body.model, 'kokoro');
   assert.equal(lastRequest?.body.voice, 'af_heart');
   assert.equal(lastRequest?.body.input, 'ciao');
+});
+
+test('speak forwards ttsSpeed as `speed`, and omits it when unset', async () => {
+  const baseVoice: VoiceConfig = {
+    enabled: true,
+    endpoint: upstreamUrl,
+    sttModel: 'whisper',
+    ttsModel: 'kokoro',
+    ttsVoice: 'if_sara',
+  };
+  const base: CaretakerConfig = { port: 3000, providers: [], voice: baseVoice };
+
+  await saveConfig({ ...base, voice: { ...baseVoice, ttsSpeed: 1.25 } });
+  await fetch(`${baseUrl}/api/voice/speak`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text: 'ciao' }),
+  });
+  assert.equal(lastRequest?.body.speed, 1.25);
+
+  await saveConfig({ ...base });
+  await fetch(`${baseUrl}/api/voice/speak`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text: 'ciao' }),
+  });
+  assert.equal('speed' in lastRequest!.body, false, 'unset speed must not be sent at all');
+
+  // A nonsensical value must not reach the upstream either.
+  await saveConfig({ ...base, voice: { ...baseVoice, ttsSpeed: 0 } });
+  await fetch(`${baseUrl}/api/voice/speak`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text: 'ciao' }),
+  });
+  assert.equal('speed' in lastRequest!.body, false, 'speed 0 must be rejected');
 });
 
 test('upstream failures propagate status and body verbatim', async () => {

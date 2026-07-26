@@ -162,6 +162,10 @@ caretaker holds `ttsVoice` as an opaque string and forwards it verbatim, so whic
 - **Kokoro** is one model carrying many voices, selected by the `voice` field — but it is trained predominantly on English and shares one phonemizer across languages, so its non-English voices (`if_sara`, `im_nicola` for Italian) keep an English inflection.
 - **Piper** ships one voice per model, trained on that language alone. For Italian, set model `speaches-ai/piper-it_IT-paola-medium` with voice `paola`. `GET /v1/registry?task=text-to-speech` lists all 154 available models.
 
+**Speaking Rate** multiplies the synthesis pace (clamped to 0.5–2, default 1) — worth raising because some
+voices are simply slow: for one Italian sentence, Kokoro's `im_nicola` produced 43% more audio than Piper's
+`paola`. Piper responds less to it than Kokoro, since there it stretches phoneme durations.
+
 `faster-whisper-small` trades accuracy for speed; step up to a larger model if transcriptions come back approximate.
 
 ## Install
