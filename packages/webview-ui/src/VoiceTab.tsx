@@ -2,6 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import type { CaretakerConfig, VoiceConfig } from 'caretaker-types';
 import type { ViewToHost, VoiceCatalog, VoiceCatalogResult } from './bridge.js';
 import { voiceSignature } from './voice_utils.js';
+import {
+  backendStatusText,
+  splitNdjsonLines,
+  type BackendStatus,
+  type StartProgress,
+} from './voice_backend_utils.js';
+
+const BACKEND_POLL_MS = 10_000;
 
 export interface VoiceTabProps {
   config: CaretakerConfig;
@@ -42,6 +50,100 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   /** Signature of the payload the last Save submitted, awaiting confirmation. */
   const pendingSave = useRef<string | null>(null);
+
+  // --- Managed local backend (Docker) -------------------------------------
+  const [autoStartBackend, setAutoStartBackend] = useState(current.autoStartBackend ?? false);
+  // null until the first fetch resolves — that is also what keeps the block
+  // hidden on surfaces (VSCode) where these routes do not exist at all.
+  const [backendStatus, setBackendStatus] = useState<BackendStatus | null>(null);
+  const [backendBusy, setBackendBusy] = useState(false);
+  /** Latest streamed message while a start is running; replaces the status
+   *  line until the terminal line adopts its `status`. */
+  const [backendProgress, setBackendProgress] = useState<string | null>(null);
+  /** The verbatim failure from a start/stop attempt — surfaced separately from
+   *  the one-line status because "docker run failed: port already in use" is
+   *  exactly the case the design doc says must not be silently swallowed. */
+  const [backendError, setBackendError] = useState<string | null>(null);
+
+  const fetchBackendStatus = async () => {
+    try {
+      const res = await fetch('/api/voice/backend');
+      if (!res.ok) return;
+      setBackendStatus((await res.json()) as BackendStatus);
+    } catch {
+      // Route doesn't exist on this surface (VSCode sidebar) or the request
+      // failed outright — no status means the block stays hidden, which is
+      // the correct outcome, not an error to surface.
+    }
+  };
+
+  useEffect(() => {
+    fetchBackendStatus();
+    const interval = setInterval(fetchBackendStatus, BACKEND_POLL_MS);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const startBackend = async () => {
+    setBackendBusy(true);
+    setBackendError(null);
+    setBackendProgress('Starting…');
+    try {
+      const res = await fetch('/api/voice/backend/start', { method: 'POST' });
+      if (!res.ok || !res.body) {
+        setBackendError((await res.text().catch(() => '')) || 'Start failed.');
+        return;
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const { lines, remainder } = splitNdjsonLines(
+          buffer,
+          decoder.decode(value, { stream: true }),
+        );
+        buffer = remainder;
+        for (const line of lines) {
+          let progress: StartProgress;
+          try {
+            progress = JSON.parse(line) as StartProgress;
+          } catch {
+            continue; // Malformed line — the terminal line is what matters.
+          }
+          if (progress.status) {
+            // Terminal line: adopt the fresh status and stop showing progress text.
+            setBackendStatus(progress.status);
+            setBackendProgress(null);
+            if (progress.step === 'error') setBackendError(progress.message);
+          } else {
+            setBackendProgress(progress.message);
+          }
+        }
+      }
+    } catch (err) {
+      setBackendError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBackendBusy(false);
+      setBackendProgress(null);
+      fetchBackendStatus();
+    }
+  };
+
+  const stopBackend = async () => {
+    setBackendBusy(true);
+    setBackendError(null);
+    try {
+      const res = await fetch('/api/voice/backend/stop', { method: 'POST' });
+      if (res.ok) setBackendStatus((await res.json()) as BackendStatus);
+    } catch {
+      // Best-effort — the poll below re-syncs regardless.
+    } finally {
+      setBackendBusy(false);
+      fetchBackendStatus();
+    }
+  };
 
   useEffect(() => {
     if (catalogResult) setFetching(false);
@@ -100,15 +202,53 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
       voice.ttsSpeed = Math.min(Math.max(speed, 0.5), 2);
     }
     if (lang.trim()) voice.lang = lang.trim();
+    if (autoStartBackend) voice.autoStartBackend = true;
     pendingSave.current = voiceSignature(voice as unknown as Record<string, unknown>);
     setSaveState('saving');
     onSave({ ...config, voice });
   };
 
+  // Rendered only once a status has been fetched AND the container is the
+  // right kind of "not usable" (Docker installed) AND the saved endpoint is
+  // loopback — the server is the single source of truth for the latter (see
+  // `port`), never re-parsed from the endpoint field here.
+  const showBackendBlock =
+    backendStatus !== null && backendStatus.docker !== 'absent' && backendStatus.port !== null;
+
   return (
     <div className="glass-form">
       <h4>Voice</h4>
       <div className="glass-form__body">
+        {showBackendBlock && backendStatus && (
+          <div className="form-group">
+            <div className="voice-backend-status">
+              <span>{backendProgress ?? backendStatusText(backendStatus)}</span>
+              {backendStatus.container === 'running' ? (
+                <button type="button" onClick={stopBackend} disabled={backendBusy}>
+                  {backendBusy ? 'Stopping…' : 'Stop'}
+                </button>
+              ) : (
+                <button type="button" onClick={startBackend} disabled={backendBusy}>
+                  {backendBusy ? 'Starting…' : 'Start'}
+                </button>
+              )}
+            </div>
+            {backendError && <small className="form-error">{backendError}</small>}
+            <div className="form-group form-group--checkbox">
+              <label htmlFor="voice-backend-autostart">
+                <input
+                  id="voice-backend-autostart"
+                  type="checkbox"
+                  checked={autoStartBackend}
+                  onChange={(e) => setAutoStartBackend(e.target.checked)}
+                />
+                Start automatically with caretaker
+              </label>
+            </div>
+            <small>The first start downloads about 2 GB.</small>
+          </div>
+        )}
+
         <div className="form-group form-group--checkbox">
           <label htmlFor="voice-enabled">
             <input
