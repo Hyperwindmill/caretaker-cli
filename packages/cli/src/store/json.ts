@@ -93,6 +93,9 @@ export async function saveConfig(c: CaretakerConfig): Promise<void> {
       }
     }
   }
+  if (c.voice?.apiKey && !isEncrypted(c.voice.apiKey)) {
+    c.voice.apiKey = encrypt(c.voice.apiKey);
+  }
   await writeJson(configPath(), c);
 }
 

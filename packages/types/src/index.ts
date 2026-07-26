@@ -61,6 +61,25 @@ export type ProjectConfig = {
   dockerImage?: string | null;
 };
 
+/** Voice mode configuration. One OpenAI-compatible base URL and key serve both
+ *  transcription and synthesis; see docs/superpowers/specs/2026-07-25-voice-mode-design.md */
+export type VoiceConfig = {
+  /** Master gate. False ⇒ no mic affordance on any surface. */
+  enabled: boolean;
+  /** OpenAI-compatible base URL, e.g. http://127.0.0.1:8000/v1 */
+  endpoint: string;
+  /** Encrypted at rest (encrypt() blob, see lib/encryption.ts). */
+  apiKey?: string;
+  /** Transcription model id, e.g. Systran/faster-whisper-small */
+  sttModel: string;
+  /** Synthesis model id. Unset ⇒ conversation mode unavailable, dictation still works. */
+  ttsModel?: string;
+  /** Voice id for the synthesis model, e.g. af_heart */
+  ttsVoice?: string;
+  /** BCP-47 language tag. Unset ⇒ the renderer's navigator.language. */
+  lang?: string;
+};
+
 export type CaretakerConfig = {
   port: number;
   providers: ProviderConfig[];
@@ -68,7 +87,9 @@ export type CaretakerConfig = {
     tasks: ScheduledTaskConfig[];
   };
   projects?: ProjectConfig[];
+  voice?: VoiceConfig;
 };
+
 
 export type PluginManifestKind = 'cc-marketplace' | 'cc-plugin' | 'skill-glob';
 
