@@ -1,14 +1,31 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { CaretakerConfig, VoiceConfig } from 'caretaker-types';
+import type { ViewToHost, VoiceCatalog, VoiceCatalogResult } from './bridge.js';
 
 export interface VoiceTabProps {
   config: CaretakerConfig;
   onSave: (config: CaretakerConfig) => void;
+  postMessage: (msg: ViewToHost) => void;
+  /** Result of the last catalogue fetch, or null if none has been requested. */
+  catalogResult: VoiceCatalogResult | null;
 }
 
 const EMPTY: VoiceConfig = { enabled: false, endpoint: '', sttModel: '' };
 
-export function VoiceTab({ config, onSave }: VoiceTabProps) {
+/** Offer the fetched ids, but never drop a value the user already had: an endpoint
+ *  that lists nothing (or lists something else) must not silently clear the form. */
+function withCurrent(ids: string[], current: string): string[] {
+  const trimmed = current.trim();
+  if (!trimmed || ids.includes(trimmed)) return ids;
+  return [trimmed, ...ids];
+}
+
+function voiceLabel(v: { id: string; language?: string; gender?: string }): string {
+  const meta = [v.language, v.gender].filter(Boolean).join(', ');
+  return meta ? `${v.id} — ${meta}` : v.id;
+}
+
+export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTabProps) {
   const current = config.voice ?? EMPTY;
   const [enabled, setEnabled] = useState(current.enabled);
   const [endpoint, setEndpoint] = useState(current.endpoint);
@@ -17,6 +34,28 @@ export function VoiceTab({ config, onSave }: VoiceTabProps) {
   const [ttsModel, setTtsModel] = useState(current.ttsModel ?? '');
   const [ttsVoice, setTtsVoice] = useState(current.ttsVoice ?? '');
   const [lang, setLang] = useState(current.lang ?? '');
+  const [fetching, setFetching] = useState(false);
+
+  useEffect(() => {
+    if (catalogResult) setFetching(false);
+  }, [catalogResult]);
+
+  const catalog: VoiceCatalog | null = catalogResult?.ok ? catalogResult.catalog : null;
+  const fetchError = catalogResult && !catalogResult.ok ? catalogResult.error : null;
+
+  const fetchCatalog = () => {
+    if (!endpoint.trim()) return;
+    setFetching(true);
+    postMessage({
+      type: 'fetchVoiceModels',
+      endpoint: endpoint.trim(),
+      apiKey: apiKey.trim() || undefined,
+    });
+  };
+
+  // Voices come embedded in the selected TTS model's entry, which is scoped
+  // correctly per model — unlike the server's global voice catalogue.
+  const voicesForModel = catalog?.tts.find((m) => m.id === ttsModel.trim())?.voices ?? [];
 
   const save = () => {
     const voice: VoiceConfig = { enabled, endpoint: endpoint.trim(), sttModel: sttModel.trim() };
@@ -48,7 +87,7 @@ export function VoiceTab({ config, onSave }: VoiceTabProps) {
           <input
             id="voice-endpoint"
             type="text"
-            placeholder="http://127.0.0.1:8000/v1"
+            placeholder="http://127.0.0.1:8969/v1"
             value={endpoint}
             onChange={(e) => setEndpoint(e.target.value)}
           />
@@ -73,37 +112,108 @@ export function VoiceTab({ config, onSave }: VoiceTabProps) {
         </div>
 
         <div className="form-group">
+          <button type="button" onClick={fetchCatalog} disabled={fetching || !endpoint.trim()}>
+            {fetching ? 'Fetching…' : 'Fetch models'}
+          </button>
+          <small>
+            Reads the endpoint's installed models so the fields below become lists.
+            Endpoints that do not report a task per model still work — the fields stay
+            free text.
+          </small>
+          {fetchError && <small className="form-error">Fetch failed: {fetchError}</small>}
+        </div>
+
+        <div className="form-group">
           <label htmlFor="voice-stt">Transcription Model</label>
-          <input
-            id="voice-stt"
-            type="text"
-            placeholder="e.g. Systran/faster-whisper-small"
-            value={sttModel}
-            onChange={(e) => setSttModel(e.target.value)}
-          />
+          {catalog && catalog.stt.length > 0 ? (
+            <select
+              id="voice-stt"
+              value={sttModel}
+              onChange={(e) => setSttModel(e.target.value)}
+            >
+              <option value="">-- Select a model --</option>
+              {withCurrent(catalog.stt, sttModel).map((id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              id="voice-stt"
+              type="text"
+              placeholder="e.g. Systran/faster-whisper-small"
+              value={sttModel}
+              onChange={(e) => setSttModel(e.target.value)}
+            />
+          )}
         </div>
 
         <div className="form-group">
           <label htmlFor="voice-tts">Synthesis Model (optional)</label>
-          <input
-            id="voice-tts"
-            type="text"
-            placeholder="e.g. speaches-ai/Kokoro-82M-v1.0-ONNX"
-            value={ttsModel}
-            onChange={(e) => setTtsModel(e.target.value)}
-          />
+          {catalog && catalog.tts.length > 0 ? (
+            <select
+              id="voice-tts"
+              value={ttsModel}
+              onChange={(e) => {
+                setTtsModel(e.target.value);
+                // The voice belongs to the model: a stale id would 400 at synthesis.
+                const next = catalog.tts.find((m) => m.id === e.target.value);
+                if (next && !next.voices.some((v) => v.id === ttsVoice)) {
+                  setTtsVoice(next.voices.length === 1 ? next.voices[0].id : '');
+                }
+              }}
+            >
+              <option value="">-- None (dictation only) --</option>
+              {withCurrent(
+                catalog.tts.map((m) => m.id),
+                ttsModel,
+              ).map((id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              id="voice-tts"
+              type="text"
+              placeholder="e.g. speaches-ai/Kokoro-82M-v1.0-ONNX"
+              value={ttsModel}
+              onChange={(e) => setTtsModel(e.target.value)}
+            />
+          )}
           <small>Required for conversation mode. Without it, only dictation is offered.</small>
         </div>
 
         <div className="form-group">
           <label htmlFor="voice-voice">Voice (optional)</label>
-          <input
-            id="voice-voice"
-            type="text"
-            placeholder="e.g. af_heart"
-            value={ttsVoice}
-            onChange={(e) => setTtsVoice(e.target.value)}
-          />
+          {voicesForModel.length > 0 ? (
+            <select
+              id="voice-voice"
+              value={ttsVoice}
+              onChange={(e) => setTtsVoice(e.target.value)}
+            >
+              <option value="">-- Select a voice --</option>
+              {voicesForModel.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {voiceLabel(v)}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              id="voice-voice"
+              type="text"
+              placeholder="e.g. if_sara"
+              value={ttsVoice}
+              onChange={(e) => setTtsVoice(e.target.value)}
+            />
+          )}
+          <small>
+            Pick one whose language matches yours. A model trained mostly on English
+            keeps an English inflection even on its other-language voices.
+          </small>
         </div>
 
         <div className="form-group">

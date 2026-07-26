@@ -65,6 +65,21 @@ export type RefreshOutcome = {
 
 /** Voice settings the renderer is allowed to see. The API key is deliberately
  *  absent: the renderer only talks to the local /api/voice/* proxies. */
+/** A speech endpoint's installed models, split by task. Speaches reports `task`
+ *  per model and embeds each TTS model's own voices, so one /v1/models fetch fills
+ *  every field. Endpoints that report neither degrade to plain id lists. */
+export type VoiceCatalog = {
+  stt: string[];
+  tts: Array<{
+    id: string;
+    voices: Array<{ id: string; language?: string; gender?: string }>;
+  }>;
+};
+
+export type VoiceCatalogResult =
+  | { ok: true; catalog: VoiceCatalog }
+  | { ok: false; error: string };
+
 export type VoiceClientConfig = {
   enabled: boolean;
   /** An endpoint is configured. The URL itself is not needed client-side. */
@@ -101,7 +116,8 @@ export type HostToView =
   | { type: 'refreshPluginOutcome'; outcome: RefreshOutcome }
   | { type: 'taskRunsLoaded'; taskId: string; runs: any[] }
   | { type: 'mcpAuthOutcome'; serverId: string; ok: boolean; error?: string }
-  | { type: 'voiceConfig'; voice: VoiceClientConfig | null };
+  | { type: 'voiceConfig'; voice: VoiceClientConfig | null }
+  | { type: 'voiceModelsFetched'; result: VoiceCatalogResult };
 
 
 export type ViewToHost =
@@ -123,6 +139,7 @@ export type ViewToHost =
   | { type: 'saveMcpServer'; server: any }
   | { type: 'deleteMcpServer'; serverId: string }
   | { type: 'fetchModels'; endpoint: string; apiKey?: string }
+  | { type: 'fetchVoiceModels'; endpoint: string; apiKey?: string }
   | { type: 'getTaskRuns'; taskId: string }
   | { type: 'authenticateMcpServer'; serverId: string }
   | { type: 'revokeMcpAuth'; serverId: string };
@@ -192,6 +209,10 @@ export function parseViewToHost(value: unknown): ViewToHost | null {
     case 'deleteMcpServer':
       return typeof value.serverId === 'string' ? { type, serverId: value.serverId } : null;
     case 'fetchModels':
+      return typeof value.endpoint === 'string'
+        ? { type, endpoint: value.endpoint, apiKey: typeof value.apiKey === 'string' ? value.apiKey : undefined }
+        : null;
+    case 'fetchVoiceModels':
       return typeof value.endpoint === 'string'
         ? { type, endpoint: value.endpoint, apiKey: typeof value.apiKey === 'string' ? value.apiKey : undefined }
         : null;

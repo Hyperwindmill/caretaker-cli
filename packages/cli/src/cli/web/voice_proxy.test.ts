@@ -7,7 +7,7 @@ import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
-import { registerVoiceProxy, voiceClientConfig } from './voice_proxy.js';
+import { registerVoiceProxy, voiceClientConfig, fetchVoiceCatalog } from './voice_proxy.js';
 import { saveConfig } from '../../store/json.js';
 
 let server: ReturnType<typeof serve>;
@@ -16,6 +16,9 @@ let baseUrl: string;
 // A stand-in for the user's speech provider. Records what it was sent.
 let upstream: ReturnType<typeof serve>;
 let upstreamUrl: string;
+let catalogUrl: string;
+let plainUrl: string;
+let brokenUrl: string;
 let lastRequest: { path: string; auth: string | null; model: string | null; body: any } | null = null;
 let upstreamStatus = 200;
 let upstreamBody: string | Uint8Array = JSON.stringify({ text: 'ciao mondo' });
@@ -43,8 +46,37 @@ before(async () => {
     };
     return c.body(upstreamBody as any, upstreamStatus as any, { 'content-type': upstreamType });
   });
+  // Three /v1/models shapes: Speaches (task + per-model voices), a plain
+  // OpenAI-compatible endpoint (neither), and a failing one.
+  up.get('/catalog/models', (c) =>
+    c.json({
+      data: [
+        {
+          id: 'speaches-ai/Kokoro-82M-v1.0-ONNX',
+          task: 'text-to-speech',
+          voices: [
+            { id: 'af_heart', language: 'en-us', gender: 'female' },
+            { id: 'if_sara', language: 'it', gender: 'female' },
+          ],
+        },
+        {
+          id: 'speaches-ai/piper-it_IT-paola-medium',
+          task: 'text-to-speech',
+          voices: [{ id: 'paola', language: 'it' }],
+        },
+        { id: 'Systran/faster-whisper-small', task: 'automatic-speech-recognition' },
+      ],
+    }),
+  );
+  up.get('/plain/models', (c) => c.json({ data: [{ id: 'whisper-1' }, { id: 'tts-1' }] }));
+  up.get('/broken/models', (c) => c.text('teapot', 418));
+
   upstream = serve({ fetch: up.fetch, port: 0 });
-  upstreamUrl = `http://127.0.0.1:${(upstream.address() as any).port}/v1`;
+  const base = `http://127.0.0.1:${(upstream.address() as any).port}`;
+  upstreamUrl = `${base}/v1`;
+  catalogUrl = `${base}/catalog`;
+  plainUrl = `${base}/plain`;
+  brokenUrl = `${base}/broken`;
 
   const app = new Hono();
   registerVoiceProxy(app);
@@ -199,4 +231,32 @@ test('voiceClientConfig redacts the key and reports capability', () => {
     voice: { enabled: true, endpoint: '', sttModel: 'whisper' },
   });
   assert.equal(noEndpoint?.configured, false);
+});
+
+// --- Catalogue discovery, so the settings form can offer real choices. ---
+
+test('fetchVoiceCatalog splits by task and scopes voices to their model', async () => {
+  const catalog = await fetchVoiceCatalog(catalogUrl);
+  assert.deepEqual(catalog.stt, ['Systran/faster-whisper-small']);
+  assert.equal(catalog.tts.length, 2);
+
+  const kokoro = catalog.tts.find((m) => m.id.includes('Kokoro'));
+  assert.equal(kokoro?.voices.length, 2);
+  assert.deepEqual(kokoro?.voices[0], { id: 'af_heart', language: 'en-us', gender: 'female' });
+
+  // Per-model voices are correctly scoped here, unlike the global
+  // /v1/audio/voices catalogue which ignores its model_id parameter.
+  const piper = catalog.tts.find((m) => m.id.includes('piper'));
+  assert.deepEqual(piper?.voices, [{ id: 'paola', language: 'it' }]);
+});
+
+test('fetchVoiceCatalog degrades when the endpoint reports no task metadata', async () => {
+  const catalog = await fetchVoiceCatalog(plainUrl);
+  // A plain OpenAI-compatible /v1/models: every id offered for both, no voices.
+  assert.deepEqual(catalog.stt, ['whisper-1', 'tts-1']);
+  assert.deepEqual(catalog.tts, [{ id: 'whisper-1', voices: [] }, { id: 'tts-1', voices: [] }]);
+});
+
+test('fetchVoiceCatalog surfaces upstream failures', async () => {
+  await assert.rejects(() => fetchVoiceCatalog(brokenUrl), /418/);
 });

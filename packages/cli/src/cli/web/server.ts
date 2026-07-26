@@ -52,7 +52,7 @@ import type { ConfirmDecision, HostToView, ViewToHost } from 'webview-ui/bridge'
 import { startBackgroundScheduler, loadTaskRuns } from './scheduler.js';
 import { fsRouter } from './fs.js';
 import { activationStatus, resolvePlanningEnabled } from './scheduler/task_roles.js';
-import { registerVoiceProxy, voiceClientConfig } from './voice_proxy.js';
+import { registerVoiceProxy, voiceClientConfig, fetchVoiceCatalog } from './voice_proxy.js';
 
 
 // Resolve Webview static files path.
@@ -1113,6 +1113,14 @@ export async function startServer(port: number, host: string): Promise<void> {
                 type: 'modelsFetched',
                 result: { ok: false, error: String(err) },
               });
+            }
+            return;
+          case 'fetchVoiceModels':
+            try {
+              const catalog = await fetchVoiceCatalog(msg.endpoint, msg.apiKey ?? null);
+              post({ type: 'voiceModelsFetched', result: { ok: true, catalog } });
+            } catch (err) {
+              post({ type: 'voiceModelsFetched', result: { ok: false, error: String(err) } });
             }
             return;
           case 'getTaskRuns':
