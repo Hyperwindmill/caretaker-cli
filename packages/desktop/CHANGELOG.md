@@ -1,5 +1,51 @@
 # caretaker-desktop
 
+## 0.15.0
+
+### Minor Changes
+
+- 147bb16: Voice mode: let caretaker manage the local Speaches container
+
+  An empty Settings → Voice tab offers **Use local defaults**, prefilling the form
+  with the canonical local setup (Speaches on port 8969, whisper-small, Kokoro) for
+  the user to review and save — including changing the port in the endpoint if 8969
+  is taken on their machine.
+
+  Settings → Voice grows a **Local backend** block that detects, starts and stops the
+  Docker container behind your speech endpoint, so voice works on a machine with
+  Docker without touching a terminal. Start pulls the image (about 2 GB the first
+  time, with progress), launches the container, waits for it to answer, and installs
+  the transcription and synthesis models you configured — Speaches does not fetch
+  models on demand, so skipping that would leave the backend healthy and 404-ing on
+  the first request. Stop stops the container and nothing else: the model cache is a
+  named volume that survives, so the next start is quick.
+
+  The endpoint you configure is the source of truth and the container is bound to
+  match it — caretaker parses the port out of `voice.endpoint`, never rewrites it and
+  never probes for a free one. So the block appears only for a loopback endpoint, and
+  a busy port surfaces Docker's own error rather than being silently worked around.
+  The three Docker failure modes are reported apart, because the fixes differ: not
+  installed, daemon not running, and your user not being in the `docker` group.
+
+  New optional `voice.autoStartBackend` starts the container when the web server
+  boots (off by default, and available in the Electron desktop app too, since it
+  forks that server). It is fire-and-forget and never fatal — the server comes up
+  whether or not the backend does.
+
+- da1ad0a: Add voice mode (dictation and hands-free conversation) using OpenAI-compatible speech services.
+  The Voice settings tab can read the endpoint's installed models to turn the model and voice
+  fields into pick-lists, including each synthesis model's own voices labelled by language, and a
+  speaking-rate multiplier for voices that read too slowly.
+  `docker-compose.voice.yml` starts a local Speaches backend so nothing leaves your machine.
+
+### Patch Changes
+
+- Updated dependencies [147bb16]
+- Updated dependencies [da1ad0a]
+- Updated dependencies [ce0fa39]
+  - @hyperwindmill/caretaker-cli@0.15.0
+  - webview-ui@0.15.0
+
 ## 0.14.2
 
 ### Patch Changes
