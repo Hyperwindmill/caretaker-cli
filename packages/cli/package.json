@@ -107,7 +107,6 @@
     "fast-glob": "^3.3.3",
     "hono": "^4.12.25",
     "ink": "^7.0.2",
-    "ink-big-text": "^2.0.0",
     "ink-select-input": "^6.2.0",
     "ink-text-input": "^6.0.0",
     "isomorphic-git": "^1.37.6",
