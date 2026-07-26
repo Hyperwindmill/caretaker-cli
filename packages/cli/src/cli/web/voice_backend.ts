@@ -11,7 +11,7 @@ import { promisify } from 'node:util';
 import type { Hono } from 'hono';
 import { stream } from 'hono/streaming';
 import type { VoiceConfig } from 'caretaker-types';
-import { commandEnv } from '../../harness/tools/builtin/shell-env.js';
+import { commandEnv, probeShellEnv } from '../../harness/tools/builtin/shell-env.js';
 import { containerState } from '../../lib/docker.js';
 import { loadConfig } from '../../store/json.js';
 import { resolveVoice, voiceAuthHeaders } from './voice_proxy.js';
@@ -431,6 +431,12 @@ export function maybeAutoStartBackend(): void {
 async function runAutoStart(): Promise<void> {
   let voice: VoiceConfig | undefined;
   try {
+    // Boot races the interactive-shell probe that `commandEnv()` reads, and
+    // losing that race would spawn docker with an unprobed PATH — an ENOENT
+    // there is classified as `docker: 'absent'`, telling the user Docker is
+    // not installed when it is merely not on this process's PATH. Awaiting is
+    // free: the probe is cached and shared, and we are already off the boot path.
+    await probeShellEnv();
     voice = (await loadConfig()).voice;
   } catch (err) {
     console.error(`[voice] auto-start: could not load config: ${errMsg(err)}`);
@@ -440,13 +446,15 @@ async function runAutoStart(): Promise<void> {
   if (loopbackPort(voice.endpoint) == null) return;
 
   console.log('[voice] auto-starting the managed local speech backend…');
-  // Collapse per-line docker-pull noise: log once per step transition, not
-  // once per progress event (a 2 GB pull emits one line per layer).
-  let lastStep: StartProgress['step'] | null = null;
+  // A 2 GB pull emits one line per layer, all under step 'image': log the first
+  // and drop the rest. Every other step emits a handful of distinct messages
+  // that each say something a server log wants — which model was installed,
+  // whether the readiness wait ever ended — so those are not collapsed.
+  let loggedImageLine = false;
   try {
     for await (const progress of startBackendGuarded(voice)) {
-      if (progress.step === lastStep) continue;
-      lastStep = progress.step;
+      if (progress.step === 'image' && loggedImageLine) continue;
+      loggedImageLine = progress.step === 'image';
       const log = progress.step === 'error' ? console.error : console.log;
       log(`[voice] ${progress.message}`);
     }
