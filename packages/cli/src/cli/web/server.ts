@@ -235,6 +235,23 @@ export async function startServer(port: number, host: string): Promise<void> {
     return c.body(file);
   });
 
+  app.get('/vad/:file', (c) => {
+    const name = c.req.param('file');
+    // Serve only from the flat vad directory; reject any traversal attempt.
+    if (!/^[A-Za-z0-9._-]+$/.test(name)) return c.text('Not found', 404);
+    const full = path.join(webviewDistPath, 'vad', name);
+    if (!fs.existsSync(full)) return c.text('Not found', 404);
+    const type = name.endsWith('.wasm')
+      ? 'application/wasm'
+      : name.endsWith('.onnx')
+        ? 'application/octet-stream'
+        : name.endsWith('.mjs') || name.endsWith('.js')
+          ? 'text/javascript'
+          : 'application/octet-stream';
+    return c.body(fs.readFileSync(full), 200, { 'content-type': type });
+  });
+
+
   // Attachments REST endpoint
   app.get('/api/attachments/:sessionId/:id', async (c) => {
     const sessionId = c.req.param('sessionId');

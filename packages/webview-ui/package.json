@@ -22,6 +22,7 @@
     "test": "tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
+    "@ricky0123/vad-web": "^0.0.30",
     "lucide-react": "^0.545.0",
     "marked": "^15.0.12",
     "react": "^19.2.6",
