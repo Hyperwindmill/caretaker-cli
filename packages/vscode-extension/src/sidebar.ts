@@ -194,6 +194,8 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
         provider: a.provider,
       }));
       this.post(webview, { type: 'agentsLoaded', agents: agentSummaries });
+      this.post(webview, { type: 'voiceConfig', voice: null });
+
 
       // Select default agent if none is active
       if (!this.currentAgent && this.agents.length > 0) {

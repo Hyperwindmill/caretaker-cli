@@ -693,6 +693,8 @@ export async function startServer(port: number, host: string): Promise<void> {
           provider: a.provider,
         }));
         post({ type: 'agentsLoaded', agents: agentSummaries });
+        post({ type: 'voiceConfig', voice: voiceClientConfig(await loadConfig()) });
+
 
         // Select the first agent as default if none is active
         if (!currentAgent && agents.length > 0) {
@@ -960,9 +962,11 @@ export async function startServer(port: number, host: string): Promise<void> {
           case 'saveConfig':
             try {
               await saveConfig(msg.config);
+              post({ type: 'voiceConfig', voice: voiceClientConfig(msg.config) });
               void loadAgentsAndSend();
               void sendSettingsData();
             } catch (err) {
+
               post({ type: 'error', message: `Failed to save config: ${err}` });
             }
             return;
