@@ -3233,6 +3233,14 @@ body.vscode-light .composer__attachment {
   border-radius: 4px;
 }
 
+/* The open dropdown panel takes its colors from the options, not from the
+ * (transparent) select above: without these, Chromium paints the list white
+ * while the text inherits the composer's light color — white on white. */
+.composer__voice-mode option {
+  background: var(--vscode-dropdown-background, #252526);
+  color: var(--vscode-dropdown-foreground, #cccccc);
+}
+
 .composer__voice-status {
   font-size: 11px;
   opacity: 0.7;
