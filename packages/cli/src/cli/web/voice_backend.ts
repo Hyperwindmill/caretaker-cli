@@ -8,9 +8,12 @@
 // `sleep infinity` keep-alive).
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
+import type { Hono } from 'hono';
+import { stream } from 'hono/streaming';
 import type { VoiceConfig } from 'caretaker-types';
 import { commandEnv } from '../../harness/tools/builtin/shell-env.js';
 import { containerState } from '../../lib/docker.js';
+import { loadConfig } from '../../store/json.js';
 import { voiceAuthHeaders } from './voice_proxy.js';
 
 const exec = promisify(execFile);
@@ -346,4 +349,123 @@ export async function* startBackend(voice: VoiceConfig): AsyncGenerator<StartPro
  *  is not offered, `docker` in a terminal remains the way to do that. */
 export async function stopBackend(): Promise<void> {
   await deps.stopContainer(CONTAINER_NAME);
+}
+
+// --- HTTP surface + auto-start -------------------------------------------
+// The realistic collision here is auto-start-at-boot racing the user
+// pressing Start; there is never more than one caretaker web-server process
+// per CARETAKER_HOME in the ordinary case, so a plain module-level boolean
+// is enough — no job queue, no lock file. The check and the set below are
+// both synchronous (no `await` between them), so two overlapping calls in
+// the same process can never both pass the check: Node runs one at a time,
+// and nothing yields control between the read and the write.
+let backendStarting = false;
+
+/** @internal Test-only seam: observe the in-flight guard without inferring it
+ *  from side effects (call counts, timing) — deterministic instead of racy. */
+export function isBackendStartInFlightForTest(): boolean {
+  return backendStarting;
+}
+
+/** Same generator contract as `startBackend`, plus the one-at-a-time rule.
+ *  A caller that loses the race gets a single terminal line carrying the
+ *  current status rather than a second concurrent `docker pull`. */
+async function* startBackendGuarded(voice: VoiceConfig): AsyncGenerator<StartProgress> {
+  if (backendStarting) {
+    yield {
+      step: 'done',
+      message: 'A start is already in progress; showing the current status.',
+      status: await probeBackend(voice.endpoint),
+    };
+    return;
+  }
+  backendStarting = true;
+  try {
+    yield* startBackend(voice);
+  } finally {
+    backendStarting = false;
+  }
+}
+
+/** Mirrors `resolveVoice` in voice_proxy.ts (not exported from there, so the
+ *  two error messages are kept in sync by hand — same wording, same reasons). */
+function resolveVoiceForBackend(voice: VoiceConfig | undefined): { error: string } | { voice: VoiceConfig } {
+  if (!voice || voice.enabled !== true) {
+    return { error: 'Voice mode is disabled. Enable it in Settings → Voice.' };
+  }
+  if (!voice.endpoint || voice.endpoint.trim().length === 0) {
+    return { error: 'No voice endpoint configured. Set one in Settings → Voice.' };
+  }
+  return { voice };
+}
+
+export function registerVoiceBackend(app: Hono): void {
+  app.get('/api/voice/backend', async (c) => {
+    const config = await loadConfig();
+    const status = await probeBackend(config.voice?.endpoint ?? '');
+    return c.json(status);
+  });
+
+  app.post('/api/voice/backend/start', async (c) => {
+    const config = await loadConfig();
+    const resolved = resolveVoiceForBackend(config.voice);
+    if ('error' in resolved) return c.text(resolved.error, 400);
+    const { voice } = resolved;
+
+    c.header('Content-Type', 'application/x-ndjson');
+    return stream(c, async (s) => {
+      for await (const progress of startBackendGuarded(voice)) {
+        await s.writeln(JSON.stringify(progress));
+      }
+    });
+  });
+
+  app.post('/api/voice/backend/stop', async (c) => {
+    const config = await loadConfig();
+    try {
+      await stopBackend();
+    } catch {
+      // No such container, daemon unreachable, etc. — the truth is in the
+      // re-probe below, not in a 500 for an action that is already done.
+    }
+    const status = await probeBackend(config.voice?.endpoint ?? '');
+    return c.json(status);
+  });
+}
+
+/** Fire-and-forget: called once right after `serve()` in server.ts. Must
+ *  never block server boot (a first run pulls 2.08 GB) and must never throw
+ *  out of the caller — every failure is logged and otherwise swallowed, and
+ *  the UI learns the outcome by polling GET /api/voice/backend. */
+export function maybeAutoStartBackend(): void {
+  void runAutoStart();
+}
+
+async function runAutoStart(): Promise<void> {
+  let voice: VoiceConfig | undefined;
+  try {
+    voice = (await loadConfig()).voice;
+  } catch (err) {
+    console.error(`[voice] auto-start: could not load config: ${errMsg(err)}`);
+    return;
+  }
+  if (!voice || voice.enabled !== true || voice.autoStartBackend !== true) return;
+  if (loopbackPort(voice.endpoint) == null) return;
+
+  console.log('[voice] auto-starting the managed local speech backend…');
+  // Collapse per-line docker-pull noise: log once per step transition, not
+  // once per progress event (a 2 GB pull emits one line per layer).
+  let lastStep: StartProgress['step'] | null = null;
+  try {
+    for await (const progress of startBackendGuarded(voice)) {
+      if (progress.step === lastStep) continue;
+      lastStep = progress.step;
+      const log = progress.step === 'error' ? console.error : console.log;
+      log(`[voice] ${progress.message}`);
+    }
+  } catch (err) {
+    // startBackend/startBackendGuarded report failures as an 'error' progress
+    // line rather than throwing; this only guards a genuinely unexpected throw.
+    console.error(`[voice] auto-start failed: ${errMsg(err)}`);
+  }
 }
