@@ -33,6 +33,9 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
   const [sttModel, setSttModel] = useState(current.sttModel);
   const [ttsModel, setTtsModel] = useState(current.ttsModel ?? '');
   const [ttsVoice, setTtsVoice] = useState(current.ttsVoice ?? '');
+  const [ttsSpeed, setTtsSpeed] = useState(
+    current.ttsSpeed === undefined ? '' : String(current.ttsSpeed),
+  );
   const [lang, setLang] = useState(current.lang ?? '');
   const [fetching, setFetching] = useState(false);
 
@@ -62,6 +65,12 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
     if (apiKey.trim()) voice.apiKey = apiKey.trim();
     if (ttsModel.trim()) voice.ttsModel = ttsModel.trim();
     if (ttsVoice.trim()) voice.ttsVoice = ttsVoice.trim();
+    const speed = Number.parseFloat(ttsSpeed);
+    // Clamp rather than trust the field: 0 or a negative would make the upstream
+    // fail with something unhelpful.
+    if (Number.isFinite(speed) && speed > 0) {
+      voice.ttsSpeed = Math.min(Math.max(speed, 0.5), 2);
+    }
     if (lang.trim()) voice.lang = lang.trim();
     onSave({ ...config, voice });
   };
@@ -213,6 +222,25 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
           <small>
             Pick one whose language matches yours. A model trained mostly on English
             keeps an English inflection even on its other-language voices.
+          </small>
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="voice-speed">Speaking Rate (optional)</label>
+          <input
+            id="voice-speed"
+            type="number"
+            min="0.5"
+            max="2"
+            step="0.05"
+            placeholder="1 — the model's natural pace"
+            value={ttsSpeed}
+            onChange={(e) => setTtsSpeed(e.target.value)}
+          />
+          <small>
+            Multiplier, clamped to 0.5–2. Useful because some voices are just slow:
+            raise it if the reply drags. Piper responds less to this than Kokoro,
+            since for Piper it stretches phoneme durations.
           </small>
         </div>
 

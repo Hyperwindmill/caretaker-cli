@@ -98,6 +98,9 @@ export function registerVoiceProxy(app: Hono): void {
 
     const payload: Record<string, unknown> = { model: voice.ttsModel, input: text };
     if (voice.ttsVoice) payload.voice = voice.ttsVoice;
+    if (Number.isFinite(voice.ttsSpeed) && (voice.ttsSpeed as number) > 0) {
+      payload.speed = voice.ttsSpeed;
+    }
 
     let upstream: Response;
     try {

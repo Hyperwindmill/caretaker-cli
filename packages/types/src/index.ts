@@ -76,6 +76,10 @@ export type VoiceConfig = {
   ttsModel?: string;
   /** Voice id for the synthesis model, e.g. af_heart */
   ttsVoice?: string;
+  /** Playback rate multiplier for synthesis. 1 = the model's natural pace.
+   *  Some voices are simply slow: for one sentence, Kokoro's im_nicola produced
+   *  43% more audio than Piper's paola. */
+  ttsSpeed?: number;
   /** BCP-47 language tag. Unset ⇒ the renderer's navigator.language. */
   lang?: string;
 };
