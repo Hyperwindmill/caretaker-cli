@@ -1,5 +1,5 @@
 // Pure helpers for the managed-backend block in the Voice tab (see
-// docs/superpowers/specs/2026-07-26-voice-managed-backend-design.md, "UI"
+// docs/superpowers/specs/2026-07-27-voice-edge-tts-backend-design.md, "UI"
 // section). webview-ui has no dependency on the cli package (only on
 // caretaker-types), so these two types mirror the contract exported by
 // packages/cli/src/cli/web/voice_backend.ts by hand — same shape, same
@@ -11,8 +11,15 @@ export type BackendStatus = {
   imagePresent: boolean;
   /** Port parsed out of the endpoint, or null when it is not loopback. */
   port: number | null;
-  /** True when /v1/models answers — running is not the same as ready. */
+  /** True when the readiness path answers — running is not the same as ready. */
   responding: boolean;
+};
+
+/** The envelope returned by `GET /api/voice/backend`. `tts` is null when no
+ *  separate `ttsEndpoint` is configured (the single-endpoint Speaches case). */
+export type BackendStatuses = {
+  stt: BackendStatus;
+  tts: BackendStatus | null;
 };
 
 export type StartProgress = {
