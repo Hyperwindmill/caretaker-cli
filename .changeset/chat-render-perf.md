@@ -11,3 +11,4 @@ desktop app and the VSCode sidebar. Markdown is now parsed once per message and 
 the message list and its items are memoized so typing in the composer no longer re-renders
 the whole thread, and collapsed tool blocks no longer mount their (often very large)
 results until expanded.
+
