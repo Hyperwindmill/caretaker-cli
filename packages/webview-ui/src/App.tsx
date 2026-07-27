@@ -322,7 +322,11 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
   const [mcpAuthOutcome, setMcpAuthOutcome] = useState<{ serverId: string; ok: boolean; error?: string } | null>(null);
   const [taskRuns, setTaskRuns] = useState<Record<string, any[]>>({});
   const [voiceConfig, setVoiceConfig] = useState<VoiceClientConfig | null>(null);
-  const [voiceCatalogResult, setVoiceCatalogResult] = useState<VoiceCatalogResult | null>(null);
+  // Two catalogue slots keyed by target so a TTS fetch (edge-tts) does not
+  // overwrite the STT fetch (Speaches) and vice versa — the bridge echoes
+  // `target` back on `voiceModelsFetched` for exactly this.
+  const [sttCatalogResult, setSttCatalogResult] = useState<VoiceCatalogResult | null>(null);
+  const [ttsCatalogResult, setTtsCatalogResult] = useState<VoiceCatalogResult | null>(null);
   const [composerDraft, setComposerDraft] = useState('');
 
 
@@ -390,7 +394,8 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
           setModelsResult(msg.result);
           return;
         case 'voiceModelsFetched':
-          setVoiceCatalogResult(msg.result);
+          if (msg.target === 'tts') setTtsCatalogResult(msg.result);
+          else setSttCatalogResult(msg.result);
           return;
         case 'refreshingPlugin':
           setRefreshingSourceId(msg.sourceId);

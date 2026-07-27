@@ -229,6 +229,39 @@ test('startBackend: polls readiness before installing models, using the configur
   assert.equal(finalStatus?.responding, true);
 });
 
+test('startBackend (stt): skips ttsModel install when a separate ttsEndpoint is configured', async () => {
+  // The feature's happy path: Speaches for STT, edge-tts for TTS. The ttsModel
+  // ('tts-1') belongs to edge-tts, not Speaches — installing it on Speaches
+  // would 404 and report a hard failure. Only sttModel should be POSTed.
+  requestLog = [];
+  modelsCallCount = 0;
+  setVoiceBackendDepsForTest({
+    dockerInfo: async () => ({ ok: true }),
+    imagePresent: async () => true,
+    containerState: async () => 'running',
+  });
+
+  const voice: VoiceConfig = {
+    enabled: true,
+    endpoint: `${baseUrl}/v1`,
+    sttModel: 'Systran/faster-whisper-small',
+    ttsModel: 'tts-1',
+    ttsEndpoint: 'http://127.0.0.1:5050/v1',
+  };
+
+  const progress: StartProgress[] = [];
+  for await (const p of startBackend(voice)) progress.push(p);
+
+  assert.equal(progress.at(-1)?.step, 'done');
+  const modelMessages = progress.filter((p) => p.step === 'models').map((p) => p.message);
+  assert.deepEqual(modelMessages, ['Model Systran/faster-whisper-small ready.']);
+
+  const postPaths = requestLog.filter((r) => r.startsWith('POST'));
+  assert.deepEqual(postPaths, ['POST /v1/models/Systran/faster-whisper-small']);
+  // tts-1 must NOT have been POSTed to Speaches.
+  assert.ok(!postPaths.some((p) => p.includes('tts-1')));
+});
+
 test('startBackend: a non-loopback endpoint errors immediately, no docker call attempted', async () => {
   let dockerInfoCalled = false;
   setVoiceBackendDepsForTest({

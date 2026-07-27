@@ -435,14 +435,17 @@ export async function* startBackend(
   yield { step: 'ready', message: 'Backend is responding.' };
 
   // 4. Models — required for Speaches, skipped for edge-tts (ships its voices).
+  // Only Speaches (the STT target) reaches here because `installsModels` is
+  // false for edge-tts. When a separate `ttsEndpoint` is configured, the
+  // `ttsModel` belongs to the other host — installing it on Speaches would 404
+  // and report a hard failure on the feature's own happy path, so it is
+  // excluded. Without a separate endpoint, synthesis also uses this server, so
+  // the TTS model is installed alongside the STT one.
   if (spec.installsModels) {
-    const modelIds = target === 'stt'
-      ? [voice.sttModel, voice.ttsModel].filter(
-          (id): id is string => typeof id === 'string' && id.trim().length > 0,
-        )
-      : [voice.ttsModel].filter(
-          (id): id is string => typeof id === 'string' && id.trim().length > 0,
-        );
+    const hasSeparateTts = !!voice.ttsEndpoint?.trim();
+    const modelIds = [voice.sttModel, ...(hasSeparateTts ? [] : [voice.ttsModel])].filter(
+      (id): id is string => typeof id === 'string' && id.trim().length > 0,
+    );
     for (const id of modelIds) {
       try {
         await installModel(voice, target, id);
