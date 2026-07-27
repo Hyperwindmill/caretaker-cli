@@ -14,8 +14,10 @@ export interface VoiceTabProps {
   config: CaretakerConfig;
   onSave: (config: CaretakerConfig) => void;
   postMessage: (msg: ViewToHost) => void;
-  /** Result of the last catalogue fetch, or null if none has been requested. */
-  catalogResult: VoiceCatalogResult | null;
+  /** Result of the last STT (Speaches) catalogue fetch. */
+  sttCatalogResult: VoiceCatalogResult | null;
+  /** Result of the last TTS (edge-tts) catalogue fetch. */
+  ttsCatalogResult: VoiceCatalogResult | null;
 }
 
 const EMPTY: VoiceConfig = { enabled: false, endpoint: '', sttModel: '' };
@@ -54,7 +56,7 @@ function voiceLabel(v: { id: string; language?: string; gender?: string }): stri
   return meta ? `${v.id} — ${meta}` : v.id;
 }
 
-export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTabProps) {
+export function VoiceTab({ config, onSave, postMessage, sttCatalogResult, ttsCatalogResult }: VoiceTabProps) {
   const current = config.voice ?? EMPTY;
   const [enabled, setEnabled] = useState(current.enabled);
   const [endpoint, setEndpoint] = useState(current.endpoint);
@@ -109,11 +111,12 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
   };
 
   useEffect(() => {
-    if (catalogResult) {
-      setFetching(false);
-      setFetchingTts(false);
-    }
-  }, [catalogResult]);
+    if (sttCatalogResult) setFetching(false);
+  }, [sttCatalogResult]);
+
+  useEffect(() => {
+    if (ttsCatalogResult) setFetchingTts(false);
+  }, [ttsCatalogResult]);
 
   useEffect(() => {
     if (saveState !== 'saving' || pendingSave.current === null) return;
@@ -139,21 +142,14 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
     return () => clearTimeout(giveUp);
   }, [saveState]);
 
-  const catalog: VoiceCatalog | null = catalogResult?.ok ? catalogResult.catalog : null;
-  const fetchError = catalogResult && !catalogResult.ok ? catalogResult.error : null;
-
-  // Per-endpoint catalogue state: the STT endpoint's catalogue populates the
-  // transcription model field, the TTS endpoint's populates the synthesis model
-  // and voice fields. The bridge echoes `target` back on `voiceModelsFetched`
-  // so we can keep them apart — but the current App.tsx has a single
-  // `voiceCatalogResult` slot, so we store the last result here and rely on
-  // the caller to send the right endpoint. The `target` field on the bridge
-  // message is plumbed but not yet wired to separate App-level state slots;
-  // this is the same incremental approach the plan describes — the view sends
-  // the right endpoint for each fetch, and the result fills whichever fields
-  // match the fetched ids.
-  const sttCatalog = catalog;
-  const ttsCatalog = catalog;
+  // Two catalogue slots keyed by target, so a TTS fetch (edge-tts) does not
+  // overwrite the STT fetch (Speaches) and vice versa. Each slot also carries
+  // its own error, so a failed TTS fetch shows its error in the synthesis
+  // section without being cleared by a successful STT fetch (and the reverse).
+  const sttCatalog: VoiceCatalog | null = sttCatalogResult?.ok ? sttCatalogResult.catalog : null;
+  const sttFetchError = sttCatalogResult && !sttCatalogResult.ok ? sttCatalogResult.error : null;
+  const ttsCatalog: VoiceCatalog | null = ttsCatalogResult?.ok ? ttsCatalogResult.catalog : null;
+  const ttsFetchError = ttsCatalogResult && !ttsCatalogResult.ok ? ttsCatalogResult.error : null;
 
   const fetchSttCatalog = () => {
     if (!endpoint.trim()) return;
@@ -330,7 +326,7 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
             becomes a list. Endpoints that do not report a task per model still work —
             the field stays free text.
           </small>
-          {fetchError && fetching && <small className="form-error">Fetch failed: {fetchError}</small>}
+          {sttFetchError && <small className="form-error">Fetch failed: {sttFetchError}</small>}
         </div>
 
         <div className="form-group">
@@ -420,8 +416,8 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
               Reads the synthesis endpoint's models and voices. For edge-tts, the
               voice list comes from <code>/voices/all</code>.
             </small>
-            {fetchError && fetchingTts && (
-              <small className="form-error">Fetch failed: {fetchError}</small>
+            {ttsFetchError && (
+              <small className="form-error">Fetch failed: {ttsFetchError}</small>
             )}
           </div>
         )}
