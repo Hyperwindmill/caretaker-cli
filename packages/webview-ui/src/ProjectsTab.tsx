@@ -581,6 +581,27 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
     }
   };
 
+  // Rewrite a task's title/objective from the edit view.
+  const handleSaveTaskDetails = async (task: Task, title: string, objective: string) => {
+    setTaskError(null);
+    try {
+      const res = await fetch(`/api/tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, objective }),
+      });
+      if (res.ok) {
+        if (selectedProjectId !== null) fetchTasks(selectedProjectId);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setTaskError(data.error || 'Failed to save task details');
+      }
+    } catch (err) {
+      console.error('Failed to save task details:', err);
+      setTaskError('Failed to save task details');
+    }
+  };
+
   // Back to the list view (keeps selected project).
   const backToList = () => {
     setView('list');
@@ -701,6 +722,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
               onSetAgent={handleSetTaskAgent}
               onSetFlag={handleSetTaskFlag}
               onSetMaxRun={handleSetTaskMaxRun}
+              onSaveDetails={handleSaveTaskDetails}
               onOpenLog={() => setView('log')}
               statusColor={statusColor}
             />
@@ -1386,6 +1408,7 @@ interface TaskEditViewProps {
   onSetAgent: (t: Task, role: 'developer' | 'planner' | 'reviewer', agentId: string) => void;
   onSetFlag: (t: Task, flag: 'planningEnabled' | 'reviewEnabled' | 'sddEnabled', value: boolean | null) => void;
   onSetMaxRun: (t: Task, value: number | null) => void;
+  onSaveDetails: (t: Task, title: string, objective: string) => Promise<void>;
   onOpenLog: () => void;
   statusColor: (s: Task['status']) => string;
 }
@@ -1402,10 +1425,42 @@ function TaskEditView({
   onSetAgent,
   onSetFlag,
   onSetMaxRun,
+  onSaveDetails,
   onOpenLog,
   statusColor,
 }: TaskEditViewProps) {
   const isRunning = task.status === 'active' || task.status === 'reviewing' || task.status === 'planning';
+  // Local draft, not save-on-blur: this view re-renders from a 3 s task poll,
+  // so an uncontrolled input keyed on remote state would eat in-flight typing.
+  const [draftTitle, setDraftTitle] = useState(task.title);
+  const [draftObjective, setDraftObjective] = useState(task.objective);
+  const [lastTaskId, setLastTaskId] = useState(task.id);
+  const trimmedTitle = draftTitle.trim();
+  const isDirty = trimmedTitle !== task.title.trim() || draftObjective.trim() !== task.objective.trim();
+  // Re-seed the draft when switching tasks (task.id changes), or when the
+  // stored values change from elsewhere (an agent rewrote them via the 3 s
+  // poll) AND the user has no uncommitted local edits to lose. When the user
+  // is actively editing (isDirty), we keep their draft so their typing isn't
+  // wiped by a remote update landing mid-edit.
+  useEffect(() => {
+    if (task.id !== lastTaskId) {
+      // Task switch: always re-seed, regardless of dirty state — the draft
+      // belongs to the previous task, not this one.
+      setDraftTitle(task.title);
+      setDraftObjective(task.objective);
+      setLastTaskId(task.id);
+    } else if (!isDirty) {
+      // Same task, values changed remotely, user isn't editing: adopt them.
+      setDraftTitle(task.title);
+      setDraftObjective(task.objective);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task.id, task.title, task.objective]);
+  const canSave = isDirty && trimmedTitle.length > 0;
+  const resetDraft = () => {
+    setDraftTitle(task.title);
+    setDraftObjective(task.objective);
+  };
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'auto' }}>
       {/* Header with back button + title + status actions */}
@@ -1414,7 +1469,26 @@ function TaskEditView({
           <button className="settings-panel__back-btn" onClick={onBack} title="Back to task list">
             <BackIcon size={13} />
           </button>
-          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>Task #{task.id}: {task.title}</h3>
+          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ opacity: 0.6 }}>Task #{task.id}</span>
+            <input
+              value={draftTitle}
+              onChange={(e) => setDraftTitle(e.target.value)}
+              aria-label="Task title"
+              title="Task title"
+              style={{
+                background: 'var(--vscode-input-background, #252526)',
+                color: 'var(--vscode-input-foreground)',
+                border: '1px solid var(--vscode-input-border, #3c3c3c)',
+                borderRadius: '4px',
+                padding: '3px 6px',
+                fontSize: '14px',
+                fontWeight: 700,
+                outline: 'none',
+                minWidth: '240px',
+              }}
+            />
+          </h3>
           <span
             className="task-table__badge"
             style={{ background: statusColor(task.status) }}
@@ -1488,9 +1562,46 @@ function TaskEditView({
           <h4 style={{ margin: '0 0 6px 0', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.6 }}>
             Objective
           </h4>
-          <div style={{ fontSize: '12px', background: 'rgba(255,255,255,0.02)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)', whiteSpace: 'pre-wrap' }}>
-            {task.objective}
-          </div>
+          <textarea
+            value={draftObjective}
+            onChange={(e) => setDraftObjective(e.target.value)}
+            rows={6}
+            aria-label="Task objective"
+            title="What the agent should achieve. Read at the start of every cycle, so an edit applies from the next one."
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              fontSize: '12px',
+              fontFamily: 'inherit',
+              lineHeight: 1.5,
+              background: 'var(--vscode-input-background, #252526)',
+              color: 'var(--vscode-input-foreground)',
+              border: '1px solid var(--vscode-input-border, #3c3c3c)',
+              borderRadius: '6px',
+              padding: '10px',
+              outline: 'none',
+              resize: 'vertical',
+            }}
+          />
+          {isDirty && (
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '8px' }}>
+              <button
+                className="confirm__btn confirm__btn--primary"
+                onClick={() => { void onSaveDetails(task, trimmedTitle, draftObjective.trim()); }}
+                disabled={!canSave}
+                title={canSave ? 'Save title and objective' : 'The title cannot be empty'}
+                style={{ padding: '3px 10px', fontSize: '10px' }}
+              >
+                Save
+              </button>
+              <button className="confirm__btn" onClick={resetDraft} style={{ padding: '3px 10px', fontSize: '10px' }}>
+                Cancel
+              </button>
+              {isRunning && (
+                <span style={{ fontSize: '10px', opacity: 0.6 }}>Applies from the next cycle.</span>
+              )}
+            </div>
+          )}
         </div>
 
         <div style={{ marginBottom: '16px' }}>
