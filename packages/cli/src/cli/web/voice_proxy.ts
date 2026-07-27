@@ -41,8 +41,23 @@ function plainKey(apiKey: string | undefined | null): string | null {
 }
 
 export function voiceAuthHeaders(voice: VoiceConfig): Record<string, string> {
-  const key = plainKey(voice.apiKey);
+  return authHeaders(voice.apiKey);
+}
+
+/** Build auth headers from an explicit key (which may be stored encrypted).
+ *  Used so the synthesis leg can send its own key — or none at all. */
+export function authHeaders(apiKey: string | undefined | null): Record<string, string> {
+  const key = plainKey(apiKey);
   return key ? { authorization: `Bearer ${key}` } : {};
+}
+
+/** Where synthesis goes. A configured `ttsEndpoint` takes its own key — or
+ *  none at all: the transcription key belongs to a different host and must
+ *  not leak to a third-party TTS service. */
+export function ttsTarget(voice: VoiceConfig): { endpoint: string; apiKey?: string } {
+  const tts = voice.ttsEndpoint?.trim();
+  if (!tts) return { endpoint: voice.endpoint, apiKey: voice.apiKey };
+  return { endpoint: tts, ...(voice.ttsApiKey ? { apiKey: voice.ttsApiKey } : {}) };
 }
 
 /** Join a base URL and a path without doubling or dropping the slash. */
@@ -106,9 +121,10 @@ export function registerVoiceProxy(app: Hono): void {
 
     let upstream: Response;
     try {
-      upstream = await fetch(url(voice.endpoint, '/audio/speech'), {
+      const target = ttsTarget(voice);
+      upstream = await fetch(url(target.endpoint, '/audio/speech'), {
         method: 'POST',
-        headers: { ...voiceAuthHeaders(voice), 'content-type': 'application/json' },
+        headers: { ...authHeaders(target.apiKey), 'content-type': 'application/json' },
         body: JSON.stringify(payload),
       });
     } catch (err) {
