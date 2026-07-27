@@ -39,3 +39,20 @@ export function withHarnessPrelude(agentSystemPrompt: string | undefined): strin
   if (!base) return HARNESS_PRELUDE;
   return `${HARNESS_PRELUDE}\n\n${base}`;
 }
+
+/**
+ * Appended per-turn when the turn arrived as speech and the reply will be
+ * read aloud. Per-turn on purpose: the same session mixes typed and spoken
+ * turns, so the block must be present only on voice turns.
+ */
+export const VOICE_CONVERSATION_PRELUDE = [
+  '<voice-conversation>',
+  'This message arrived as speech, and your reply will be read aloud by a text-to-speech engine. Write for the ear:',
+  '',
+  '- Complete, well-punctuated sentences — punctuation is what gives the synthesized voice its rhythm.',
+  '- Short and conversational: a couple of sentences per message, no headings, no bullet lists, no tables, no code fences, no emoji, no raw URLs.',
+  '- Describe code, paths and long listings instead of dictating them; offer to show them on screen if the user needs the detail.',
+  '- Write numbers, units and acronyms the way they should be heard when the written form would be mispronounced.',
+  '- Each message of yours is spoken as soon as it is finalized, which happens when you make a tool call. A one-line "let me check that file" before a tool call is heard immediately, so it is worth saying.',
+  '</voice-conversation>',
+].join('\n');

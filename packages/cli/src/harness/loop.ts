@@ -25,7 +25,7 @@ import {
   type ToolContext,
   toOpenAiTool,
 } from './tools/index.js';
-import { withHarnessPrelude } from './prelude.js';
+import { withHarnessPrelude, VOICE_CONVERSATION_PRELUDE } from './prelude.js';
 import { formatRuntimeInfoBlock } from './runtime_info.js';
 import { loadContextFiles, formatContextBlock, resolveFileReferences } from './context_files.js';
 
@@ -94,6 +94,9 @@ export interface RunOptions {
   claudeCode?: import('./claude_code_runner.js').ClaudeCodeRunExtras;
   /** Native-loop only: run `bash` commands inside this docker container. */
   dockerContainer?: string;
+  /** The turn came from voice conversation mode; append the spoken-reply
+   *  block to the system prompt so the agent writes speakable prose. */
+  voiceConversation?: boolean;
 }
 
 export interface RunResult {
@@ -164,6 +167,12 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
     workingDir: toolCtx.workingDir,
   });
   effectiveSystemPrompt = `${effectiveSystemPrompt}\n\n${runtimeBlock}`.trim();
+
+  // Voice-conversation block is appended last (strongest recency) and only
+  // on voice turns — the same session mixes typed and spoken turns.
+  if (opts.voiceConversation) {
+    effectiveSystemPrompt = `${effectiveSystemPrompt}\n\n${VOICE_CONVERSATION_PRELUDE}`.trim();
+  }
 
   // Plugin skills are no longer injected here. Agents with active plugins
   // get the `list_skills` / `read_skill` tools (added by resolveAgentTools
