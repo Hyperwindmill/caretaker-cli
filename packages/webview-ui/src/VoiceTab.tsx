@@ -4,13 +4,12 @@ import type { ViewToHost, VoiceCatalog, VoiceCatalogResult } from './bridge.js';
 import { voiceSignature } from './voice_utils.js';
 import {
   backendStatusText,
-  splitNdjsonLines,
   type BackendStatus,
-  type StartProgress,
+  type BackendStatuses,
 } from './voice_backend_utils.js';
+import { VoiceBackendBlock } from './VoiceBackendBlock.js';
 
 const BACKEND_POLL_MS = 10_000;
-const CONFIRM_DELETE_MS = 4000;
 
 export interface VoiceTabProps {
   config: CaretakerConfig;
@@ -33,6 +32,16 @@ const LOCAL_DEFAULTS = {
   ttsVoice: 'af_heart',
 };
 
+/** The openai-edge-tts local setup — Microsoft Neural voices (e.g.
+ *  it-IT-ElsaNeural) for synthesis while Speaches handles transcription. Only
+ *  prefills the synthesis fields; the transcription endpoint/model/voice stay
+ *  as the user already set them (or the local defaults above). */
+const EDGE_TTS_DEFAULTS = {
+  ttsEndpoint: 'http://127.0.0.1:5050/v1',
+  ttsModel: 'tts-1',
+  ttsVoice: 'it-IT-ElsaNeural',
+};
+
 /** Offer the fetched ids, but never drop a value the user already had: an endpoint
  *  that lists nothing (or lists something else) must not silently clear the form. */
 function withCurrent(ids: string[], current: string): string[] {
@@ -52,6 +61,8 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
   const [endpoint, setEndpoint] = useState(current.endpoint);
   const [apiKey, setApiKey] = useState(current.apiKey ?? '');
   const [sttModel, setSttModel] = useState(current.sttModel);
+  const [ttsEndpoint, setTtsEndpoint] = useState(current.ttsEndpoint ?? '');
+  const [ttsApiKey, setTtsApiKey] = useState(current.ttsApiKey ?? '');
   const [ttsModel, setTtsModel] = useState(current.ttsModel ?? '');
   const [ttsVoice, setTtsVoice] = useState(current.ttsVoice ?? '');
   const [ttsSpeed, setTtsSpeed] = useState(
@@ -59,71 +70,23 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
   );
   const [lang, setLang] = useState(current.lang ?? '');
   const [fetching, setFetching] = useState(false);
+  const [fetchingTts, setFetchingTts] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   /** Signature of the payload the last Save submitted, awaiting confirmation. */
   const pendingSave = useRef<string | null>(null);
 
-  // --- Managed local backend (Docker) -------------------------------------
+  // --- Managed local backends (Docker) ------------------------------------
   const [autoStartBackend, setAutoStartBackend] = useState(current.autoStartBackend ?? false);
   // null until the first fetch resolves — that is also what keeps the block
   // hidden on surfaces (VSCode) where these routes do not exist at all.
-  const [backendStatus, setBackendStatus] = useState<BackendStatus | null>(null);
-  const [backendBusy, setBackendBusy] = useState(false);
-  /** Latest streamed message while a start is running; replaces the status
-   *  line until the terminal line adopts its `status`. */
-  const [backendProgress, setBackendProgress] = useState<string | null>(null);
-  /** The verbatim failure from a start/stop attempt — surfaced separately from
-   *  the one-line status because "docker run failed: port already in use" is
-   *  exactly the case the design doc says must not be silently swallowed. */
-  const [backendError, setBackendError] = useState<string | null>(null);
-  /** Two-step confirm for Delete: first click arms, second click executes.
-   *  Auto-disarms after a few seconds so a stale "Really delete?" never
-   *  lingers. */
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const confirmDeleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const disarmDelete = () => {
-    if (confirmDeleteTimer.current) clearTimeout(confirmDeleteTimer.current);
-    confirmDeleteTimer.current = null;
-    setConfirmingDelete(false);
-  };
-  const armDelete = () => {
-    if (confirmDeleteTimer.current) clearTimeout(confirmDeleteTimer.current);
-    setConfirmingDelete(true);
-    confirmDeleteTimer.current = setTimeout(() => setConfirmingDelete(false), CONFIRM_DELETE_MS);
-  };
-  // Unmount cleanup clears only the timer — no setState on an unmounted component.
-  useEffect(
-    () => () => {
-      if (confirmDeleteTimer.current) clearTimeout(confirmDeleteTimer.current);
-    },
-    [],
-  );
+  const [backendStatuses, setBackendStatuses] = useState<BackendStatuses | null>(null);
 
-  /** Container state as of the last adopted status. A ref, not state: the 10 s
-   *  poll closes over the mount-time render, so comparing against state would
-   *  compare against `null` forever. */
-  const lastContainer = useRef<BackendStatus['container'] | null>(null);
-  const adoptBackendStatus = (status: BackendStatus) => {
-    lastContainer.current = status.container;
-    setBackendStatus(status);
-  };
-
-  const fetchBackendStatus = async () => {
+  const fetchBackendStatuses = async () => {
     try {
       const res = await fetch('/api/voice/backend');
       if (!res.ok) return;
-      const status = (await res.json()) as BackendStatus;
-      // Clear a leftover failure only when the container comes up *between*
-      // polls — fixed outside caretaker, e.g. a hand-run `docker start`. The
-      // check is a transition, not the state: a model-install failure's own
-      // terminal status already reports 'running' (failures never roll back
-      // the container), and clearing on state would wipe that message on the
-      // next poll — hiding exactly the failure the install step exists to
-      // surface.
-      if (status.container === 'running' && lastContainer.current !== 'running') {
-        setBackendError(null);
-      }
-      adoptBackendStatus(status);
+      const statuses = (await res.json()) as BackendStatuses;
+      setBackendStatuses(statuses);
     } catch {
       // Route doesn't exist on this surface (VSCode sidebar) or the request
       // failed outright — no status means the block stays hidden, which is
@@ -132,91 +95,25 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
   };
 
   useEffect(() => {
-    fetchBackendStatus();
-    const interval = setInterval(fetchBackendStatus, BACKEND_POLL_MS);
+    fetchBackendStatuses();
+    const interval = setInterval(fetchBackendStatuses, BACKEND_POLL_MS);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const startBackend = async () => {
-    setBackendBusy(true);
-    setBackendError(null);
-    setBackendProgress('Starting…');
-    try {
-      const res = await fetch('/api/voice/backend/start', { method: 'POST' });
-      if (!res.ok || !res.body) {
-        setBackendError((await res.text().catch(() => '')) || 'Start failed.');
-        return;
-      }
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const { lines, remainder } = splitNdjsonLines(
-          buffer,
-          decoder.decode(value, { stream: true }),
-        );
-        buffer = remainder;
-        for (const line of lines) {
-          let progress: StartProgress;
-          try {
-            progress = JSON.parse(line) as StartProgress;
-          } catch {
-            continue; // Malformed line — the terminal line is what matters.
-          }
-          if (progress.status) {
-            // Terminal line: adopt the fresh status and stop showing progress text.
-            adoptBackendStatus(progress.status);
-            setBackendProgress(null);
-            if (progress.step === 'error') setBackendError(progress.message);
-          } else {
-            setBackendProgress(progress.message);
-          }
-        }
-      }
-    } catch (err) {
-      setBackendError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBackendBusy(false);
-      setBackendProgress(null);
-      fetchBackendStatus();
-    }
-  };
-
-  const stopBackend = async () => {
-    setBackendBusy(true);
-    setBackendError(null);
-    try {
-      const res = await fetch('/api/voice/backend/stop', { method: 'POST' });
-      if (res.ok) adoptBackendStatus((await res.json()) as BackendStatus);
-    } catch {
-      // Best-effort — the poll below re-syncs regardless.
-    } finally {
-      setBackendBusy(false);
-      fetchBackendStatus();
-    }
-  };
-
-  const deleteBackend = async () => {
-    disarmDelete();
-    setBackendBusy(true);
-    setBackendError(null);
-    try {
-      const res = await fetch('/api/voice/backend/delete', { method: 'POST' });
-      if (res.ok) adoptBackendStatus((await res.json()) as BackendStatus);
-      else setBackendError((await res.text().catch(() => '')) || 'Delete failed.');
-    } catch {
-      // Best-effort — the poll below re-syncs regardless.
-    } finally {
-      setBackendBusy(false);
-      fetchBackendStatus();
-    }
+  // Allow each VoiceBackendBlock to adopt a fresh status from its own
+  // start/stop/delete response, merging into the parent's envelope.
+  const adoptStatus = (target: 'stt' | 'tts') => (status: BackendStatus) => {
+    setBackendStatuses((prev) =>
+      prev ? { ...prev, [target]: status } : { stt: status, tts: null },
+    );
   };
 
   useEffect(() => {
-    if (catalogResult) setFetching(false);
+    if (catalogResult) {
+      setFetching(false);
+      setFetchingTts(false);
+    }
   }, [catalogResult]);
 
   useEffect(() => {
@@ -246,7 +143,20 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
   const catalog: VoiceCatalog | null = catalogResult?.ok ? catalogResult.catalog : null;
   const fetchError = catalogResult && !catalogResult.ok ? catalogResult.error : null;
 
-  const fetchCatalog = () => {
+  // Per-endpoint catalogue state: the STT endpoint's catalogue populates the
+  // transcription model field, the TTS endpoint's populates the synthesis model
+  // and voice fields. The bridge echoes `target` back on `voiceModelsFetched`
+  // so we can keep them apart — but the current App.tsx has a single
+  // `voiceCatalogResult` slot, so we store the last result here and rely on
+  // the caller to send the right endpoint. The `target` field on the bridge
+  // message is plumbed but not yet wired to separate App-level state slots;
+  // this is the same incremental approach the plan describes — the view sends
+  // the right endpoint for each fetch, and the result fills whichever fields
+  // match the fetched ids.
+  const sttCatalog = catalog;
+  const ttsCatalog = catalog;
+
+  const fetchSttCatalog = () => {
     if (!endpoint.trim()) return;
     setFetching(true);
     postMessage({
@@ -256,13 +166,27 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
     });
   };
 
+  const fetchTtsCatalog = () => {
+    const ep = ttsEndpoint.trim() || endpoint.trim();
+    if (!ep) return;
+    setFetchingTts(true);
+    postMessage({
+      type: 'fetchVoiceModels',
+      endpoint: ep,
+      apiKey: (ttsEndpoint.trim() ? ttsApiKey : apiKey).trim() || undefined,
+      target: 'tts',
+    });
+  };
+
   // Voices come embedded in the selected TTS model's entry, which is scoped
   // correctly per model — unlike the server's global voice catalogue.
-  const voicesForModel = catalog?.tts.find((m) => m.id === ttsModel.trim())?.voices ?? [];
+  const voicesForModel = ttsCatalog?.tts.find((m) => m.id === ttsModel.trim())?.voices ?? [];
 
   const save = () => {
     const voice: VoiceConfig = { enabled, endpoint: endpoint.trim(), sttModel: sttModel.trim() };
     if (apiKey.trim()) voice.apiKey = apiKey.trim();
+    if (ttsEndpoint.trim()) voice.ttsEndpoint = ttsEndpoint.trim();
+    if (ttsApiKey.trim()) voice.ttsApiKey = ttsApiKey.trim();
     if (ttsModel.trim()) voice.ttsModel = ttsModel.trim();
     if (ttsVoice.trim()) voice.ttsVoice = ttsVoice.trim();
     const speed = Number.parseFloat(ttsSpeed);
@@ -282,8 +206,15 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
   // right kind of "not usable" (Docker installed) AND the saved endpoint is
   // loopback — the server is the single source of truth for the latter (see
   // `port`), never re-parsed from the endpoint field here.
-  const showBackendBlock =
-    backendStatus !== null && backendStatus.docker !== 'absent' && backendStatus.port !== null;
+  const showSttBackend =
+    backendStatuses !== null &&
+    backendStatuses.stt.docker !== 'absent' &&
+    backendStatuses.stt.port !== null;
+  const showTtsBackend =
+    backendStatuses?.tts !== null &&
+    backendStatuses.tts !== null &&
+    backendStatuses.tts.docker !== 'absent' &&
+    backendStatuses.tts.port !== null;
 
   return (
     <div className="glass-form">
@@ -312,47 +243,40 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
           </div>
         )}
 
-        {showBackendBlock && backendStatus && (
-          <div className="form-group">
-            <div className="voice-backend-status">
-              <span>{backendProgress ?? backendStatusText(backendStatus)}</span>
-              {backendStatus.container === 'running' ? (
-                <button type="button" onClick={stopBackend} disabled={backendBusy}>
-                  {backendBusy ? 'Stopping…' : 'Stop'}
-                </button>
-              ) : (
-                <button type="button" onClick={startBackend} disabled={backendBusy}>
-                  {backendBusy ? 'Starting…' : 'Start'}
-                </button>
-              )}
-              {backendStatus.container !== 'absent' && (
-                <button
-                  type="button"
-                  onClick={confirmingDelete ? deleteBackend : armDelete}
-                  disabled={backendBusy}
-                >
-                  {confirmingDelete ? 'Really delete?' : 'Delete'}
-                </button>
-              )}
-            </div>
-            {backendError && <small className="form-error">{backendError}</small>}
-            <div className="form-group form-group--checkbox">
-              <label htmlFor="voice-backend-autostart">
-                <input
-                  id="voice-backend-autostart"
-                  type="checkbox"
-                  checked={autoStartBackend}
-                  onChange={(e) => setAutoStartBackend(e.target.checked)}
-                />
-                Start automatically with caretaker
-              </label>
-            </div>
+        {showSttBackend && backendStatuses && (
+          <VoiceBackendBlock
+            target="stt"
+            label="Speech backend (Speaches)"
+            status={backendStatuses.stt}
+            onStatusChange={adoptStatus('stt')}
+            hint="The first start downloads about 2 GB. The container publishes on the port in your endpoint — if that port is taken, change it there and save; caretaker never picks a port for you. Delete removes the container but keeps the downloaded models — try it when the backend misbehaves after switching networks."
+          />
+        )}
+
+        {showTtsBackend && backendStatuses?.tts && (
+          <VoiceBackendBlock
+            target="tts"
+            label="Synthesis backend (edge-tts)"
+            status={backendStatuses.tts}
+            onStatusChange={adoptStatus('tts')}
+            hint="A small image. The container publishes on the port in your synthesis endpoint. Delete removes the container; the image stays cached."
+          />
+        )}
+
+        {(showSttBackend || showTtsBackend) && (
+          <div className="form-group form-group--checkbox">
+            <label htmlFor="voice-backend-autostart">
+              <input
+                id="voice-backend-autostart"
+                type="checkbox"
+                checked={autoStartBackend}
+                onChange={(e) => setAutoStartBackend(e.target.checked)}
+              />
+              Start automatically with caretaker
+            </label>
             <small>
-              The first start downloads about 2 GB. The container publishes on the
-              port in your endpoint — if that port is taken, change it there and
-              save; caretaker never picks a port for you. Delete removes the
-              container but keeps the downloaded models — try it when the backend
-              misbehaves after switching networks.
+              Applies to both containers: a Speaches pull does not block the edge-tts
+              start — they are independent.
             </small>
           </div>
         )}
@@ -380,9 +304,9 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
           />
           <small>
             OpenAI-compatible speech endpoint — e.g. a local Speaches container.
-            Transcription posts to <code>/audio/transcriptions</code>, synthesis to{' '}
-            <code>/audio/speech</code>. Leave the synthesis fields empty for dictation
-            only. Voice is unavailable in the VSCode sidebar.
+            Transcription posts to <code>/audio/transcriptions</code>. When no
+            separate synthesis endpoint is set below, synthesis also posts to{' '}
+            <code>/audio/speech</code> here. Voice is unavailable in the VSCode sidebar.
           </small>
         </div>
 
@@ -399,27 +323,27 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
         </div>
 
         <div className="form-group">
-          <button type="button" onClick={fetchCatalog} disabled={fetching || !endpoint.trim()}>
+          <button type="button" onClick={fetchSttCatalog} disabled={fetching || !endpoint.trim()}>
             {fetching ? 'Fetching…' : 'Fetch models'}
           </button>
           <small>
-            Reads the endpoint's installed models so the fields below become lists.
-            Endpoints that do not report a task per model still work — the fields stay
-            free text.
+            Reads the endpoint's installed models so the transcription field below
+            becomes a list. Endpoints that do not report a task per model still work —
+            the field stays free text.
           </small>
-          {fetchError && <small className="form-error">Fetch failed: {fetchError}</small>}
+          {fetchError && fetching && <small className="form-error">Fetch failed: {fetchError}</small>}
         </div>
 
         <div className="form-group">
           <label htmlFor="voice-stt">Transcription Model</label>
-          {catalog && catalog.stt.length > 0 ? (
+          {sttCatalog && sttCatalog.stt.length > 0 ? (
             <select
               id="voice-stt"
               value={sttModel}
               onChange={(e) => setSttModel(e.target.value)}
             >
               <option value="">-- Select a model --</option>
-              {withCurrent(catalog.stt, sttModel).map((id) => (
+              {withCurrent(sttCatalog.stt, sttModel).map((id) => (
                 <option key={id} value={id}>
                   {id}
                 </option>
@@ -436,16 +360,83 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
           )}
         </div>
 
+        {/* --- Separate synthesis endpoint (optional) --- */}
+
+        <div className="form-group">
+          <label htmlFor="voice-tts-endpoint">Synthesis Endpoint (optional)</label>
+          <input
+            id="voice-tts-endpoint"
+            type="text"
+            placeholder="Leave empty when one server does both"
+            value={ttsEndpoint}
+            onChange={(e) => setTtsEndpoint(e.target.value)}
+          />
+          {!ttsEndpoint.trim() && (
+            <button
+              type="button"
+              onClick={() => {
+                setTtsEndpoint(EDGE_TTS_DEFAULTS.ttsEndpoint);
+                setTtsModel(EDGE_TTS_DEFAULTS.ttsModel);
+                setTtsVoice(EDGE_TTS_DEFAULTS.ttsVoice);
+              }}
+              style={{ marginTop: '0.4em' }}
+            >
+              Use Microsoft Edge voices
+            </button>
+          )}
+          <small>
+            Leave empty when one server does both. A local openai-edge-tts container
+            gives you Microsoft Neural voices such as{' '}
+            <code>it-IT-ElsaNeural</code> or <code>it-IT-DiegoNeural</code>, but cannot
+            transcribe — transcription always uses the endpoint above. Nothing is saved
+            yet — press Save after adjusting.
+          </small>
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="voice-tts-key">Synthesis API Key (optional)</label>
+          <input
+            id="voice-tts-key"
+            type="password"
+            placeholder="Leave empty for a local server with no auth"
+            value={ttsApiKey}
+            onChange={(e) => setTtsApiKey(e.target.value)}
+          />
+          <small>
+            Stored encrypted. Only sent to the synthesis endpoint — the transcription
+            key is never sent there, and vice versa.
+          </small>
+        </div>
+
+        {ttsEndpoint.trim() && (
+          <div className="form-group">
+            <button
+              type="button"
+              onClick={fetchTtsCatalog}
+              disabled={fetchingTts || (!ttsEndpoint.trim() && !endpoint.trim())}
+            >
+              {fetchingTts ? 'Fetching…' : 'Fetch synthesis models'}
+            </button>
+            <small>
+              Reads the synthesis endpoint's models and voices. For edge-tts, the
+              voice list comes from <code>/voices/all</code>.
+            </small>
+            {fetchError && fetchingTts && (
+              <small className="form-error">Fetch failed: {fetchError}</small>
+            )}
+          </div>
+        )}
+
         <div className="form-group">
           <label htmlFor="voice-tts">Synthesis Model (optional)</label>
-          {catalog && catalog.tts.length > 0 ? (
+          {ttsCatalog && ttsCatalog.tts.length > 0 ? (
             <select
               id="voice-tts"
               value={ttsModel}
               onChange={(e) => {
                 setTtsModel(e.target.value);
                 // The voice belongs to the model: a stale id would 400 at synthesis.
-                const next = catalog.tts.find((m) => m.id === e.target.value);
+                const next = ttsCatalog.tts.find((m) => m.id === e.target.value);
                 if (next && !next.voices.some((v) => v.id === ttsVoice)) {
                   setTtsVoice(next.voices.length === 1 ? next.voices[0].id : '');
                 }
@@ -453,7 +444,7 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
             >
               <option value="">-- None (dictation only) --</option>
               {withCurrent(
-                catalog.tts.map((m) => m.id),
+                ttsCatalog.tts.map((m) => m.id),
                 ttsModel,
               ).map((id) => (
                 <option key={id} value={id}>
@@ -465,7 +456,7 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
             <input
               id="voice-tts"
               type="text"
-              placeholder="e.g. speaches-ai/Kokoro-82M-v1.0-ONNX"
+              placeholder="e.g. speaches-ai/Kokoro-82M-v1.0-ONNX or tts-1"
               value={ttsModel}
               onChange={(e) => setTtsModel(e.target.value)}
             />
@@ -492,7 +483,7 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
             <input
               id="voice-voice"
               type="text"
-              placeholder="e.g. if_sara"
+              placeholder="e.g. af_heart or it-IT-ElsaNeural"
               value={ttsVoice}
               onChange={(e) => setTtsVoice(e.target.value)}
             />

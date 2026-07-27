@@ -304,6 +304,7 @@ test('voiceSignature distinguishes every field that is actually persisted', () =
   assert.notEqual(voiceSignature(base), voiceSignature({ ...base, endpoint: 'http://y/v1' }));
   assert.notEqual(voiceSignature(base), voiceSignature({ ...base, sttModel: 'w2' }));
   assert.notEqual(voiceSignature(base), voiceSignature({ ...base, ttsModel: 'k' }));
+  assert.notEqual(voiceSignature(base), voiceSignature({ ...base, ttsEndpoint: 'http://tts/v1' }));
   assert.notEqual(voiceSignature(base), voiceSignature({ ...base, ttsVoice: 'if_sara' }));
   assert.notEqual(voiceSignature(base), voiceSignature({ ...base, ttsSpeed: 1.5 }));
   assert.notEqual(voiceSignature(base), voiceSignature({ ...base, lang: 'it-IT' }));
