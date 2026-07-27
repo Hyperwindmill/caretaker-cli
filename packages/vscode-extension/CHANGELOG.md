@@ -1,5 +1,28 @@
 # caretaker-vscode
 
+## 0.17.0
+
+### Minor Changes
+
+- 1db6f1d: Make a task's title and objective editable after creation. The task edit view now shows a title input and an objective textarea with Save/Cancel instead of read-only text, backed by a new `PATCH /api/tasks/:id` route and a new `mcp__task__task_update_details` tool (both accept either field on its own; a blank title is rejected, an empty objective is allowed). Edits are not blocked while a task is running — the objective is re-read at the start of each cycle.
+- 17c28ce: Conversation-mode voice now speaks every finalized assistant bubble in order
+  as it closes (previously only the last bubble of a turn was read), and the
+  agent is told via a per-turn system-prompt block that its reply will be read
+  aloud, so it writes well-punctuated, speakable prose. The mic reopens only
+  after the last bubble finishes playing and the harness turn is over. Applies
+  to both native and claude-code providers. The voice flag is wired end-to-end:
+  the renderer sets it on the start message for conversation-mode transcripts,
+  the web server forwards it to harness.run, and the VSCode host ignores it
+  (voice is unavailable in the sidebar, and the field is optional). Documentation
+  updated in CLAUDE.md and README.md.
+
+### Patch Changes
+
+- Updated dependencies [1db6f1d]
+- Updated dependencies [17c28ce]
+  - @hyperwindmill/caretaker-cli@0.17.0
+  - webview-ui@0.17.0
+
 ## 0.16.0
 
 ### Minor Changes
