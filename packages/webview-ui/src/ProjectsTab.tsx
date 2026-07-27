@@ -617,18 +617,30 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
   // Resolve the agent identity (name · model) behind each assistant bubble in the
   // task thread, so it's not just "assistant". Same fallback chain as the runtime:
   // task role id → project role id → project developer → first agent.
-  const agentLabelFor = (agentId?: string | null): string | undefined => {
-    const a = agents.find((x) => x.id === agentId);
-    return a ? `${a.name} · ${a.model}` : undefined;
-  };
-  const developerId = selectedTask?.agentId || selectedProject?.agentId || agents[0]?.id;
-  const taskAgentLabels = selectedTask
-    ? {
-        developer: agentLabelFor(developerId),
-        planner: agentLabelFor(selectedTask.plannerAgentId || selectedProject?.plannerAgentId || developerId),
-        reviewer: agentLabelFor(selectedTask.reviewerAgentId || selectedProject?.reviewerAgentId || developerId),
-      }
-    : undefined;
+  const taskAgentLabels = useMemo(() => {
+    if (!selectedTask) return undefined;
+    const agentLabelFor = (agentId?: string | null): string | undefined => {
+      const a = agents.find((x) => x.id === agentId);
+      return a ? `${a.name} · ${a.model}` : undefined;
+    };
+    const developerId = selectedTask.agentId || selectedProject?.agentId || agents[0]?.id;
+    return {
+      developer: agentLabelFor(developerId),
+      planner: agentLabelFor(selectedTask.plannerAgentId || selectedProject?.plannerAgentId || developerId),
+      reviewer: agentLabelFor(selectedTask.reviewerAgentId || selectedProject?.reviewerAgentId || developerId),
+    };
+    // Dependencies: the agent ids from task + project, and the agents array.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    selectedTask?.agentId,
+    selectedTask?.plannerAgentId,
+    selectedTask?.reviewerAgentId,
+    selectedProject?.agentId,
+    selectedProject?.plannerAgentId,
+    selectedProject?.reviewerAgentId,
+    selectedTask,
+    agents,
+  ]);
 
   const reviewRound = selectedTask
     ? taskMessages.filter((m) => m.messageType === 'review').length + 1
