@@ -198,7 +198,12 @@ const Item = memo(function Item({ item, sessionId }: { item: ChatItem; sessionId
             <span className="thinking__chevron"></span>
           </summary>
           <div className="thinking__content">
-            <MarkdownText content={item.text} />
+            {/* cache=false: thinking items stream via append-thinking (one
+                growing-prefix key per SSE delta), so caching them would evict
+                the settled conversation — same failure mode as streaming
+                assistant bubbles. A settled thinking item is never re-parsed
+                anyway because Item is memoized. */}
+            <MarkdownText content={item.text} cache={false} />
           </div>
         </details>
       );

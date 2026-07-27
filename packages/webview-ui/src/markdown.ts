@@ -6,14 +6,15 @@
 // sessions. Keyed on the raw content string, so a bubble that has not changed
 // is a Map hit.
 //
-// The cache is skipped for the still-streaming bubble: each SSE token grows
-// its content by one character, so caching the intermediate prefixes would
-// insert one entry per token (~2000 for a single reply) and evict the whole
-// conversation from a 2000-entry cache. Item/MarkdownText are memoized, so
-// stable bubbles are never re-rendered — their cache entries are never
-// re-touched, and an LRU would let them age out during one streaming reply.
-// With streaming bubbles excluded, the cache holds only settled messages,
-// which is bounded by the item count, not by the token count.
+// The cache is skipped for still-streaming bubbles and thinking blocks: each
+// SSE delta grows the content by one character, so caching the intermediate
+// prefixes would insert one entry per delta (~2000 for a single reply, ~3000
+// for a reasoning-model turn) and evict the whole conversation from a
+// 2000-entry cache. Item/MarkdownText are memoized, so stable bubbles are
+// never re-rendered — their cache entries are never re-touched, and an LRU
+// would let them age out during one streaming reply. With streaming bubbles
+// and thinking blocks excluded, the cache holds only settled messages, which
+// is bounded by the item count, not by the token count.
 
 import { marked } from 'marked';
 
