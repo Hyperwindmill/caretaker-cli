@@ -624,8 +624,12 @@ async function runAutoStart(): Promise<void> {
 
   // Iterate both targets, skipping any whose endpoint is missing or
   // non-loopback. The two containers are independent: a 2 GB Speaches pull
-  // does not block the edge-tts start (per-target in-flight guard).
+  // does not block the edge-tts start (per-target in-flight guard). The TTS
+  // target is only auto-started when a *separate* ttsEndpoint is configured —
+  // without one, synthesis goes to `endpoint` (the single-server Speaches case)
+  // and there is no second container to manage.
   for (const target of ['stt', 'tts'] as const) {
+    if (target === 'tts' && !voice.ttsEndpoint?.trim()) continue;
     const endpoint = targetEndpoint(voice, target);
     if (loopbackPort(endpoint) == null) continue;
 

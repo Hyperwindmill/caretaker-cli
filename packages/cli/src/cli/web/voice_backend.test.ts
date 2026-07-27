@@ -700,7 +700,7 @@ test('start?target=tts runs the edge-tts image and skips model install', async (
     setVoiceBackendDepsForTest({
       dockerInfo: async () => ({ ok: true }),
       imagePresent: async () => true,
-      containerState: async () => 'running',
+      containerState: async () => 'absent', // no container yet → runContainer is called
       runContainer: async (args) => {
         runArgs.push(...args);
       },
@@ -785,8 +785,9 @@ test('start?target=tts is not blocked by an in-flight stt start (per-target guar
     const app = new Hono();
     registerVoiceBackend(app);
 
-    // Start the STT pull (blocks on the gate).
-    const sttDrain = app.request('/api/voice/backend/start', { method: 'POST' }).then((r) => r.text());
+    // Start the STT pull (blocks on the gate). Hono's app.request returns
+    // Response | Promise<Response>, so cast through Promise.resolve.
+    const sttDrain = Promise.resolve(app.request('/api/voice/backend/start', { method: 'POST' })).then((r) => r.text());
     await waitFor(() => isBackendStartInFlightForTest('stt'));
 
     // Start the TTS backend — it should proceed even though the STT start is in flight.

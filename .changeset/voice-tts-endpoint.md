@@ -6,4 +6,4 @@
 'webview-ui': minor
 ---
 
-Add an optional separate synthesis endpoint (`ttsEndpoint` + `ttsApiKey`) to voice mode, so synthesis can be routed to a different host than transcription — e.g. a local openai-edge-tts container for Microsoft Neural voices while Speaches handles transcription. The transcription key is never sent to the synthesis host.
+Add an optional separate synthesis endpoint (`ttsEndpoint` + `ttsApiKey`) to voice mode, so synthesis can be routed to a different host than transcription — e.g. a local openai-edge-tts container for Microsoft Neural voices while Speaches handles transcription. The transcription key is never sent to the synthesis host. The managed local backend is now parameterized over a target (`stt` / `tts`) with a two-entry spec table: `GET /api/voice/backend` returns `{ stt, tts }` and the start/stop/delete routes take `?target=stt|tts`.
