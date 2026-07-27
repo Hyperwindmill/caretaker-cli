@@ -210,7 +210,7 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
     backendStatuses.stt.docker !== 'absent' &&
     backendStatuses.stt.port !== null;
   const showTtsBackend =
-    backendStatuses?.tts !== null &&
+    backendStatuses !== null &&
     backendStatuses.tts !== null &&
     backendStatuses.tts.docker !== 'absent' &&
     backendStatuses.tts.port !== null;
