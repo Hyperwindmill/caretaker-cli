@@ -9,13 +9,16 @@ import type { VoiceConfig, CaretakerConfig } from 'caretaker-types';
 import {
   loopbackPort,
   probeBackend,
+  probeBackends,
   startBackend,
   stopBackend,
+  deleteBackend,
   registerVoiceBackend,
   maybeAutoStartBackend,
   isBackendStartInFlightForTest,
   setVoiceBackendDepsForTest,
   type StartProgress,
+  type Target,
 } from './voice_backend.js';
 import { saveConfig } from '../../store/json.js';
 
@@ -248,14 +251,7 @@ test('startBackend: a non-loopback endpoint errors immediately, no docker call a
   assert.equal(dockerInfoCalled, true, 'status is still probed to answer the terminal line');
 });
 
-// --- stopBackend: never `rm`, only the container by name -----------------
-
-test('stopBackend calls only stopContainer, with the fixed container name', async () => {
-  const calls: string[] = [];
-  setVoiceBackendDepsForTest({ stopContainer: async (name) => void calls.push(name) });
-  await stopBackend();
-  assert.deepEqual(calls, ['caretaker-speaches']);
-});
+// --- stopBackend: per-target container name (tests below, near the stop route) ---
 
 // --- registerVoiceBackend: the three routes -------------------------------
 
@@ -273,10 +269,11 @@ test('GET /api/voice/backend probes with the stored endpoint', async () => {
   registerVoiceBackend(app);
   const res = await app.request('/api/voice/backend');
   assert.equal(res.status, 200);
-  const status = (await res.json()) as { docker: string; container: string; port: number | null };
-  assert.equal(status.docker, 'ok');
-  assert.equal(status.container, 'stopped');
-  assert.equal(status.port, 9);
+  const body = (await res.json()) as { stt: { docker: string; container: string; port: number | null }; tts: null };
+  assert.equal(body.stt.docker, 'ok');
+  assert.equal(body.stt.container, 'stopped');
+  assert.equal(body.stt.port, 9);
+  assert.equal(body.tts, null);
 });
 
 test('GET /api/voice/backend on an unconfigured voice yields a coherent status, not an error', async () => {
@@ -289,8 +286,9 @@ test('GET /api/voice/backend on an unconfigured voice yields a coherent status, 
   registerVoiceBackend(app);
   const res = await app.request('/api/voice/backend');
   assert.equal(res.status, 200);
-  const status = (await res.json()) as { port: number | null };
-  assert.equal(status.port, null);
+  const body = (await res.json()) as { stt: { port: number | null }; tts: null };
+  assert.equal(body.stt.port, null);
+  assert.equal(body.tts, null);
 });
 
 test('POST /api/voice/backend/start with voice disabled returns 400 with a plain-text reason', async () => {
@@ -365,6 +363,29 @@ test('POST /api/voice/backend/stop re-probes rather than throwing when there is 
   assert.equal(status.container, 'absent');
 });
 
+// --- stopBackend: per-target container name -----------------------------
+
+test('stopBackend calls stopContainer with the stt container name by default', async () => {
+  const calls: string[] = [];
+  setVoiceBackendDepsForTest({ stopContainer: async (name) => void calls.push(name) });
+  await stopBackend();
+  assert.deepEqual(calls, ['caretaker-speaches']);
+});
+
+test('stopBackend calls stopContainer with the tts container name when target=tts', async () => {
+  const calls: string[] = [];
+  setVoiceBackendDepsForTest({ stopContainer: async (name) => void calls.push(name) });
+  await stopBackend('tts');
+  assert.deepEqual(calls, ['caretaker-edge-tts']);
+});
+
+test('deleteBackend calls removeContainer with the tts container name when target=tts', async () => {
+  const calls: string[] = [];
+  setVoiceBackendDepsForTest({ removeContainer: async (name) => void calls.push(name) });
+  await deleteBackend('tts');
+  assert.deepEqual(calls, ['caretaker-edge-tts']);
+});
+
 // --- POST /api/voice/backend/delete ---------------------------------------
 
 test('POST /api/voice/backend/delete removes the container and answers with the re-probed status', async () => {
@@ -388,6 +409,33 @@ test('POST /api/voice/backend/delete removes the container and answers with the 
   const status = (await res.json()) as { container: string };
   assert.equal(removed, 'caretaker-speaches');
   assert.equal(status.container, 'absent');
+});
+
+test('POST /api/voice/backend/delete?target=tts removes the tts container', async () => {
+  let removed: string | null = null;
+  setVoiceBackendDepsForTest({
+    dockerInfo: async () => ({ ok: true }),
+    containerState: async () => (removed ? 'absent' : 'running'),
+    imagePresent: async () => true,
+    removeContainer: async (name) => {
+      removed = name;
+    },
+  });
+  await saveConfig(
+    baseConfig({
+      enabled: true,
+      endpoint: 'http://127.0.0.1:9/v1',
+      sttModel: 'stt-x',
+      ttsEndpoint: 'http://127.0.0.1:10/v1',
+      ttsModel: 'tts-1',
+    }),
+  );
+
+  const app = new Hono();
+  registerVoiceBackend(app);
+  const res = await app.request('/api/voice/backend/delete?target=tts', { method: 'POST' });
+  assert.equal(res.status, 200);
+  assert.equal(removed, 'caretaker-edge-tts');
 });
 
 test('POST /api/voice/backend/delete re-probes rather than throwing when there is no container', async () => {
@@ -587,5 +635,266 @@ test('maybeAutoStartBackend: triggers a start when enabled + autoStartBackend + 
     assert.ok(imagePresentCalls >= 2, 'the flow ran to completion (image step + terminal status)');
   } finally {
     await ready.close();
+  }
+});
+
+// --- Task 3: two-container backend — target parameterization -------------
+
+test('GET /api/voice/backend reports both targets when ttsEndpoint is set', async () => {
+  const containerNames: string[] = [];
+  setVoiceBackendDepsForTest({
+    dockerInfo: async () => ({ ok: true }),
+    containerState: async (name) => {
+      containerNames.push(name);
+      return 'absent';
+    },
+    imagePresent: async () => false,
+  });
+  await saveConfig(
+    baseConfig({
+      enabled: true,
+      endpoint: 'http://127.0.0.1:9/v1',
+      sttModel: 'stt-x',
+      ttsEndpoint: 'http://127.0.0.1:10/v1',
+      ttsModel: 'tts-1',
+    }),
+  );
+
+  const app = new Hono();
+  registerVoiceBackend(app);
+  const res = await app.request('/api/voice/backend');
+  assert.equal(res.status, 200);
+  const body = (await res.json()) as {
+    stt: { port: number | null; container: string };
+    tts: { port: number | null; container: string } | null;
+  };
+  assert.equal(body.stt.port, 9);
+  assert.equal(body.tts?.port, 10);
+  // Both container names were queried.
+  assert.ok(containerNames.includes('caretaker-speaches'));
+  assert.ok(containerNames.includes('caretaker-edge-tts'));
+});
+
+test('GET /api/voice/backend reports tts: null with no ttsEndpoint', async () => {
+  setVoiceBackendDepsForTest({
+    dockerInfo: async () => ({ ok: true }),
+    containerState: async () => 'absent',
+    imagePresent: async () => false,
+  });
+  await saveConfig(
+    baseConfig({ enabled: true, endpoint: 'http://127.0.0.1:9/v1', sttModel: 'stt-x' }),
+  );
+
+  const app = new Hono();
+  registerVoiceBackend(app);
+  const res = await app.request('/api/voice/backend');
+  const body = (await res.json()) as { tts: null };
+  assert.equal(body.tts, null);
+});
+
+test('start?target=tts runs the edge-tts image and skips model install', async () => {
+  const ready = await startReadyServer();
+  const ttsReady = await startReadyServer();
+  try {
+    const runArgs: string[] = [];
+    setVoiceBackendDepsForTest({
+      dockerInfo: async () => ({ ok: true }),
+      imagePresent: async () => true,
+      containerState: async () => 'running',
+      runContainer: async (args) => {
+        runArgs.push(...args);
+      },
+    });
+    await saveConfig(
+      baseConfig({
+        enabled: true,
+        endpoint: `${ready.baseUrl}/v1`,
+        sttModel: 'stt-x',
+        ttsEndpoint: `${ttsReady.baseUrl}/v1`,
+        ttsModel: 'tts-1',
+      }),
+    );
+
+    const ttsPort = loopbackPort(`${ttsReady.baseUrl}/v1`);
+    assert.ok(ttsPort != null);
+
+    const app = new Hono();
+    registerVoiceBackend(app);
+    const res = await app.request('/api/voice/backend/start?target=tts', { method: 'POST' });
+    assert.equal(res.status, 200);
+    const lines = (await res.text())
+      .split('\n')
+      .filter((l) => l.trim().length > 0)
+      .map((l) => JSON.parse(l) as StartProgress);
+    assert.equal(lines.at(-1)?.step, 'done');
+
+    // The run args include the edge-tts container name and image, the
+    // TTS port, the auth-off env, and NO HuggingFace volume.
+    assert.ok(runArgs.includes('caretaker-edge-tts'), 'uses the edge-tts container name');
+    assert.ok(runArgs.includes('travisvn/openai-edge-tts:latest'), 'uses the edge-tts image');
+    assert.ok(
+      runArgs.some((a) => a === `127.0.0.1:${ttsPort}:5050`),
+      'publishes on the TTS port → internal 5050',
+    );
+    assert.ok(runArgs.includes('REQUIRE_API_KEY=False'), 'disables auth');
+    assert.ok(!runArgs.includes('caretaker-hf-hub-cache'), 'no HF volume for edge-tts');
+
+    // edge-tts has no model-install step: no 'models' step in the progress.
+    assert.ok(
+      !lines.some((p) => p.step === 'models'),
+      'edge-tts skips the model-install step',
+    );
+  } finally {
+    await ready.close();
+    await ttsReady.close();
+    // Give the Hono stream's finally block a tick to release the guard.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await waitFor(() => !isBackendStartInFlightForTest('tts'));
+  }
+});
+
+test('start?target=tts is not blocked by an in-flight stt start (per-target guard)', async () => {
+  const sttReady = await startReadyServer();
+  const ttsReady = await startReadyServer();
+  try {
+    let releaseSttPull: () => void = () => {};
+    const sttGate = new Promise<void>((resolve) => {
+      releaseSttPull = resolve;
+    });
+    setVoiceBackendDepsForTest({
+      dockerInfo: async () => ({ ok: true }),
+      imagePresent: async (image) => image !== 'ghcr.io/speaches-ai/speaches:latest-cpu', // stt not present → pull, tts present
+      async *pullImage(image) {
+        if (image === 'ghcr.io/speaches-ai/speaches:latest-cpu') {
+          yield 'pulling stt';
+          await sttGate;
+        }
+      },
+      containerState: async () => 'running',
+    });
+    await saveConfig(
+      baseConfig({
+        enabled: true,
+        endpoint: `${sttReady.baseUrl}/v1`,
+        sttModel: '',
+        ttsEndpoint: `${ttsReady.baseUrl}/v1`,
+        ttsModel: 'tts-1',
+      }),
+    );
+
+    const app = new Hono();
+    registerVoiceBackend(app);
+
+    // Start the STT pull (blocks on the gate).
+    const sttDrain = app.request('/api/voice/backend/start', { method: 'POST' }).then((r) => r.text());
+    await waitFor(() => isBackendStartInFlightForTest('stt'));
+
+    // Start the TTS backend — it should proceed even though the STT start is in flight.
+    const ttsRes = await app.request('/api/voice/backend/start?target=tts', { method: 'POST' });
+    assert.equal(ttsRes.status, 200);
+    const ttsLines = (await ttsRes.text())
+      .split('\n')
+      .filter((l) => l.trim().length > 0)
+      .map((l) => JSON.parse(l) as StartProgress);
+    assert.equal(ttsLines.at(-1)?.step, 'done', 'tts start completed while stt was in flight');
+
+    // Clean up the gated STT start.
+    releaseSttPull();
+    await sttDrain;
+    // Give the Hono stream's finally block a tick to release the guard.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await waitFor(() => !isBackendStartInFlightForTest('stt'));
+    await waitFor(() => !isBackendStartInFlightForTest('tts'));
+  } finally {
+    await sttReady.close();
+    await ttsReady.close();
+  }
+});
+
+test('POST /api/voice/backend/stop?target=tts acts on the tts container', async () => {
+  const calls: string[] = [];
+  setVoiceBackendDepsForTest({
+    dockerInfo: async () => ({ ok: true }),
+    containerState: async () => 'absent',
+    imagePresent: async () => false,
+    stopContainer: async (name) => void calls.push(name),
+  });
+  await saveConfig(
+    baseConfig({
+      enabled: true,
+      endpoint: 'http://127.0.0.1:9/v1',
+      sttModel: 'stt-x',
+      ttsEndpoint: 'http://127.0.0.1:10/v1',
+      ttsModel: 'tts-1',
+    }),
+  );
+
+  const app = new Hono();
+  registerVoiceBackend(app);
+  const res = await app.request('/api/voice/backend/stop?target=tts', { method: 'POST' });
+  assert.equal(res.status, 200);
+  assert.deepEqual(calls, ['caretaker-edge-tts']);
+});
+
+test('POST /api/voice/backend/start?target=tts returns 400 when ttsEndpoint is unset', async () => {
+  await saveConfig(
+    baseConfig({ enabled: true, endpoint: 'http://127.0.0.1:9/v1', sttModel: 'stt-x', ttsModel: 'tts-1' }),
+  );
+  const app = new Hono();
+  registerVoiceBackend(app);
+  const res = await app.request('/api/voice/backend/start?target=tts', { method: 'POST' });
+  assert.equal(res.status, 400);
+  assert.match(await res.text(), /no separate tts endpoint/i);
+});
+
+test('POST /api/voice/backend/delete?target=tts answers 409 while tts start is in flight', async () => {
+  const ttsReady = await startReadyServer();
+  let releasePull: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    releasePull = resolve;
+  });
+  let startDrained: Promise<string> | null = null;
+  try {
+    let removeCalls = 0;
+    setVoiceBackendDepsForTest({
+      dockerInfo: async () => ({ ok: true }),
+      containerState: async () => 'absent',
+      imagePresent: async () => false,
+      async *pullImage() {
+        yield 'pulling';
+        await gate;
+      },
+      runContainer: async () => {},
+      removeContainer: async () => {
+        removeCalls += 1;
+      },
+    });
+    await saveConfig(
+      baseConfig({
+        enabled: true,
+        endpoint: 'http://127.0.0.1:9/v1',
+        sttModel: 'stt-x',
+        ttsEndpoint: `${ttsReady.baseUrl}/v1`,
+        ttsModel: 'tts-1',
+      }),
+    );
+
+    const app = new Hono();
+    registerVoiceBackend(app);
+    startDrained = Promise.resolve(
+      app.request('/api/voice/backend/start?target=tts', { method: 'POST' }),
+    ).then((r) => r.text());
+    await waitFor(() => isBackendStartInFlightForTest('tts'));
+
+    const res = await app.request('/api/voice/backend/delete?target=tts', { method: 'POST' });
+    assert.equal(res.status, 409);
+    assert.equal(removeCalls, 0);
+  } finally {
+    releasePull();
+    if (startDrained) await startDrained;
+    // Give the Hono stream's finally block a tick to release the guard.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await waitFor(() => !isBackendStartInFlightForTest('tts'));
+    await ttsReady.close();
   }
 });
