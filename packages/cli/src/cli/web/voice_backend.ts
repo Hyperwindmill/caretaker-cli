@@ -313,15 +313,35 @@ export async function probeBackend(
 }
 
 /** Probe both configured targets. `tts` is null when no separate
- *  `ttsEndpoint` is set (the single-endpoint Speaches case). */
+ *  `ttsEndpoint` is set (the single-endpoint Speaches case). Docker is
+ *  classified once and shared across both targets — `docker info` + `image
+ *  inspect` are the expensive part of a probe, and running them twice per
+ *  10 s poll when a `ttsEndpoint` is set is wasteful. */
 export async function probeBackends(voice: VoiceConfig): Promise<{
   stt: BackendStatus;
   tts: BackendStatus | null;
 }> {
-  const stt = await probeBackend(voice, 'stt');
+  const docker = await classifyDocker();
+  const stt = await probeBackendWithDocker(voice, 'stt', docker);
   const ttsEndpoint = voice.ttsEndpoint?.trim();
-  const tts = ttsEndpoint ? await probeBackend(voice, 'tts') : null;
+  const tts = ttsEndpoint ? await probeBackendWithDocker(voice, 'tts', docker) : null;
   return { stt, tts };
+}
+
+/** Internal: probe a target with a pre-classified docker status, so
+ *  `probeBackends` can classify once and reuse. */
+async function probeBackendWithDocker(
+  voice: VoiceConfig,
+  target: Target,
+  docker: BackendStatus['docker'],
+): Promise<BackendStatus> {
+  const spec = SPECS[target];
+  const endpoint = targetEndpoint(voice, target);
+  const port = loopbackPort(endpoint);
+  const container = docker === 'ok' ? await deps.containerState(spec.container) : 'absent';
+  const imagePresent = docker === 'ok' ? await deps.imagePresent(spec.image) : false;
+  const responding = await probeResponding(endpoint, spec.readyPath, targetAuth(voice, target));
+  return { docker, container, imagePresent, port, responding };
 }
 
 function runArgs(port: number, spec: BackendSpec): string[] {
@@ -636,7 +656,9 @@ async function runAutoStart(): Promise<void> {
     const endpoint = targetEndpoint(voice, target);
     if (loopbackPort(endpoint) == null) continue;
 
-    console.log(`[voice:${target}] auto-starting the managed local ${target === 'stt' ? 'speech' : 'synthesis'} backend…`);
+    console.log(
+      `[voice:${target}] auto-starting the managed local ${target === 'stt' ? 'speech' : 'synthesis'} backend…`,
+    );
     // A 2 GB pull emits one line per layer, all under step 'image': log the first
     // and drop the rest. Every other step emits a handful of distinct messages
     // that each say something a server log wants — which model was installed,

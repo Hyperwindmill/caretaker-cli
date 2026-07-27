@@ -146,9 +146,20 @@ export function VoiceTab({ config, onSave, postMessage, sttCatalogResult, ttsCat
   // overwrite the STT fetch (Speaches) and vice versa. Each slot also carries
   // its own error, so a failed TTS fetch shows its error in the synthesis
   // section without being cleared by a successful STT fetch (and the reverse).
+  //
+  // When no separate ttsEndpoint is configured (the default Speaches-only
+  // setup), synthesis uses the same endpoint as transcription, so the STT
+  // catalogue's TTS entries (Kokoro, Piper, …) with their embedded voices are
+  // the right data for the synthesis pickers too. Fall back to sttCatalog in
+  // that case so the Speaches-only user keeps the synthesis model and voice
+  // dropdowns they had on main.
   const sttCatalog: VoiceCatalog | null = sttCatalogResult?.ok ? sttCatalogResult.catalog : null;
   const sttFetchError = sttCatalogResult && !sttCatalogResult.ok ? sttCatalogResult.error : null;
-  const ttsCatalog: VoiceCatalog | null = ttsCatalogResult?.ok ? ttsCatalogResult.catalog : null;
+  const ttsCatalog: VoiceCatalog | null = ttsCatalogResult?.ok
+    ? ttsCatalogResult.catalog
+    : !ttsEndpoint.trim()
+      ? sttCatalog
+      : null;
   const ttsFetchError = ttsCatalogResult && !ttsCatalogResult.ok ? ttsCatalogResult.error : null;
 
   const fetchSttCatalog = () => {
@@ -162,13 +173,13 @@ export function VoiceTab({ config, onSave, postMessage, sttCatalogResult, ttsCat
   };
 
   const fetchTtsCatalog = () => {
-    const ep = ttsEndpoint.trim() || endpoint.trim();
-    if (!ep) return;
+    // Only rendered when ttsEndpoint is set, so it is always truthy here.
+    const ep = ttsEndpoint.trim();
     setFetchingTts(true);
     postMessage({
       type: 'fetchVoiceModels',
       endpoint: ep,
-      apiKey: (ttsEndpoint.trim() ? ttsApiKey : apiKey).trim() || undefined,
+      apiKey: ttsApiKey.trim() || undefined,
       target: 'tts',
     });
   };
@@ -408,7 +419,7 @@ export function VoiceTab({ config, onSave, postMessage, sttCatalogResult, ttsCat
             <button
               type="button"
               onClick={fetchTtsCatalog}
-              disabled={fetchingTts || (!ttsEndpoint.trim() && !endpoint.trim())}
+              disabled={fetchingTts}
             >
               {fetchingTts ? 'Fetching…' : 'Fetch synthesis models'}
             </button>
