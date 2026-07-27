@@ -299,3 +299,56 @@ test('loop: onMessage rejection is contained — turn completes, run resolves', 
     __resetFetch();
   }
 });
+
+test('loop: voiceConversation flag appends the <voice-conversation> block to the system prompt', async () => {
+  type CapturedBody = { messages?: Array<{ role: string; content: string | null }> };
+  let captured: CapturedBody | null = null;
+  __setFetch(async (_url, init) => {
+    captured = JSON.parse(init.body as string) as CapturedBody;
+    return sseResponse(SINGLE_TURN_TEXT);
+  });
+  try {
+    await run(
+      { agent, provider, tools: [], prompt: 'hi', voiceConversation: true },
+      {},
+    );
+    const sys =
+      (captured as CapturedBody | null)?.messages?.find((m) => m.role === 'system')?.content ?? '';
+    assert.ok(
+      sys.includes('<voice-conversation>'),
+      'system prompt must include the voice-conversation block when the flag is set',
+    );
+    assert.ok(
+      sys.includes('Write for the ear'),
+      'system prompt must include the voice-conversation prelude text when the flag is set',
+    );
+  } finally {
+    __resetFetch();
+  }
+});
+
+test('loop: without voiceConversation the system prompt has no voice-conversation prelude', async () => {
+  type CapturedBody = { messages?: Array<{ role: string; content: string | null }> };
+  let captured: CapturedBody | null = null;
+  __setFetch(async (_url, init) => {
+    captured = JSON.parse(init.body as string) as CapturedBody;
+    return sseResponse(SINGLE_TURN_TEXT);
+  });
+  try {
+    await run(
+      { agent, provider, tools: [], prompt: 'hi' },
+      {},
+    );
+    const sys =
+      (captured as CapturedBody | null)?.messages?.find((m) => m.role === 'system')?.content ?? '';
+    // Use the prelude body text, which is unique to the prelude — the tag name
+    // `<voice-conversation>` can also appear in project context files (e.g.
+    // CLAUDE.md) that the loop loads.
+    assert.ok(
+      !sys.includes('Write for the ear'),
+      'system prompt must NOT include the voice-conversation prelude text when the flag is absent',
+    );
+  } finally {
+    __resetFetch();
+  }
+});

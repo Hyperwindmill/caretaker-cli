@@ -18,6 +18,12 @@ export type VoiceEvent =
   | { kind: 'idleWindowElapsed'; mode: VoiceMode }
   | { kind: 'transcribed'; mode: VoiceMode; empty: boolean }
   | {
+      kind: 'speechQueued';
+      mode: VoiceMode;
+      /** A synthesis model is configured. */
+      canSpeak: boolean;
+    }
+  | {
       kind: 'turnFinished';
       mode: VoiceMode;
       /** A synthesis model is configured. */
@@ -28,8 +34,15 @@ export type VoiceEvent =
       sawStreaming: boolean;
       /** A tool confirmation is currently pending. */
       confirmPending: boolean;
+      /** Text queued for speech but not yet played. Non-zero drives `awaiting`
+       *  to `speaking` regardless of `turnComplete`, so effect ordering can never
+       *  lose a bubble that closed in the same commit as the turn ending. */
+      pendingSpeech: number;
     }
-  | { kind: 'playbackEnded'; mode: VoiceMode }
+  | { kind: 'playbackEnded'; mode: VoiceMode; /** The harness turn is actually
+      *  over (`status === 'idle'`). When false (queue drained mid-turn) the mic
+      *  must NOT reopen — invariant 1: the mic reopens only on playback end
+      *  AND turn over. */ turnComplete: boolean }
   | { kind: 'failed'; mode: VoiceMode };
 
 /**
@@ -65,7 +78,16 @@ export function nextPhase(phase: VoicePhase, event: VoiceEvent): VoicePhase {
       return event.empty ? 'recording' : 'awaiting';
 
     case 'awaiting':
+      // A finalized bubble closed mid-turn (before the harness turn is over):
+      // speak it now, so the user hears pre-tool-call remarks as they happen.
+      // This entry point is independent of the turn-finished path below.
+      if (event.kind === 'speechQueued') return event.canSpeak ? 'speaking' : phase;
       if (event.kind !== 'turnFinished') return phase;
+      // Text queued but not yet played wins over completion: a bubble closed in
+      // the same commit as the turn ending must be spoken, and effect ordering
+      // (enqueue vs turnFinished) must not be able to lose it. `turnComplete`
+      // is irrelevant while there is something to say.
+      if (event.pendingSpeech > 0 && event.canSpeak) return 'speaking';
       // INVARIANT 3: the turn must actually be over. The reducer sets
       // status 'streaming' in the same batch as the send, so "awaiting" alone
       // says nothing about completion — advancing here speaks the *previous*
@@ -81,9 +103,13 @@ export function nextPhase(phase: VoicePhase, event: VoiceEvent): VoicePhase {
       return event.canSpeak ? 'speaking' : 'recording';
 
     case 'speaking':
-      // INVARIANT 1: only playback finishing reopens the mic. Reacting to the
-      // harness turn completing here is what makes the agent transcribe itself.
-      return event.kind === 'playbackEnded' ? 'recording' : phase;
+      // INVARIANT 1: only playback finishing reopens the mic, and only when the
+      // harness turn is also over. Reacting to the harness turn completing here
+      // is what makes the agent transcribe itself. A queue drained mid-turn
+      // (turnComplete false) returns to awaiting, NOT recording — the mic must
+      // not open while the agent is still working.
+      if (event.kind === 'playbackEnded') return event.turnComplete ? 'recording' : 'awaiting';
+      return phase;
   }
 }
 
@@ -114,17 +140,32 @@ export function stripMarkdownForSpeech(md: string): string {
  *  here rather than imported so this module stays a leaf. */
 export type SpokenItem = { kind: string; text?: string; streaming?: boolean };
 
-/** The text to speak: the last completed assistant reply. `thinking` and `tool` are
- *  separate item kinds, so they are excluded by construction. */
-export function lastSpokenText(items: readonly SpokenItem[]): string | null {
-  for (let i = items.length - 1; i >= 0; i -= 1) {
-    const item = items[i];
-    if (item.kind !== 'assistant') continue;
-    if (item.streaming) continue;
-    const text = (item.text ?? '').trim();
-    return text.length > 0 ? text : null;
+/** An assistant bubble can no longer change once it is not the last item
+ *  (`append-chunk` only ever appends to the last item) or its span is closed.
+ *  This also covers a bubble orphaned with `streaming: true` by a thinking item
+ *  pushed without closing the assistant span: non-last ⇒ frozen. */
+function isFinal(items: readonly SpokenItem[], i: number): boolean {
+  return i < items.length - 1 || items[i].streaming !== true;
+}
+
+/** Assistant texts that are safe to speak, from `cursor` on, plus the new
+ *  cursor (stops at the first item still open). `thinking`, `tool`, `user` and
+ *  `notice` items are skipped for text but still advance the cursor — a closed
+ *  bubble stays closed regardless of what follows it. Replaces `lastSpokenText`,
+ *  which returned only the last completed reply and dropped everything the
+ *  agent said before its first tool call. */
+export function takeFinalizedBubbles(
+  items: readonly SpokenItem[],
+  cursor: number,
+): { texts: string[]; cursor: number } {
+  const texts: string[] = [];
+  let i = Math.max(0, Math.min(cursor, items.length));
+  for (; i < items.length && isFinal(items, i); i += 1) {
+    if (items[i].kind !== 'assistant') continue;
+    const text = (items[i].text ?? '').trim();
+    if (text) texts.push(text);
   }
-  return null;
+  return { texts, cursor: i };
 }
 
 /** Fields of a saved voice config that a settings round-trip can be compared on.
