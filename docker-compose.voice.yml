@@ -1,29 +1,43 @@
 # Local speech backend for caretaker's voice mode (Settings → Voice).
 #
-# This does NOT run caretaker — it runs the STT/TTS server that caretaker's voice
-# endpoints proxy to, so nothing leaves your machine. caretaker bundles no speech
-# model, the same way it bundles no LLM.
+# This does NOT run caretaker — it runs the STT/TTS server(s) that caretaker's
+# voice endpoints proxy to, so nothing leaves your machine. caretaker bundles no
+# speech model, the same way it bundles no LLM.
+#
+# Two services: Speaches (STT + TTS) on port 8969, and openai-edge-tts (TTS only,
+# Microsoft Neural voices) on port 5050. Use Speaches for transcription, and
+# optionally point the synthesis endpoint at edge-tts for better Italian voices.
 #
 #   docker compose -f docker-compose.voice.yml up -d
-#   curl http://127.0.0.1:8969/v1/models          # confirm it is up (empty at first)
+#   curl http://127.0.0.1:8969/v1/models          # confirm Speaches is up (empty at first)
+#   curl http://127.0.0.1:5050/v1/models          # confirm edge-tts is up
 #
-# Models are NOT downloaded on demand — a request for a model that is not installed
-# returns 404. Pull the two you need once (a few hundred MB each):
+# Speaches models are NOT downloaded on demand — a request for a model that is not
+# installed returns 404. Pull the two you need once (a few hundred MB each):
 #
 #   curl -X POST http://127.0.0.1:8969/v1/models/Systran/faster-whisper-small
 #   curl -X POST http://127.0.0.1:8969/v1/models/speaches-ai/Kokoro-82M-v1.0-ONNX
 #
+# edge-tts needs no model install — it fetches voices from Microsoft's online
+# service at runtime.
+#
 # Then in Settings → Voice:
-#   Endpoint            http://127.0.0.1:8969/v1
-#   API Key             (leave empty — no auth by default)
+#   Endpoint            http://127.0.0.1:8969/v1      (Speaches — transcription)
 #   Transcription Model Systran/faster-whisper-small
-#   Synthesis Model     speaches-ai/Kokoro-82M-v1.0-ONNX
-#   Voice               af_heart
+#   Synthesis Endpoint  http://127.0.0.1:5050/v1      (edge-tts — synthesis only)
+#   Synthesis Model     tts-1
+#   Voice               it-IT-ElsaNeural
+#
+# Or leave the Synthesis Endpoint empty to use Speaches for both (the default).
 #
 # Models download on first use and are cached in the named volume below, so the
 # first request of each kind is slow and later ones are not. Note that
 # `docker system prune` does NOT remove named volumes — to reclaim the cache:
 #   docker compose -f docker-compose.voice.yml down -v
+#
+# A compose-started container is adopted by the managed Start when the name
+# matches — caretaker never fights a container already running under the
+# expected name.
 
 services:
   speaches:
@@ -38,6 +52,19 @@ services:
       - '127.0.0.1:8969:8000'
     volumes:
       - hf-hub-cache:/home/ubuntu/.cache/huggingface/hub
+    restart: unless-stopped
+
+  edge-tts:
+    # Microsoft Edge Neural TTS behind an OpenAI-compatible API. TTS only —
+    # cannot transcribe, so it complements Speaches rather than replacing it.
+    # GPL-3.0: caretaker talks to it over HTTP and redistributes none of its
+    # code, so this is arms-length use, not a derivative work.
+    image: travisvn/openai-edge-tts:latest
+    container_name: caretaker-edge-tts
+    ports:
+      - '127.0.0.1:5050:5050'
+    environment:
+      - REQUIRE_API_KEY=False
     restart: unless-stopped
 
 volumes:
