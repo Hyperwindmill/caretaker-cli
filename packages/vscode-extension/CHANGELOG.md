@@ -1,5 +1,23 @@
 # caretaker-vscode
 
+## 0.18.0
+
+### Minor Changes
+
+- ebfd24e: Add an optional separate synthesis endpoint (`ttsEndpoint` + `ttsApiKey`) to voice mode, so synthesis can be routed to a different host than transcription — e.g. a local openai-edge-tts container for Microsoft Neural voices while Speaches handles transcription. The transcription key is never sent to the synthesis host. The managed local backend is now parameterized over a target (`stt` / `tts`) with a two-entry spec table: `GET /api/voice/backend` returns `{ stt, tts }` and the start/stop/delete routes take `?target=stt|tts`. The voice catalogue fetcher now accepts `{"models": [...]}` (not just `{"data": [...]}`) and falls back to `/voices/all` when no TTS model carries its own voices, with voice ids read from the `"name"` key. The Voice settings tab now shows synthesis endpoint/key fields, an "Use Microsoft Edge voices" prefill button, and renders one managed-backend block per container.
+
+### Patch Changes
+
+- e31a33d: Fix the chat UI freezing on long conversations (around 200k tokens) in the web GUI, the
+  desktop app and the VSCode sidebar. Markdown is now parsed once per message and cached,
+  the message list and its items are memoized so typing in the composer no longer re-renders
+  the whole thread, and collapsed tool blocks no longer mount their (often very large)
+  results until expanded.
+- Updated dependencies [e31a33d]
+- Updated dependencies [ebfd24e]
+  - @hyperwindmill/caretaker-cli@0.18.0
+  - webview-ui@0.18.0
+
 ## 0.17.0
 
 ### Minor Changes
