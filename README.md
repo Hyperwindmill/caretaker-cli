@@ -150,7 +150,7 @@ Start pulls the image if needed (**about 2 GB the first time**, with progress sh
 
 The block only appears when the endpoint points at your own machine (`127.0.0.1`, `localhost`, `[::1]`): **the endpoint you configure is the source of truth, and the container is bound to match it.** caretaker parses the port out of your endpoint and never rewrites it or picks its own — so if that port is already taken, Docker says so, and you pick another by changing the port in the endpoint and saving again. For a remote speech server there is nothing local to manage, and the block stays hidden.
 
-**Stop** stops the container and nothing else: the model cache is a named Docker volume that survives, so starting again is quick. To remove the container or reclaim the cache, use `docker` yourself — `docker rm caretaker-speaches` and `docker volume rm caretaker-hf-hub-cache`.
+**Stop** stops the container and nothing else: the model cache is a named Docker volume that survives, so starting again is quick. **Delete** (two-step confirm) removes the container itself but keeps the downloaded models — reach for it when the backend misbehaves after you switch networks, since the container keeps the DNS of the network it was created on; press **Start** afterwards to recreate it. To reclaim the model cache too, use `docker` yourself: `docker volume rm caretaker-hf-hub-cache`.
 
 **Or run it yourself.** `docker-compose.voice.yml` in the repo root does the same thing by hand; caretaker adopts an already-running `caretaker-speaches` container rather than fighting it:
 
