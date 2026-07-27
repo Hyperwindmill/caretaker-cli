@@ -14,4 +14,5 @@ after the last bubble finishes playing and the harness turn is over. Applies
 to both native and claude-code providers. The voice flag is wired end-to-end:
 the renderer sets it on the start message for conversation-mode transcripts,
 the web server forwards it to harness.run, and the VSCode host ignores it
-(voice is unavailable in the sidebar, and the field is optional).
+(voice is unavailable in the sidebar, and the field is optional). Documentation
+updated in CLAUDE.md and README.md.
