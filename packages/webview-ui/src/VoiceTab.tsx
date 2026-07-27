@@ -3,7 +3,6 @@ import type { CaretakerConfig, VoiceConfig } from 'caretaker-types';
 import type { ViewToHost, VoiceCatalog, VoiceCatalogResult } from './bridge.js';
 import { voiceSignature } from './voice_utils.js';
 import {
-  backendStatusText,
   type BackendStatus,
   type BackendStatuses,
 } from './voice_backend_utils.js';
