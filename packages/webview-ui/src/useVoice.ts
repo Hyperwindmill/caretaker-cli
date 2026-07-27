@@ -4,7 +4,7 @@ import {
   nextPhase,
   toBcp47,
   stripMarkdownForSpeech,
-  lastSpokenText,
+  takeFinalizedBubbles,
   END_OF_TURN_MS,
   IDLE_WINDOW_MS,
   POST_PLAYBACK_MS,
@@ -80,6 +80,8 @@ export function useVoice(opts: {
   onTranscriptRef.current = onTranscript;
   const itemsRef = useRef(items);
   itemsRef.current = items;
+  const chatStatusRef = useRef(chatStatus);
+  chatStatusRef.current = chatStatus;
 
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -92,9 +94,13 @@ export function useVoice(opts: {
    *  branch of `nextPhase`. This covers a surface that sends without ever
    *  flipping status to 'streaming'. */
   const sawStreamingRef = useRef(false);
-  /** The reply already spoken when the current turn was sent. Guards against
-   *  re-reading it if this turn produces no new text of its own. */
-  const spokenBaselineRef = useRef<string | null>(null);
+  /** Next item index not yet considered for speech. Set at send time, so the
+   *  previous turn's reply is unreachable by construction — the off-by-one
+   *  invariant 3 was protecting, expressed once instead of via a baseline. */
+  const cursorRef = useRef(0);
+  /** Assistant texts finalized but not yet played. Drained by `speakReply`,
+   *  one item per synthesis+playback cycle, chaining inside `audio.onended`. */
+  const queueRef = useRef<string[]>([]);
 
   const apply = useCallback((event: Parameters<typeof nextPhase>[1]) => {
     setPhase((current) => nextPhase(current, event));
@@ -160,10 +166,11 @@ export function useVoice(opts: {
         if (trimmed) {
           if (currentMode === 'conversation') {
             sawStreamingRef.current = false;
-            // Remember what had already been said, so a turn that ends without
-            // producing new text (tool calls only, or an empty reply) relistens
-            // instead of re-reading the previous answer.
-            spokenBaselineRef.current = lastSpokenText(itemsRef.current);
+            // Set the cursor to the current list length. The user item that
+            // lands at this index is skipped by the selector (non-assistant),
+            // and any prior reply is unreachable — no baseline needed.
+            cursorRef.current = itemsRef.current.length;
+            queueRef.current = [];
           }
           onTranscriptRef.current(trimmed, currentMode);
         }
@@ -226,12 +233,22 @@ export function useVoice(opts: {
     }
   }, [apply, fail, finishRecording, teardownCapture]);
 
-  /** Synthesize and play the reply, then reopen the mic on playback end. */
+  /** Synthesize and play the next queued bubble, then chain to the next one
+   *  or reopen the mic. The chaining happens inside `audio.onended` rather than
+   *  via a `speaking → speaking` phase transition, because the phase effect only
+   *  fires on a phase *change* — re-entering `speaking` would not re-trigger it.
+   *  An empty queue on entry emits `playbackEnded` immediately, as the old code
+   *  did when there was nothing new to say. */
   const speakReply = useCallback(async () => {
-    const text = lastSpokenText(itemsRef.current);
-    // Same text as before the send ⇒ this turn added no reply of its own.
-    if (!text || text === spokenBaselineRef.current) {
-      apply({ kind: 'playbackEnded', mode: 'conversation' });
+    const text = queueRef.current.shift();
+    if (!text) {
+      // Nothing to say — the turn produced no new text, or the queue already
+      // drained. Report playback ended so the phase machine can advance.
+      apply({
+        kind: 'playbackEnded',
+        mode: 'conversation',
+        turnComplete: chatStatusRef.current === 'idle',
+      });
       return;
     }
     try {
@@ -247,9 +264,21 @@ export function useVoice(opts: {
       audio.onended = () => {
         URL.revokeObjectURL(url);
         audioRef.current = null;
-        // INVARIANT 1: the mic reopens here and nowhere else. Reopening on the
-        // harness `done` event instead is what makes the agent transcribe itself.
-        setTimeout(() => apply({ kind: 'playbackEnded', mode: 'conversation' }), POST_PLAYBACK_MS);
+        // Chain the next queued bubble or, when the queue is empty, emit
+        // playbackEnded. INVARIANT 1: the mic reopens only here, and only when
+        // the harness turn is also over — a queue drained mid-turn returns to
+        // awaiting, not recording.
+        setTimeout(() => {
+          if (queueRef.current.length > 0) {
+            void speakReply();
+          } else {
+            apply({
+              kind: 'playbackEnded',
+              mode: 'conversation',
+              turnComplete: chatStatusRef.current === 'idle',
+            });
+          }
+        }, POST_PLAYBACK_MS);
       };
       audio.onerror = () => {
         URL.revokeObjectURL(url);
@@ -266,6 +295,20 @@ export function useVoice(opts: {
   useEffect(() => {
     if (chatStatus === 'streaming') sawStreamingRef.current = true;
   }, [chatStatus]);
+
+  // Bubbles become speakable as they close, mid-turn. Declared BEFORE the
+  // turnFinished effect so a bubble closed by `done` is queued in the same
+  // commit that reports the turn over — effect ordering must not be able to
+  // lose a bubble.
+  useEffect(() => {
+    if (modeRef.current !== 'conversation') return;
+    if (phaseRef.current === 'idle') return;
+    const { texts, cursor } = takeFinalizedBubbles(items, cursorRef.current);
+    cursorRef.current = cursor;
+    if (texts.length === 0) return;
+    queueRef.current.push(...texts);
+    apply({ kind: 'speechQueued', mode: 'conversation', canSpeak });
+  }, [items, canSpeak, apply]);
 
   // Drive the awaiting → speaking/recording transition off the existing chat
   // reducer rather than adding protocol events.
@@ -285,6 +328,10 @@ export function useVoice(opts: {
       turnComplete: chatStatus === 'idle',
       sawStreaming: sawStreamingRef.current,
       confirmPending: pendingConfirmCount > 0,
+      // Text queued but not yet played. Non-zero drives awaiting → speaking
+      // regardless of turnComplete, so a bubble closed in the same commit as
+      // the turn ending is never lost to effect ordering.
+      pendingSpeech: queueRef.current.length,
     });
   }, [phase, chatStatus, pendingConfirmCount, canSpeak, apply]);
 
@@ -300,6 +347,7 @@ export function useVoice(opts: {
     if (phase === 'idle') {
       teardownCapture();
       stopPlayback();
+      queueRef.current = [];
     }
   }, [phase, startRecording, speakReply, teardownCapture, stopPlayback]);
 
