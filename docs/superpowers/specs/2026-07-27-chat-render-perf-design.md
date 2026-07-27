@@ -76,13 +76,16 @@ skipped layout/paint for three lines of CSS.
 ### Changes
 
 1. **`webview-ui/src/markdown.ts` (new)** — move `sanitize()` there and expose
-   `renderMarkdown(content)`: `marked.parse` + sanitize behind a module-level LRU
-   `Map` (limit 2000 entries). LRU, not a plain cache: every render pass touches every
-   visible item, so stable bubbles stay hot while the growing prefixes of the currently
-   streaming bubble (a fresh key per chunk) become the least-recently-used entries and
-   are the ones evicted. Pure module, `.ts` — testable under the package's
-   `src/**/*.test.ts` runner, unlike a `.tsx` component.
-2. **`MarkdownText`** — call `renderMarkdown`, wrap in `React.memo`.
+   `renderMarkdown(content, useCache = true)`: `marked.parse` + sanitize behind a
+   module-level LRU `Map` (limit 2000 entries). The still-streaming bubble is excluded
+   from the cache (`useCache = false`): each SSE token grows its prefix by one
+   character, so caching the intermediate strings would insert one entry per token
+   and evict the whole conversation. With streaming bubbles excluded the cache is
+   bounded by the item count, not the token count. Pure module, `.ts` — testable
+   under the package's `src/**/*.test.ts` runner, unlike a `.tsx` component.
+2. **`MarkdownText`** — call `renderMarkdown`, wrap in `React.memo`. Accepts an
+   optional `cache` prop (default `true`) passed through as the `useCache` argument,
+   so the assistant case passes `cache={!item.streaming}`.
 3. **`Item`** — wrap in `React.memo`. Props are already reference-stable per item: the
    reducer replaces only the item it changes, keeping every other object identity.
 4. **`MessageList`** — wrap in `React.memo`; in `App`, `useCallback` `onConfirm` and
@@ -126,4 +129,5 @@ skipped layout/paint for three lines of CSS.
 - `MessageList`'s props become a contract: anything passed inline (a fresh array or
   closure) re-enables the freeze. Worth stating in `CLAUDE.md` so a future change does
   not silently undo this.
-- Roughly 2–3 MB of cached HTML for a 200k-token session, bounded by the LRU limit.
+- Roughly 2–3 MB of cached HTML for a 200k-token session, bounded by the LRU limit
+  and excluding streaming-bubble prefixes (which are not cached).

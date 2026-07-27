@@ -8,10 +8,13 @@ import { renderMarkdown } from './markdown.js';
 export interface MarkdownTextProps {
   content: string;
   inline?: boolean;
+  /** When false (the still-streaming bubble) the parsed HTML is not cached, so
+   *  growing prefixes don't evict the settled conversation. Default true. */
+  cache?: boolean;
 }
 
-export const MarkdownText = memo(function MarkdownText({ content, inline = false }: MarkdownTextProps) {
-  const html = renderMarkdown(content);
+export const MarkdownText = memo(function MarkdownText({ content, inline = false, cache = true }: MarkdownTextProps) {
+  const html = renderMarkdown(content, cache);
 
   if (inline) {
     return <span dangerouslySetInnerHTML={{ __html: html }} />;

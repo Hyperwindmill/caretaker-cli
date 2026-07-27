@@ -184,7 +184,7 @@ const Item = memo(function Item({ item, sessionId }: { item: ChatItem; sessionId
         <div className="bubble bubble--assistant">
           <div className="bubble__role">{item.label || 'assistant'}</div>
           <div className="bubble__text">
-            <MarkdownText content={item.text} />
+            <MarkdownText content={item.text} cache={!item.streaming} />
             {item.streaming && <span className="bubble__caret">▌</span>}
           </div>
         </div>

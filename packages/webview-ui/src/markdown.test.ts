@@ -60,3 +60,15 @@ test('a cached second pass over a long conversation is far cheaper than the firs
     `expected the cached pass to be >5x faster (cold ${coldNs}ns, warm ${warmNs}ns)`,
   );
 });
+
+// The streaming bubble must not pollute the cache: each token grows its prefix,
+// so caching ~2000 intermediate strings would evict the whole conversation.
+test('cache=false parses but does not store the result', () => {
+  resetMarkdownCacheForTest();
+  const html = renderMarkdown('# streaming', false);
+  assert.match(html, /<h1[^>]*>streaming<\/h1>/);
+  assert.equal(markdownCacheSizeForTest(), 0, 'cache=false must not insert into the cache');
+  // A second call with cache=true for the same content should be a fresh insert.
+  renderMarkdown('# streaming');
+  assert.equal(markdownCacheSizeForTest(), 1);
+});

@@ -6,9 +6,14 @@
 // sessions. Keyed on the raw content string, so a bubble that has not changed
 // is a Map hit.
 //
-// LRU, not a plain bounded map: a render pass touches every visible item, so
-// stable bubbles stay hot while the growing prefixes of the currently
-// streaming bubble (a new key per chunk, never touched again) age out first.
+// The cache is skipped for the still-streaming bubble: each SSE token grows
+// its content by one character, so caching the intermediate prefixes would
+// insert one entry per token (~2000 for a single reply) and evict the whole
+// conversation from a 2000-entry cache. Item/MarkdownText are memoized, so
+// stable bubbles are never re-rendered — their cache entries are never
+// re-touched, and an LRU would let them age out during one streaming reply.
+// With streaming bubbles excluded, the cache holds only settled messages,
+// which is bounded by the item count, not by the token count.
 
 import { marked } from 'marked';
 
@@ -36,19 +41,26 @@ function sanitize(html: string): string {
 let cacheLimit = 2000;
 const cache = new Map<string, string>();
 
-export function renderMarkdown(content: string): string {
-  const hit = cache.get(content);
-  if (hit !== undefined) {
-    // Map keeps insertion order: re-inserting marks this the most recent.
-    cache.delete(content);
-    cache.set(content, hit);
-    return hit;
+/** Parse + sanitize markdown to HTML. When `useCache` is false (the
+ *  still-streaming bubble) the result is computed but not stored, so growing
+ *  prefixes don't evict the settled conversation. */
+export function renderMarkdown(content: string, useCache = true): string {
+  if (useCache) {
+    const hit = cache.get(content);
+    if (hit !== undefined) {
+      // Map keeps insertion order: re-inserting marks this the most recent.
+      cache.delete(content);
+      cache.set(content, hit);
+      return hit;
+    }
   }
   const html = sanitize(marked.parse(content, { breaks: true, gfm: true }) as string);
-  cache.set(content, html);
-  if (cache.size > cacheLimit) {
-    const oldest = cache.keys().next();
-    if (!oldest.done) cache.delete(oldest.value);
+  if (useCache) {
+    cache.set(content, html);
+    if (cache.size > cacheLimit) {
+      const oldest = cache.keys().next();
+      if (!oldest.done) cache.delete(oldest.value);
+    }
   }
   return html;
 }
