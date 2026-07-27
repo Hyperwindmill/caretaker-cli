@@ -136,12 +136,13 @@ purpose. What keeps that affordable on a 200k-token session:
 
 - **Markdown is parsed once per distinct string.** `src/markdown.ts` owns `marked` +
   the HTML sanitizer behind a 2000-entry LRU (`renderMarkdown`); `MarkdownText` is a
-  `memo` component on top. The still-streaming bubble is excluded from the cache
-  (`cache={!item.streaming}`): each SSE token grows its prefix by one character, so
-  caching the intermediate strings would insert one entry per token and evict the
-  whole conversation. With streaming bubbles excluded the cache is bounded by the
-  item count, not the token count. Parsing in the render body — the original
-  behaviour — cost O(whole conversation) on every render.
+  `memo` component on top. Still-streaming bubbles and thinking blocks are excluded from
+  the cache (`cache={!item.streaming}` for assistant items, `cache={false}` for thinking
+  items): each SSE delta grows the content by one character, so caching the intermediate
+  strings would insert one entry per delta and evict the whole conversation. With
+  streaming bubbles and thinking blocks excluded the cache is bounded by the item count,
+  not the token count. Parsing in the render body — the original behaviour — cost
+  O(whole conversation) on every render.
 - **`MessageList` and `Item` are `memo`'d, and that only works if callers keep props
   reference-stable.** The composer draft lives in `App` state (voice dictation writes
   into it), so every keystroke re-renders `App`; the list bails out only because
