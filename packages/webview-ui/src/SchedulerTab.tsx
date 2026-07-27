@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import type { CaretakerConfig, AgentConfig, ScheduledTaskConfig } from 'caretaker-types';
 import type { ViewToHost, ChatMessage } from './bridge.js';
 import type { ChatItem } from './App.js';
@@ -279,7 +279,7 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
   const runs = viewingTaskLogs ? taskRuns[viewingTaskLogs.id] || [] : [];
   const activeRunId = selectedRunId || runs[0]?.runId;
   const activeRun = runs.find(r => r.runId === activeRunId);
-  const activeRunChatItems = activeRun ? reconstructChatItems(activeRun.messages || []) : [];
+  const activeRunChatItems = useMemo(() => activeRun ? reconstructChatItems(activeRun.messages || []) : [], [activeRun]);
   const selectedAgentName = viewingTaskLogs ? agents.find(a => a.id === viewingTaskLogs.agentId)?.name : '';
 
   return (

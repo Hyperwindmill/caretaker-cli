@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { memo, useEffect, useRef, type ReactNode } from 'react';
 
 import type { ChatItem } from './App.js';
 import { MarkdownText } from './MarkdownText.js';
@@ -16,7 +16,20 @@ export interface MessageListProps {
 
 const STICK_THRESHOLD = 100;
 
-export function MessageList({ items, sessionId = null, trailing, isStreaming, agentName }: MessageListProps) {
+/** Memoized: the composer draft lives in `App` state, so this list re-renders on
+ *  every keystroke unless it can bail out. That bail-out only works while callers
+ *  keep `items` and `trailing` reference-stable — pass a `useMemo`'d array, never
+ *  one built inline in JSX.
+ *  ponytail: memoization + a cached parser, no virtualization. If a conversation
+ *  ever gets heavy enough that the DOM itself is the bottleneck, the escalation is
+ *  `content-visibility` on the heavy blocks first, a windowing library only after. */
+export const MessageList = memo(function MessageList({
+  items,
+  sessionId = null,
+  trailing,
+  isStreaming,
+  agentName,
+}: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const prevItemsLengthRef = useRef(items.length);
   // Whether the view is pinned to the bottom. Starts true so opening a
@@ -72,9 +85,9 @@ export function MessageList({ items, sessionId = null, trailing, isStreaming, ag
       )}
     </div>
   );
-}
+});
 
-function Item({ item, sessionId }: { item: ChatItem; sessionId: string | null }) {
+const Item = memo(function Item({ item, sessionId }: { item: ChatItem; sessionId: string | null }) {
   switch (item.kind) {
     case 'user':
       return (
@@ -190,4 +203,4 @@ function Item({ item, sessionId }: { item: ChatItem; sessionId: string | null })
         </div>
       );
   }
-}
+});

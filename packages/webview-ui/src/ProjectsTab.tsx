@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import type { AgentSummary } from './bridge.js';
 import { DeleteIcon, WarningIcon, ToolIcon, PauseIcon, ActivateIcon, GitIcon, ArchiveIcon, EditIcon, BackIcon } from './icons.js';
 import { MessageList } from './MessageList.js';
@@ -1235,6 +1235,7 @@ function TaskLogView({
 }: TaskLogViewProps) {
   const completedCount = task.checklist.filter((c) => c.status === 'done').length;
   const totalCount = task.checklist.length;
+  const chatItems = useMemo(() => taskMessagesToChatItems(taskMessages, agentLabels), [taskMessages, agentLabels]);
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Header with back button + task title + status */}
@@ -1357,7 +1358,7 @@ function TaskLogView({
           {taskMessages.length === 0 ? (
             <div className="messages messages--empty">No messages in this execution yet. Agent will start on next tick.</div>
           ) : (
-            <MessageList items={taskMessagesToChatItems(taskMessages, agentLabels)} sessionId={null} />
+            <MessageList items={chatItems} sessionId={null} />
           )}
 
           {/* Composer */}

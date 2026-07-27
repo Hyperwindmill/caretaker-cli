@@ -9,7 +9,7 @@
 // span. Pending confirms live outside the message list and render as
 // ConfirmCard rows at the tail until the user resolves them.
 
-import { useEffect, useReducer, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 
 import type { 
   AgentSummary, 
@@ -449,14 +449,20 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
     postMessage(msg);
   };
 
-  const onConfirm = (id: string, decision: ConfirmDecision): void => {
+  const onConfirm = useCallback((id: string, decision: ConfirmDecision): void => {
     dispatch({ kind: 'permission-resolved', id });
     postMessage({ type: 'permission_response', id, decision });
-  };
+  }, [postMessage]);
 
   const onAbort = (): void => {
     postMessage({ type: 'abort' });
   };
+
+  // Stable identity so MessageList's memo actually bails out while typing.
+  const confirmCards = useMemo(
+    () => chatState.pendingConfirms.map((p) => <ConfirmCard key={p.id} pending={p} onDecide={onConfirm} />),
+    [chatState.pendingConfirms, onConfirm],
+  );
 
   const onSelectAgent = (agentId: string): void => {
     if (!agentId) return; // Ignore empty selection
@@ -755,9 +761,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
                 sessionId={selectedSessionId}
                 isStreaming={chatState.status === 'streaming'}
                 agentName={selectedAgentName}
-                trailing={chatState.pendingConfirms.map((p) => (
-                  <ConfirmCard key={p.id} pending={p} onDecide={onConfirm} />
-                ))}
+                trailing={confirmCards}
               />
               {(chatState.errorText || voice.error) && (
                 <div className="app__error"><WarningIcon size={14} /> {chatState.errorText || voice.error}</div>
@@ -895,9 +899,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
         sessionId={selectedSessionId}
         isStreaming={chatState.status === 'streaming'}
         agentName={selectedAgentName}
-        trailing={chatState.pendingConfirms.map((p) => (
-          <ConfirmCard key={p.id} pending={p} onDecide={onConfirm} />
-        ))}
+        trailing={confirmCards}
       />
       {(chatState.errorText || voice.error) && (
         <div className="app__error"><WarningIcon size={14} /> {chatState.errorText || voice.error}</div>
