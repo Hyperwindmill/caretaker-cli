@@ -77,10 +77,16 @@ export function VoiceBackendBlock({
   /** Container state as of the last adopted status. A ref, not state: comparing
    *  against state in the parent's poll callback would compare against a stale
    *  closure. Used to clear a leftover error only when the container transitions
-   *  to running between polls. */
+   *  to running between polls. Updated synchronously in start()/stop()/remove()
+   *  before onStatusChange so the status-effect does not see a transition and
+   *  wipe an error set in the same batch — e.g. a model-install failure reports
+   *  container: 'running' (failures never roll back), and clearing on that
+   *  transition would hide exactly the failure the install step exists to
+   *  surface. */
   const lastContainer = useRef<BackendStatus['container'] | null>(null);
   useEffect(() => {
-    // Track transitions: clear error when the container comes up between polls.
+    // Clear error when the container comes up between polls (not from a
+    // start/stop/delete action — those update the ref synchronously first).
     if (status.container === 'running' && lastContainer.current !== 'running') {
       setError(null);
     }
@@ -119,6 +125,13 @@ export function VoiceBackendBlock({
           }
           if (p.status) {
             // Terminal line: adopt the fresh status and stop showing progress text.
+            // Update the ref synchronously BEFORE onStatusChange so the
+            // status-effect below does not see a transition and wipe an error we
+            // are about to set — a model-install failure reports
+            // container: 'running' (failures never roll back), and clearing on
+            // that transition would hide exactly the failure the install step
+            // exists to surface.
+            lastContainer.current = p.status.container;
             onStatusChange(p.status);
             setProgress(null);
             if (p.step === 'error') setError(p.message);
@@ -140,7 +153,11 @@ export function VoiceBackendBlock({
     setError(null);
     try {
       const res = await fetch(`/api/voice/backend/stop${query}`, { method: 'POST' });
-      if (res.ok) onStatusChange((await res.json()) as BackendStatus);
+      if (res.ok) {
+        const status = (await res.json()) as BackendStatus;
+        lastContainer.current = status.container;
+        onStatusChange(status);
+      }
     } catch {
       // Best-effort — the parent's poll re-syncs regardless.
     } finally {
@@ -154,8 +171,11 @@ export function VoiceBackendBlock({
     setError(null);
     try {
       const res = await fetch(`/api/voice/backend/delete${query}`, { method: 'POST' });
-      if (res.ok) onStatusChange((await res.json()) as BackendStatus);
-      else setError((await res.text().catch(() => '')) || 'Delete failed.');
+      if (res.ok) {
+        const status = (await res.json()) as BackendStatus;
+        lastContainer.current = status.container;
+        onStatusChange(status);
+      } else setError((await res.text().catch(() => '')) || 'Delete failed.');
     } catch {
       // Best-effort — the parent's poll re-syncs regardless.
     } finally {
