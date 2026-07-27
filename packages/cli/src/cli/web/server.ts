@@ -1185,9 +1185,9 @@ export async function startServer(port: number, host: string): Promise<void> {
           case 'fetchVoiceModels':
             try {
               const catalog = await fetchVoiceCatalog(msg.endpoint, msg.apiKey ?? null);
-              post({ type: 'voiceModelsFetched', result: { ok: true, catalog } });
+              post({ type: 'voiceModelsFetched', result: { ok: true, catalog }, target: msg.target });
             } catch (err) {
-              post({ type: 'voiceModelsFetched', result: { ok: false, error: String(err) } });
+              post({ type: 'voiceModelsFetched', result: { ok: false, error: String(err) }, target: msg.target });
             }
             return;
           case 'getTaskRuns':

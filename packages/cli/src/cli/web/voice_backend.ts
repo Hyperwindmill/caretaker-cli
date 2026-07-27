@@ -1,11 +1,16 @@
-// Detect / start / stop the managed local Speaches container backing voice
-// mode. The configured endpoint is the source of truth (see the design doc);
-// this module never rewrites `voice.endpoint` and never invents a port — it
-// only parses the one the user already configured and makes a container match
-// it. `lib/docker.ts` is deliberately task-agnostic, so we reuse its
-// `containerState` primitive but build our own run argv here (Speaches needs a
-// published port + a named cache volume, not a worktree bind-mount + a
-// `sleep infinity` keep-alive).
+// Detect / start / stop the managed local voice containers. Voice mode uses
+// one OpenAI-compatible endpoint by default (Speaches does both STT and TTS);
+// an optional `ttsEndpoint` splits synthesis to a separate host — today that
+// is openai-edge-tts, a TTS-only container with Microsoft Neural voices.
+//
+// The configured endpoint is the source of truth (see the design doc): this
+// module never rewrites `voice.endpoint` / `voice.ttsEndpoint` and never
+// invents a port — it only parses the one the user already configured and
+// makes a container match it. `lib/docker.ts` is deliberately task-agnostic,
+// so we reuse its `containerState` primitive but build our own run argv here
+// (Speaches needs a published port + a named cache volume, not a worktree
+// bind-mount + a `sleep infinity` keep-alive; edge-tts needs neither a volume
+// nor a model-install step).
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { Hono } from 'hono';
@@ -14,17 +19,60 @@ import type { VoiceConfig } from 'caretaker-types';
 import { commandEnv, probeShellEnv } from '../../harness/tools/builtin/shell-env.js';
 import { containerState } from '../../lib/docker.js';
 import { loadConfig } from '../../store/json.js';
-import { resolveVoice, voiceAuthHeaders } from './voice_proxy.js';
+import { resolveVoice, ttsTarget, authHeaders } from './voice_proxy.js';
 
 const exec = promisify(execFile);
 
-const CONTAINER_NAME = 'caretaker-speaches';
-const IMAGE = 'ghcr.io/speaches-ai/speaches:latest-cpu';
-// A named volume, deliberately not the `caretaker-cli_hf-hub-cache` that
-// docker-compose.voice.yml creates — a container already running under that
-// name (compose-started or hand-started) is adopted as-is and keeps its own
-// volume; only a fresh create uses ours.
-const VOLUME = 'caretaker-hf-hub-cache:/home/ubuntu/.cache/huggingface/hub';
+export type Target = 'stt' | 'tts';
+
+type BackendSpec = {
+  container: string;
+  image: string;
+  internalPort: number;
+  /** Extra `docker run` args after the standard `-d --name -p` prefix. */
+  extraRunArgs: string[];
+  /** Appended to the endpoint for the readiness probe. */
+  readyPath: string;
+  /** Speaches must be told to fetch models; edge-tts ships its voices. */
+  installsModels: boolean;
+  pullNote: string;
+};
+
+// ponytail: the TTS target's backend is inferred, not configured — there is
+// exactly one alternative synthesis backend, so `ttsEndpoint` being set is the
+// same fact as "run edge-tts there". Persist a kind on VoiceConfig when a
+// second alternative appears and the inference is no longer unambiguous.
+const SPECS: Record<Target, BackendSpec> = {
+  stt: {
+    container: 'caretaker-speaches',
+    image: 'ghcr.io/speaches-ai/speaches:latest-cpu',
+    internalPort: 8000,
+    // A named volume, deliberately not the `caretaker-cli_hf-hub-cache` that
+    // docker-compose.voice.yml creates — a container already running under
+    // that name (compose-started or hand-started) is adopted as-is and keeps
+    // its own volume; only a fresh create uses ours.
+    extraRunArgs: ['-v', 'caretaker-hf-hub-cache:/home/ubuntu/.cache/huggingface/hub'],
+    readyPath: '/models',
+    installsModels: true,
+    pullNote: 'first run downloads about 2 GB',
+  },
+  tts: {
+    container: 'caretaker-edge-tts',
+    image: 'travisvn/openai-edge-tts:latest',
+    internalPort: 5050,
+    // edge-tts fetches voices from Microsoft's online service at runtime — no
+    // model cache, no volume. REQUIRE_API_KEY=False disables the default
+    // auth requirement so the readiness probe and the proxy both work with no
+    // key; the user can set one and configure ttsApiKey if they want auth.
+    extraRunArgs: ['-e', 'REQUIRE_API_KEY=False'],
+    // /v1/models has no @require_api_key guard, so it answers 200 without a
+    // key — the correct readiness path. /v1/voices has @require_api_key and
+    // would 401 without a key, failing the probe.
+    readyPath: '/models',
+    installsModels: false,
+    pullNote: 'a small image, a few hundred MB',
+  },
+};
 
 const READY_TIMEOUT_MS = 60_000;
 const READY_POLL_INTERVAL_MS = 500;
@@ -37,7 +85,7 @@ export type BackendStatus = {
   imagePresent: boolean;
   /** Port parsed out of the endpoint, or null when it is not loopback. */
   port: number | null;
-  /** True when /v1/models answers — running is not the same as ready. */
+  /** True when the readiness path answers — running is not the same as ready. */
   responding: boolean;
 };
 
@@ -166,7 +214,7 @@ export function setVoiceBackendDepsForTest(overrides: Partial<BackendDeps> | nul
 
 // Node's WHATWG URL keeps the brackets in `.hostname` for a bracketed IPv6
 // authority (verified: `new URL('http://[::1]:1/').hostname === '[::1]'`,
-// not `'::1'`), so the literal bracketed form is what we must match here.
+// not `'::1]'`), so the literal bracketed form is what we must match here.
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 
 /** Port when the endpoint is loopback, else null. Exported for tests. */
@@ -186,16 +234,34 @@ function joinUrl(endpoint: string, suffix: string): string {
   return `${endpoint.replace(/\/+$/, '')}${suffix}`;
 }
 
+/** The endpoint for a given target: `voice.endpoint` for STT, `ttsTarget` for
+ *  TTS. Returns '' when the target's endpoint is not configured. */
+function targetEndpoint(voice: VoiceConfig, target: Target): string {
+  if (target === 'stt') return voice.endpoint;
+  return ttsTarget(voice).endpoint;
+}
+
+/** The auth headers for a given target. STT uses `voice.apiKey`; TTS uses its
+ *  own `ttsApiKey` or none — the STT key never leaks to the TTS host. */
+function targetAuth(voice: VoiceConfig, target: Target): Record<string, string> {
+  if (target === 'stt') {
+    const key = voice.apiKey;
+    return key ? authHeaders(key) : {};
+  }
+  return authHeaders(ttsTarget(voice).apiKey);
+}
+
 /** Short-timeout GET, independent of Docker — a remote or hand-run backend
  *  still reports `responding: true`. */
 async function probeResponding(
   endpoint: string,
+  readyPath: string,
   headers: Record<string, string> = {},
 ): Promise<boolean> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), PROBE_TIMEOUT_MS);
   try {
-    const res = await fetch(joinUrl(endpoint, '/models'), { headers, signal: ctrl.signal });
+    const res = await fetch(joinUrl(endpoint, readyPath), { headers, signal: ctrl.signal });
     return res.ok;
   } catch {
     return false;
@@ -212,28 +278,82 @@ async function classifyDocker(): Promise<BackendStatus['docker']> {
   return 'down';
 }
 
-export async function probeBackend(endpoint: string): Promise<BackendStatus> {
+/** Probe a single target's backend. Exported for tests. */
+export async function probeBackend(endpoint: string): Promise<BackendStatus>;
+export async function probeBackend(voice: VoiceConfig, target: Target): Promise<BackendStatus>;
+export async function probeBackend(
+  voiceOrEndpoint: VoiceConfig | string,
+  target?: Target,
+): Promise<BackendStatus> {
+  // Overload 1: the legacy (endpoint-only) call, used by existing tests that
+  // don't know about targets. Defaults to the STT spec.
+  if (typeof voiceOrEndpoint === 'string') {
+    const endpoint = voiceOrEndpoint;
+    const spec = SPECS[target ?? 'stt'];
+    const port = loopbackPort(endpoint);
+    const docker = await classifyDocker();
+    const container = docker === 'ok' ? await deps.containerState(spec.container) : 'absent';
+    const imagePresent = docker === 'ok' ? await deps.imagePresent(spec.image) : false;
+    const responding = await probeResponding(endpoint, spec.readyPath);
+    return { docker, container, imagePresent, port, responding };
+  }
+
+  // Overload 2: the (voice, target) call — resolves the endpoint and auth
+  // from the config, so TTS probes the TTS endpoint with the TTS key.
+  const voice = voiceOrEndpoint;
+  const t: Target = target ?? 'stt';
+  const spec = SPECS[t];
+  const endpoint = targetEndpoint(voice, t);
   const port = loopbackPort(endpoint);
   const docker = await classifyDocker();
-  // Coherent status without throwing: don't even ask Docker for container /
-  // image state when it isn't there to ask.
-  const container = docker === 'ok' ? await deps.containerState(CONTAINER_NAME) : 'absent';
-  const imagePresent = docker === 'ok' ? await deps.imagePresent(IMAGE) : false;
-  const responding = await probeResponding(endpoint);
+  const container = docker === 'ok' ? await deps.containerState(spec.container) : 'absent';
+  const imagePresent = docker === 'ok' ? await deps.imagePresent(spec.image) : false;
+  const responding = await probeResponding(endpoint, spec.readyPath, targetAuth(voice, t));
   return { docker, container, imagePresent, port, responding };
 }
 
-function runArgs(port: number): string[] {
+/** Probe both configured targets. `tts` is null when no separate
+ *  `ttsEndpoint` is set (the single-endpoint Speaches case). Docker is
+ *  classified once and shared across both targets — `docker info` + `image
+ *  inspect` are the expensive part of a probe, and running them twice per
+ *  10 s poll when a `ttsEndpoint` is set is wasteful. */
+export async function probeBackends(voice: VoiceConfig): Promise<{
+  stt: BackendStatus;
+  tts: BackendStatus | null;
+}> {
+  const docker = await classifyDocker();
+  const stt = await probeBackendWithDocker(voice, 'stt', docker);
+  const ttsEndpoint = voice.ttsEndpoint?.trim();
+  const tts = ttsEndpoint ? await probeBackendWithDocker(voice, 'tts', docker) : null;
+  return { stt, tts };
+}
+
+/** Internal: probe a target with a pre-classified docker status, so
+ *  `probeBackends` can classify once and reuse. */
+async function probeBackendWithDocker(
+  voice: VoiceConfig,
+  target: Target,
+  docker: BackendStatus['docker'],
+): Promise<BackendStatus> {
+  const spec = SPECS[target];
+  const endpoint = targetEndpoint(voice, target);
+  const port = loopbackPort(endpoint);
+  const container = docker === 'ok' ? await deps.containerState(spec.container) : 'absent';
+  const imagePresent = docker === 'ok' ? await deps.imagePresent(spec.image) : false;
+  const responding = await probeResponding(endpoint, spec.readyPath, targetAuth(voice, target));
+  return { docker, container, imagePresent, port, responding };
+}
+
+function runArgs(port: number, spec: BackendSpec): string[] {
   return [
     'run',
     '-d',
     '--name',
-    CONTAINER_NAME,
+    spec.container,
     '-p',
-    `127.0.0.1:${port}:8000`,
-    '-v',
-    VOLUME,
-    IMAGE,
+    `127.0.0.1:${port}:${spec.internalPort}`,
+    ...spec.extraRunArgs,
+    spec.image,
   ];
 }
 
@@ -241,11 +361,13 @@ function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-async function pollReady(voice: VoiceConfig): Promise<boolean> {
+async function pollReady(voice: VoiceConfig, target: Target): Promise<boolean> {
+  const spec = SPECS[target];
+  const endpoint = targetEndpoint(voice, target);
   const deadline = Date.now() + READY_TIMEOUT_MS;
-  const headers = voiceAuthHeaders(voice);
+  const headers = targetAuth(voice, target);
   for (;;) {
-    if (await probeResponding(voice.endpoint, headers)) return true;
+    if (await probeResponding(endpoint, spec.readyPath, headers)) return true;
     if (Date.now() >= deadline) return false;
     await new Promise((resolve) => setTimeout(resolve, READY_POLL_INTERVAL_MS));
   }
@@ -260,92 +382,106 @@ async function pollReady(voice: VoiceConfig): Promise<boolean> {
  *  and Speaches' route captures the id verbatim including the slash — so the
  *  id goes in the path unencoded, not through encodeURIComponent (which would
  *  turn it into `%2F` and very likely 404 against a path-style route match). */
-async function installModel(voice: VoiceConfig, modelId: string): Promise<void> {
-  const res = await fetch(joinUrl(voice.endpoint, `/models/${modelId}`), {
+async function installModel(voice: VoiceConfig, target: Target, modelId: string): Promise<void> {
+  const endpoint = targetEndpoint(voice, target);
+  const res = await fetch(joinUrl(endpoint, `/models/${modelId}`), {
     method: 'POST',
-    headers: voiceAuthHeaders(voice),
+    headers: targetAuth(voice, target),
   });
   if (res.ok || res.status === 409) return;
   const body = await res.text().catch(() => '');
   throw new Error(`${res.status} ${res.statusText}: ${body.slice(0, 300)}`);
 }
 
-export async function* startBackend(voice: VoiceConfig): AsyncGenerator<StartProgress> {
-  const endpoint = voice.endpoint;
+export async function* startBackend(
+  voice: VoiceConfig,
+  target: Target = 'stt',
+): AsyncGenerator<StartProgress> {
+  const spec = SPECS[target];
+  const endpoint = targetEndpoint(voice, target);
   const port = loopbackPort(endpoint);
   if (port == null) {
     yield {
       step: 'error',
       message: `Cannot manage a local backend for a non-loopback endpoint (${endpoint}).`,
-      status: await probeBackend(endpoint),
+      status: await probeBackend(voice, target),
     };
     return;
   }
 
   // 1. Image
   try {
-    if (await deps.imagePresent(IMAGE)) {
-      yield { step: 'image', message: `Image ${IMAGE} already present.` };
+    if (await deps.imagePresent(spec.image)) {
+      yield { step: 'image', message: `Image ${spec.image} already present.` };
     } else {
-      yield { step: 'image', message: `Pulling ${IMAGE} — first run downloads about 2 GB.` };
-      for await (const line of deps.pullImage(IMAGE)) {
+      yield { step: 'image', message: `Pulling ${spec.image} — ${spec.pullNote}.` };
+      for await (const line of deps.pullImage(spec.image)) {
         yield { step: 'image', message: line };
       }
     }
   } catch (err) {
-    yield { step: 'error', message: errMsg(err), status: await probeBackend(endpoint) };
+    yield { step: 'error', message: errMsg(err), status: await probeBackend(voice, target) };
     return;
   }
 
   // 2. Run — idempotent, so two caretaker instances or a hand/compose-started
   // container are all fine.
   try {
-    const state = await deps.containerState(CONTAINER_NAME);
+    const state = await deps.containerState(spec.container);
     if (state === 'running') {
       yield { step: 'run', message: 'Container already running.' };
     } else if (state === 'stopped') {
       yield { step: 'run', message: 'Starting the existing container.' };
-      await deps.startContainer(CONTAINER_NAME);
+      await deps.startContainer(spec.container);
     } else {
       yield { step: 'run', message: `Creating the container on port ${port}.` };
-      await deps.runContainer(runArgs(port));
+      await deps.runContainer(runArgs(port, spec));
     }
   } catch (err) {
-    yield { step: 'error', message: errMsg(err), status: await probeBackend(endpoint) };
+    yield { step: 'error', message: errMsg(err), status: await probeBackend(voice, target) };
     return;
   }
 
   // 3. Readiness — running is not the same as ready.
   yield { step: 'ready', message: 'Waiting for the backend to respond…' };
-  if (!(await pollReady(voice))) {
+  if (!(await pollReady(voice, target))) {
     yield {
       step: 'error',
-      message: `Timed out after ${READY_TIMEOUT_MS / 1000}s waiting for ${endpoint}/models to respond.`,
-      status: await probeBackend(endpoint),
+      message: `Timed out after ${READY_TIMEOUT_MS / 1000}s waiting for ${endpoint}${spec.readyPath} to respond.`,
+      status: await probeBackend(voice, target),
     };
     return;
   }
   yield { step: 'ready', message: 'Backend is responding.' };
 
-  // 4. Models — required, see installModel's comment.
-  const modelIds = [voice.sttModel, voice.ttsModel].filter(
-    (id): id is string => typeof id === 'string' && id.trim().length > 0,
-  );
-  for (const id of modelIds) {
-    try {
-      await installModel(voice, id);
-      yield { step: 'models', message: `Model ${id} ready.` };
-    } catch (err) {
-      yield {
-        step: 'error',
-        message: `Failed to install model ${id}: ${errMsg(err)}`,
-        status: await probeBackend(endpoint),
-      };
-      return;
+  // 4. Models — required for Speaches, skipped for edge-tts (ships its voices).
+  // Only Speaches (the STT target) reaches here because `installsModels` is
+  // false for edge-tts. When a separate `ttsEndpoint` is configured, the
+  // `ttsModel` belongs to the other host — installing it on Speaches would 404
+  // and report a hard failure on the feature's own happy path, so it is
+  // excluded. Without a separate endpoint, synthesis also uses this server, so
+  // the TTS model is installed alongside the STT one.
+  if (spec.installsModels) {
+    const hasSeparateTts = !!voice.ttsEndpoint?.trim();
+    const modelIds = [voice.sttModel, ...(hasSeparateTts ? [] : [voice.ttsModel])].filter(
+      (id): id is string => typeof id === 'string' && id.trim().length > 0,
+    );
+    for (const id of modelIds) {
+      try {
+        await installModel(voice, target, id);
+        yield { step: 'models', message: `Model ${id} ready.` };
+      } catch (err) {
+        yield {
+          step: 'error',
+          message: `Failed to install model ${id}: ${errMsg(err)}`,
+          status: await probeBackend(voice, target),
+        };
+        return;
+      }
     }
   }
 
-  yield { step: 'done', message: 'Backend started.', status: await probeBackend(endpoint) };
+  yield { step: 'done', message: 'Backend started.', status: await probeBackend(voice, target) };
 }
 
 /** `docker stop` only — never `rm`, never touches the volume. Stopping must
@@ -353,98 +489,134 @@ export async function* startBackend(voice: VoiceConfig): AsyncGenerator<StartPro
  *  the container — the model-cache volume and the image survive) is its own
  *  affordance, `deleteBackend`, so a container that froze stale state at
  *  creation (e.g. the network's DNS) can be recreated by the next Start. */
-export async function stopBackend(): Promise<void> {
-  await deps.stopContainer(CONTAINER_NAME);
+export async function stopBackend(target: Target = 'stt'): Promise<void> {
+  await deps.stopContainer(SPECS[target].container);
 }
 
 /** `docker rm -f` on the managed container. Handles running and stopped
  *  alike; never touches the `caretaker-hf-hub-cache` volume or the image. */
-export async function deleteBackend(): Promise<void> {
-  await deps.removeContainer(CONTAINER_NAME);
+export async function deleteBackend(target: Target = 'stt'): Promise<void> {
+  await deps.removeContainer(SPECS[target].container);
 }
 
 // --- HTTP surface + auto-start -------------------------------------------
 // The realistic collision here is auto-start-at-boot racing the user
 // pressing Start; there is never more than one caretaker web-server process
-// per CARETAKER_HOME in the ordinary case, so a plain module-level boolean
-// is enough — no job queue, no lock file. The check and the set below are
-// both synchronous (no `await` between them), so two overlapping calls in
-// the same process can never both pass the check: Node runs one at a time,
+// per CARETAKER_HOME in the ordinary case. A per-target guard (Set<Target>)
+// means starting edge-tts is not refused because a 2 GB Speaches pull is
+// running — the two are independent containers. The check and the set below
+// are both synchronous (no `await` between them), so two overlapping calls
+// in the same process can never both pass the check: Node runs one at a time,
 // and nothing yields control between the read and the write.
-let backendStarting = false;
+const starting = new Set<Target>();
 
 /** @internal Test-only seam: observe the in-flight guard without inferring it
  *  from side effects (call counts, timing) — deterministic instead of racy. */
-export function isBackendStartInFlightForTest(): boolean {
-  return backendStarting;
+export function isBackendStartInFlightForTest(target: Target = 'stt'): boolean {
+  return starting.has(target);
 }
 
-/** Same generator contract as `startBackend`, plus the one-at-a-time rule.
- *  A caller that loses the race gets a single terminal line carrying the
+/** Same generator contract as `startBackend`, plus the one-at-a-time-per-target
+ *  rule. A caller that loses the race gets a single terminal line carrying the
  *  current status rather than a second concurrent `docker pull`. */
-async function* startBackendGuarded(voice: VoiceConfig): AsyncGenerator<StartProgress> {
-  if (backendStarting) {
+async function* startBackendGuarded(
+  voice: VoiceConfig,
+  target: Target = 'stt',
+): AsyncGenerator<StartProgress> {
+  if (starting.has(target)) {
     yield {
       step: 'done',
       message: 'A start is already in progress; showing the current status.',
-      status: await probeBackend(voice.endpoint),
+      status: await probeBackend(voice, target),
     };
     return;
   }
-  backendStarting = true;
+  starting.add(target);
   try {
-    yield* startBackend(voice);
+    yield* startBackend(voice, target);
   } finally {
-    backendStarting = false;
+    starting.delete(target);
   }
+}
+
+function reqTarget(c: { req: { query: (name: string) => string | undefined } }): Target {
+  return c.req.query('target') === 'tts' ? 'tts' : 'stt';
 }
 
 export function registerVoiceBackend(app: Hono): void {
   app.get('/api/voice/backend', async (c) => {
     const config = await loadConfig();
-    const status = await probeBackend(config.voice?.endpoint ?? '');
-    return c.json(status);
+    const voice = config.voice;
+    if (!voice) {
+      // No voice configured: return the STT status with an empty endpoint,
+      // matching the legacy contract (a coherent status, not an error).
+      const status = await probeBackend('');
+      return c.json({ stt: status, tts: null });
+    }
+    const statuses = await probeBackends(voice);
+    return c.json(statuses);
   });
 
   app.post('/api/voice/backend/start', async (c) => {
     const resolved = await resolveVoice();
     if ('error' in resolved) return c.text(resolved.error, 400);
     const { voice } = resolved;
+    const target = reqTarget(c);
+
+    // For the TTS target, refuse when ttsEndpoint is unset or non-loopback —
+    // there is no container to manage. The wording matches the STT path so
+    // the user sees a consistent message.
+    if (target === 'tts') {
+      const ttsEndpoint = voice.ttsEndpoint?.trim();
+      if (!ttsEndpoint) {
+        return c.text('No separate TTS endpoint configured. Set one in Settings → Voice.', 400);
+      }
+      if (loopbackPort(ttsEndpoint) == null) {
+        return c.text(
+          `Cannot manage a local backend for a non-loopback endpoint (${ttsEndpoint}).`,
+          400,
+        );
+      }
+    }
 
     c.header('Content-Type', 'application/x-ndjson');
     return stream(c, async (s) => {
-      for await (const progress of startBackendGuarded(voice)) {
+      for await (const progress of startBackendGuarded(voice, target)) {
         await s.writeln(JSON.stringify(progress));
       }
     });
   });
 
   app.post('/api/voice/backend/stop', async (c) => {
+    const target = reqTarget(c);
     const config = await loadConfig();
     try {
-      await stopBackend();
+      await stopBackend(target);
     } catch {
       // No such container, daemon unreachable, etc. — the truth is in the
       // re-probe below, not in a 500 for an action that is already done.
     }
-    const status = await probeBackend(config.voice?.endpoint ?? '');
+    const voice = config.voice;
+    const status = voice ? await probeBackend(voice, target) : await probeBackend('');
     return c.json(status);
   });
 
   app.post('/api/voice/backend/delete', async (c) => {
+    const target = reqTarget(c);
     // Never tear the container down mid-pull/mid-install: the start flow
     // assumes the container it just created is still there.
-    if (backendStarting) {
+    if (starting.has(target)) {
       return c.text('A start is in progress; wait for it to finish before deleting.', 409);
     }
     const config = await loadConfig();
     try {
-      await deleteBackend();
+      await deleteBackend(target);
     } catch {
       // No such container, daemon unreachable, etc. — the truth is in the
       // re-probe below, not in a 500 for an action that is already done.
     }
-    const status = await probeBackend(config.voice?.endpoint ?? '');
+    const voice = config.voice;
+    const status = voice ? await probeBackend(voice, target) : await probeBackend('');
     return c.json(status);
   });
 }
@@ -472,24 +644,37 @@ async function runAutoStart(): Promise<void> {
     return;
   }
   if (!voice || voice.enabled !== true || voice.autoStartBackend !== true) return;
-  if (loopbackPort(voice.endpoint) == null) return;
 
-  console.log('[voice] auto-starting the managed local speech backend…');
-  // A 2 GB pull emits one line per layer, all under step 'image': log the first
-  // and drop the rest. Every other step emits a handful of distinct messages
-  // that each say something a server log wants — which model was installed,
-  // whether the readiness wait ever ended — so those are not collapsed.
-  let loggedImageLine = false;
-  try {
-    for await (const progress of startBackendGuarded(voice)) {
-      if (progress.step === 'image' && loggedImageLine) continue;
-      loggedImageLine = progress.step === 'image';
-      const log = progress.step === 'error' ? console.error : console.log;
-      log(`[voice] ${progress.message}`);
+  // Iterate both targets, skipping any whose endpoint is missing or
+  // non-loopback. The two containers are independent: a 2 GB Speaches pull
+  // does not block the edge-tts start (per-target in-flight guard). The TTS
+  // target is only auto-started when a *separate* ttsEndpoint is configured —
+  // without one, synthesis goes to `endpoint` (the single-server Speaches case)
+  // and there is no second container to manage.
+  for (const target of ['stt', 'tts'] as const) {
+    if (target === 'tts' && !voice.ttsEndpoint?.trim()) continue;
+    const endpoint = targetEndpoint(voice, target);
+    if (loopbackPort(endpoint) == null) continue;
+
+    console.log(
+      `[voice:${target}] auto-starting the managed local ${target === 'stt' ? 'speech' : 'synthesis'} backend…`,
+    );
+    // A 2 GB pull emits one line per layer, all under step 'image': log the first
+    // and drop the rest. Every other step emits a handful of distinct messages
+    // that each say something a server log wants — which model was installed,
+    // whether the readiness wait ever ended — so those are not collapsed.
+    let loggedImageLine = false;
+    try {
+      for await (const progress of startBackendGuarded(voice, target)) {
+        if (progress.step === 'image' && loggedImageLine) continue;
+        loggedImageLine = progress.step === 'image';
+        const log = progress.step === 'error' ? console.error : console.log;
+        log(`[voice:${target}] ${progress.message}`);
+      }
+    } catch (err) {
+      // startBackend/startBackendGuarded report failures as an 'error' progress
+      // line rather than throwing; this only guards a genuinely unexpected throw.
+      console.error(`[voice:${target}] auto-start failed: ${errMsg(err)}`);
     }
-  } catch (err) {
-    // startBackend/startBackendGuarded report failures as an 'error' progress
-    // line rather than throwing; this only guards a genuinely unexpected throw.
-    console.error(`[voice] auto-start failed: ${errMsg(err)}`);
   }
 }

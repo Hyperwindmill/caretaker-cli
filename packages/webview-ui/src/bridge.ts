@@ -117,7 +117,7 @@ export type HostToView =
   | { type: 'taskRunsLoaded'; taskId: string; runs: any[] }
   | { type: 'mcpAuthOutcome'; serverId: string; ok: boolean; error?: string }
   | { type: 'voiceConfig'; voice: VoiceClientConfig | null }
-  | { type: 'voiceModelsFetched'; result: VoiceCatalogResult };
+  | { type: 'voiceModelsFetched'; result: VoiceCatalogResult; target?: 'stt' | 'tts' };
 
 
 export type ViewToHost =
@@ -139,7 +139,7 @@ export type ViewToHost =
   | { type: 'saveMcpServer'; server: any }
   | { type: 'deleteMcpServer'; serverId: string }
   | { type: 'fetchModels'; endpoint: string; apiKey?: string }
-  | { type: 'fetchVoiceModels'; endpoint: string; apiKey?: string }
+  | { type: 'fetchVoiceModels'; endpoint: string; apiKey?: string; target?: 'stt' | 'tts' }
   | { type: 'getTaskRuns'; taskId: string }
   | { type: 'authenticateMcpServer'; serverId: string }
   | { type: 'revokeMcpAuth'; serverId: string };
@@ -219,7 +219,12 @@ export function parseViewToHost(value: unknown): ViewToHost | null {
         : null;
     case 'fetchVoiceModels':
       return typeof value.endpoint === 'string'
-        ? { type, endpoint: value.endpoint, apiKey: typeof value.apiKey === 'string' ? value.apiKey : undefined }
+        ? {
+            type,
+            endpoint: value.endpoint,
+            apiKey: typeof value.apiKey === 'string' ? value.apiKey : undefined,
+            target: value.target === 'tts' ? 'tts' : undefined,
+          }
         : null;
     case 'getTaskRuns':
       return typeof value.taskId === 'string' ? { type, taskId: value.taskId } : null;
