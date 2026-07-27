@@ -421,7 +421,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
     pendingConfirmCount: chatState.pendingConfirms.length,
     items: chatState.items,
     onTranscript: (text, mode) => {
-      if (mode === 'conversation') onSend(text);
+      if (mode === 'conversation') onSend(text, undefined, true);
       else setComposerDraft((draft) => (draft ? `${draft} ${text}` : text));
     },
   });
@@ -430,6 +430,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
   const onSend = (
     text: string,
     attachments?: Array<{ name: string; mime: string; base64: string }>,
+    voice?: boolean,
   ): void => {
     const trimmed = text.trim();
     if (!trimmed && (!attachments || attachments.length === 0)) return;
@@ -443,7 +444,9 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
     }));
 
     dispatch({ kind: 'send-user', text: trimmed, attachments: localAttachments });
-    postMessage({ type: 'start', prompt: trimmed, attachments });
+    const msg: Extract<ViewToHost, { type: 'start' }> = { type: 'start', prompt: trimmed, attachments };
+    if (voice) msg.voice = true;
+    postMessage(msg);
   };
 
   const onConfirm = (id: string, decision: ConfirmDecision): void => {
