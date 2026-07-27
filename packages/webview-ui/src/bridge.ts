@@ -121,7 +121,7 @@ export type HostToView =
 
 
 export type ViewToHost =
-  | { type: 'start'; prompt: string; attachments?: Array<{ name: string; mime: string; base64: string }> }
+  | { type: 'start'; prompt: string; attachments?: Array<{ name: string; mime: string; base64: string }>; voice?: boolean }
   | { type: 'abort' }
   | { type: 'permission_response'; id: string; decision: ConfirmDecision }
   | { type: 'selectAgent'; agentId: string }
@@ -169,6 +169,11 @@ export function parseViewToHost(value: unknown): ViewToHost | null {
       const res: Extract<ViewToHost, { type: 'start' }> = { type, prompt: value.prompt };
       if (attachments !== undefined) {
         res.attachments = attachments;
+      }
+      // Strict: only set voice when explicitly true. Anything else (false,
+      // undefined, a string, etc.) is simply absent — never a parse failure.
+      if (value.voice === true) {
+        res.voice = true;
       }
       return res;
     }
