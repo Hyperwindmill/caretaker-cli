@@ -20,6 +20,9 @@ let upstreamUrl: string;
 let catalogUrl: string;
 let plainUrl: string;
 let brokenUrl: string;
+let edgeUrl: string;
+let noVoicesUrl: string;
+let badVoicesUrl: string;
 let lastRequest: { path: string; auth: string | null; model: string | null; body: any } | null = null;
 let upstreamStatus = 200;
 let upstreamBody: string | Uint8Array = JSON.stringify({ text: 'ciao mondo' });
@@ -79,6 +82,28 @@ before(async () => {
   );
   up.get('/plain/models', (c) => c.json({ data: [{ id: 'whisper-1' }, { id: 'tts-1' }] }));
   up.get('/broken/models', (c) => c.text('teapot', 418));
+  // edge-tts shapes: /v1/models uses { "models": [...] } (not "data"), no task
+  // metadata; /v1/voices/all returns { "voices": [{ "name": "...", ... }] } with
+  // the voice id under "name" (not "id"). /v1/voices/all requires auth.
+  let edgeVoicesAuth: string | null = null;
+  up.get('/edge/models', (c) => c.json({ models: [{ id: 'tts-1' }, { id: 'tts-1-hd' }] }));
+  up.get('/edge/voices/all', (c) => {
+    if (edgeVoicesAuth === 'required' && !c.req.header('authorization')) {
+      return c.text('Unauthorized', 401);
+    }
+    return c.json({
+      voices: [
+        { name: 'it-IT-ElsaNeural', gender: 'Female', language: 'it-IT' },
+        { name: 'it-IT-DiegoNeural', gender: 'Male', language: 'it-IT' },
+        { name: 'en-US-AvaNeural', gender: 'Female', language: 'en-US' },
+      ],
+    });
+  });
+  // A voices endpoint that 404s — the fallback must degrade gracefully.
+  up.get('/novoices/models', (c) => c.json({ models: [{ id: 'tts-1' }] }));
+  // A voices endpoint that returns unparseable content.
+  up.get('/badvoices/models', (c) => c.json({ models: [{ id: 'tts-1' }] }));
+  up.get('/badvoices/voices/all', (c) => c.text('<html>not json</html>'));
 
   upstream = serve({ fetch: up.fetch, port: 0 });
   const base = `http://127.0.0.1:${(upstream.address() as any).port}`;
@@ -86,6 +111,9 @@ before(async () => {
   catalogUrl = `${base}/catalog`;
   plainUrl = `${base}/plain`;
   brokenUrl = `${base}/broken`;
+  edgeUrl = `${base}/edge`;
+  noVoicesUrl = `${base}/novoices`;
+  badVoicesUrl = `${base}/badvoices`;
 
   // The separate TTS host records its own requests so tests can assert the
   // synthesis leg went here and the transcription leg did not.
@@ -446,4 +474,47 @@ test('speak still uses endpoint when no ttsEndpoint is configured', async () => 
   assert.equal(lastRequest?.auth, 'Bearer stt-secret');
   assert.equal(lastRequest?.body.model, 'kokoro');
   assert.equal(ttsLastRequest, null);
+});
+
+// --- Task 4: /voices/all fallback and body.models envelope ---
+
+test('fetchVoiceCatalog reads body.models and fills voices from /voices/all when models carry none', async () => {
+  // edge-tts returns { "models": [...] } (not "data"), no task metadata, no
+  // per-model voices. The /voices/all fallback should attach the voice list
+  // (with ids under "name") to every TTS model entry.
+  const catalog = await fetchVoiceCatalog(edgeUrl);
+  // No task metadata → every model offered for both STT and TTS.
+  assert.deepEqual(catalog.stt, ['tts-1', 'tts-1-hd']);
+  assert.equal(catalog.tts.length, 2);
+  // Both TTS models get the full voice list from /voices/all.
+  for (const model of catalog.tts) {
+    assert.equal(model.voices.length, 3, `${model.id} has 3 voices from /voices/all`);
+    const elsa = model.voices.find((v) => v.id === 'it-IT-ElsaNeural');
+    assert.ok(elsa, 'Italian voice found');
+    assert.equal(elsa?.gender, 'Female');
+    assert.equal(elsa?.language, 'it-IT');
+  }
+});
+
+test('fetchVoiceCatalog does not call /voices/all when /models already has per-model voices', async () => {
+  // The Speaches catalogue embeds voices per model — the fallback must not fire.
+  // We can't directly assert "no /voices/all call" without intercepting, but we
+  // can assert the catalog still has the per-model voices and nothing extra.
+  const catalog = await fetchVoiceCatalog(catalogUrl);
+  const kokoro = catalog.tts.find((m) => m.id.includes('Kokoro'));
+  assert.equal(kokoro?.voices.length, 2, 'per-model voices preserved');
+  // The voice ids are the Speaches ones, not edge-tts ones — no leak.
+  assert.ok(!kokoro?.voices.some((v) => v.id === 'it-IT-ElsaNeural'));
+});
+
+test('fetchVoiceCatalog ignores a failing or unparseable /voices/all and degrades to empty voices', async () => {
+  // noVoicesUrl: /voices/all returns 404 → fallback degrades to empty voices.
+  const noVoices = await fetchVoiceCatalog(noVoicesUrl);
+  assert.equal(noVoices.tts.length, 1);
+  assert.deepEqual(noVoices.tts[0].voices, []);
+
+  // badVoicesUrl: /voices/all returns non-JSON → same degradation, no throw.
+  const badVoices = await fetchVoiceCatalog(badVoicesUrl);
+  assert.equal(badVoices.tts.length, 1);
+  assert.deepEqual(badVoices.tts[0].voices, []);
 });
