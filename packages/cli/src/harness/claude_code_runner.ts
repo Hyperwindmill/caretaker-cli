@@ -14,6 +14,7 @@ import type { RunOptions, RunCallbacks, RunResult } from './loop.js';
 import type { AssistantUsage } from './provider.js';
 import { parseClaudeStreamLine } from './claude_code_stream.js';
 import { loadContextFiles, formatContextBlock, resolveFileReferences } from './context_files.js';
+import { VOICE_CONVERSATION_PRELUDE } from './prelude.js';
 import {
   readSession,
   updateClaudeSessionId,
@@ -345,7 +346,11 @@ export async function runClaudeCode(opts: RunOptions, cb: RunCallbacks = {}): Pr
   const ctxEntries = (await loadContextFiles(workingDir)).filter(
     (e) => path.basename(e.path) !== 'CLAUDE.md',
   );
-  const appendSystemPrompt = [sys, ctxEntries.length ? formatContextBlock(ctxEntries) : '']
+  const appendSystemPrompt = [
+    sys,
+    ctxEntries.length ? formatContextBlock(ctxEntries) : '',
+    opts.voiceConversation ? VOICE_CONVERSATION_PRELUDE : '',
+  ]
     .filter(Boolean)
     .join('\n\n');
 

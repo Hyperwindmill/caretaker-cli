@@ -107,6 +107,7 @@ export class WebSessionController {
     prompt: string,
     cb: ChatCallbacks,
     rawAttachments?: Array<{ name: string; mime: string; base64: string }>,
+    voiceConversation?: boolean,
   ): Promise<void> {
     if (this.inflight) {
       cb.onError('A turn is already in progress.');
@@ -160,6 +161,7 @@ export class WebSessionController {
           workingDir: this.opts.workingDir,
           sessionId: meta.id,
           promptAttachments: attachmentRecords.length > 0 ? attachmentRecords : undefined,
+          voiceConversation,
         },
         {
           onChunk: cb.onChunk,
@@ -984,6 +986,7 @@ export async function startServer(port: number, host: string): Promise<void> {
                 },
               },
               msg.attachments,
+              msg.voice,
             );
             return;
           }
