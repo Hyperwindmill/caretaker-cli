@@ -365,6 +365,100 @@ test('POST /api/voice/backend/stop re-probes rather than throwing when there is 
   assert.equal(status.container, 'absent');
 });
 
+// --- POST /api/voice/backend/delete ---------------------------------------
+
+test('POST /api/voice/backend/delete removes the container and answers with the re-probed status', async () => {
+  let removed: string | null = null;
+  setVoiceBackendDepsForTest({
+    dockerInfo: async () => ({ ok: true }),
+    containerState: async () => (removed ? 'absent' : 'running'),
+    imagePresent: async () => true,
+    removeContainer: async (name) => {
+      removed = name;
+    },
+  });
+  await saveConfig(
+    baseConfig({ enabled: true, endpoint: 'http://127.0.0.1:9/v1', sttModel: 'stt-x' }),
+  );
+
+  const app = new Hono();
+  registerVoiceBackend(app);
+  const res = await app.request('/api/voice/backend/delete', { method: 'POST' });
+  assert.equal(res.status, 200);
+  const status = (await res.json()) as { container: string };
+  assert.equal(removed, 'caretaker-speaches');
+  assert.equal(status.container, 'absent');
+});
+
+test('POST /api/voice/backend/delete re-probes rather than throwing when there is no container', async () => {
+  setVoiceBackendDepsForTest({
+    dockerInfo: async () => ({ ok: true }),
+    containerState: async () => 'absent',
+    imagePresent: async () => true,
+    removeContainer: async () => {
+      throw new Error('Error: No such container: caretaker-speaches');
+    },
+  });
+  await saveConfig(
+    baseConfig({ enabled: true, endpoint: 'http://127.0.0.1:9/v1', sttModel: 'stt-x' }),
+  );
+
+  const app = new Hono();
+  registerVoiceBackend(app);
+  const res = await app.request('/api/voice/backend/delete', { method: 'POST' });
+  assert.equal(res.status, 200);
+  const status = (await res.json()) as { container: string };
+  assert.equal(status.container, 'absent');
+});
+
+test('POST /api/voice/backend/delete answers 409 while a start is in flight', async () => {
+  const ready = await startReadyServer();
+  let releasePull: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    releasePull = resolve;
+  });
+  let startDrained: Promise<string> | null = null;
+  try {
+    let removeCalls = 0;
+    setVoiceBackendDepsForTest({
+      dockerInfo: async () => ({ ok: true }),
+      containerState: async () => 'absent',
+      imagePresent: async () => false, // force the pull path so the start stays in flight
+      async *pullImage() {
+        yield 'pulling';
+        await gate;
+      },
+      runContainer: async () => {},
+      removeContainer: async () => {
+        removeCalls += 1;
+      },
+    });
+    await saveConfig(
+      baseConfig({ enabled: true, endpoint: `${ready.baseUrl}/v1`, sttModel: 'stt-x' }),
+    );
+
+    const app = new Hono();
+    registerVoiceBackend(app);
+    // Kick off the start and drain its stream in the background so the
+    // generator actually runs (Hono streams execute as the body is consumed).
+    startDrained = Promise.resolve(
+      app.request('/api/voice/backend/start', { method: 'POST' }),
+    ).then((r) => r.text());
+    await waitFor(() => isBackendStartInFlightForTest());
+
+    const res = await app.request('/api/voice/backend/delete', { method: 'POST' });
+    assert.equal(res.status, 409);
+    assert.equal(removeCalls, 0);
+  } finally {
+    // Unconditional: a failed assertion above must not leave the in-flight
+    // start parked on the gate, poisoning every later test in the file.
+    releasePull();
+    if (startDrained) await startDrained;
+    await waitFor(() => !isBackendStartInFlightForTest());
+    await ready.close();
+  }
+});
+
 test('POST /api/voice/backend/start twice concurrently only pulls the image once (in-flight guard)', async () => {
   const ready = await startReadyServer();
   try {

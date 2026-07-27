@@ -60,6 +60,7 @@ interface BackendDeps {
   runContainer: (args: string[]) => Promise<void>;
   startContainer: (name: string) => Promise<void>;
   stopContainer: (name: string) => Promise<void>;
+  removeContainer: (name: string) => Promise<void>;
 }
 
 async function dockerExec(args: string[]): Promise<{ stdout: string; stderr: string }> {
@@ -147,6 +148,9 @@ const defaultDeps: BackendDeps = {
   },
   async stopContainer(name) {
     await dockerExec(['stop', name]);
+  },
+  async removeContainer(name) {
+    await dockerExec(['rm', '-f', name]);
   },
 };
 
@@ -345,10 +349,18 @@ export async function* startBackend(voice: VoiceConfig): AsyncGenerator<StartPro
 }
 
 /** `docker stop` only — never `rm`, never touches the volume. Stopping must
- *  not cost a multi-gigabyte re-download; removing the container or its cache
- *  is not offered, `docker` in a terminal remains the way to do that. */
+ *  not cost a multi-gigabyte re-download. Removing the container (and only
+ *  the container — the model-cache volume and the image survive) is its own
+ *  affordance, `deleteBackend`, so a container that froze stale state at
+ *  creation (e.g. the network's DNS) can be recreated by the next Start. */
 export async function stopBackend(): Promise<void> {
   await deps.stopContainer(CONTAINER_NAME);
+}
+
+/** `docker rm -f` on the managed container. Handles running and stopped
+ *  alike; never touches the `caretaker-hf-hub-cache` volume or the image. */
+export async function deleteBackend(): Promise<void> {
+  await deps.removeContainer(CONTAINER_NAME);
 }
 
 // --- HTTP surface + auto-start -------------------------------------------
@@ -411,6 +423,23 @@ export function registerVoiceBackend(app: Hono): void {
     const config = await loadConfig();
     try {
       await stopBackend();
+    } catch {
+      // No such container, daemon unreachable, etc. — the truth is in the
+      // re-probe below, not in a 500 for an action that is already done.
+    }
+    const status = await probeBackend(config.voice?.endpoint ?? '');
+    return c.json(status);
+  });
+
+  app.post('/api/voice/backend/delete', async (c) => {
+    // Never tear the container down mid-pull/mid-install: the start flow
+    // assumes the container it just created is still there.
+    if (backendStarting) {
+      return c.text('A start is in progress; wait for it to finish before deleting.', 409);
+    }
+    const config = await loadConfig();
+    try {
+      await deleteBackend();
     } catch {
       // No such container, daemon unreachable, etc. — the truth is in the
       // re-probe below, not in a 500 for an action that is already done.
