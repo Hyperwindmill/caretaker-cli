@@ -10,6 +10,7 @@ import {
 } from './voice_backend_utils.js';
 
 const BACKEND_POLL_MS = 10_000;
+const CONFIRM_DELETE_MS = 4000;
 
 export interface VoiceTabProps {
   config: CaretakerConfig;
@@ -75,6 +76,28 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
    *  the one-line status because "docker run failed: port already in use" is
    *  exactly the case the design doc says must not be silently swallowed. */
   const [backendError, setBackendError] = useState<string | null>(null);
+  /** Two-step confirm for Delete: first click arms, second click executes.
+   *  Auto-disarms after a few seconds so a stale "Really delete?" never
+   *  lingers. */
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const confirmDeleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const disarmDelete = () => {
+    if (confirmDeleteTimer.current) clearTimeout(confirmDeleteTimer.current);
+    confirmDeleteTimer.current = null;
+    setConfirmingDelete(false);
+  };
+  const armDelete = () => {
+    if (confirmDeleteTimer.current) clearTimeout(confirmDeleteTimer.current);
+    setConfirmingDelete(true);
+    confirmDeleteTimer.current = setTimeout(() => setConfirmingDelete(false), CONFIRM_DELETE_MS);
+  };
+  // Unmount cleanup clears only the timer — no setState on an unmounted component.
+  useEffect(
+    () => () => {
+      if (confirmDeleteTimer.current) clearTimeout(confirmDeleteTimer.current);
+    },
+    [],
+  );
 
   /** Container state as of the last adopted status. A ref, not state: the 10 s
    *  poll closes over the mount-time render, so comparing against state would
@@ -168,6 +191,22 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
     try {
       const res = await fetch('/api/voice/backend/stop', { method: 'POST' });
       if (res.ok) adoptBackendStatus((await res.json()) as BackendStatus);
+    } catch {
+      // Best-effort — the poll below re-syncs regardless.
+    } finally {
+      setBackendBusy(false);
+      fetchBackendStatus();
+    }
+  };
+
+  const deleteBackend = async () => {
+    disarmDelete();
+    setBackendBusy(true);
+    setBackendError(null);
+    try {
+      const res = await fetch('/api/voice/backend/delete', { method: 'POST' });
+      if (res.ok) adoptBackendStatus((await res.json()) as BackendStatus);
+      else setBackendError((await res.text().catch(() => '')) || 'Delete failed.');
     } catch {
       // Best-effort — the poll below re-syncs regardless.
     } finally {
@@ -286,6 +325,15 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
                   {backendBusy ? 'Starting…' : 'Start'}
                 </button>
               )}
+              {backendStatus.container !== 'absent' && (
+                <button
+                  type="button"
+                  onClick={confirmingDelete ? deleteBackend : armDelete}
+                  disabled={backendBusy}
+                >
+                  {confirmingDelete ? 'Really delete?' : 'Delete'}
+                </button>
+              )}
             </div>
             {backendError && <small className="form-error">{backendError}</small>}
             <div className="form-group form-group--checkbox">
@@ -302,7 +350,9 @@ export function VoiceTab({ config, onSave, postMessage, catalogResult }: VoiceTa
             <small>
               The first start downloads about 2 GB. The container publishes on the
               port in your endpoint — if that port is taken, change it there and
-              save; caretaker never picks a port for you.
+              save; caretaker never picks a port for you. Delete removes the
+              container but keeps the downloaded models — try it when the backend
+              misbehaves after switching networks.
             </small>
           </div>
         )}
