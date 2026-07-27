@@ -129,6 +129,30 @@ Secrets at rest (plugin auth tokens, MCP credentials, Telegram bot tokens, voice
 - **Surface matrix**: Offered in the Web GUI and Electron desktop app. Unavailable in the VSCode sidebar (microphone access denied by webview CSP) and TUI. Because voice is out of scope there, the Voice *settings* tab is hidden in the sidebar too (`layout === 'sidebar'` gate in `SettingsPanel.tsx` — the same pattern that hides Projects and Scheduler); voice is configured from the web GUI or desktop app against the same shared config. The managed-backend block is additionally web-server-only within the surfaces that do show the tab — the shared `webview-ui` bundle asks for `/api/voice/backend`, and where that route does not exist the fetch fails and the block stays hidden. That is the intended mechanism, not a fallback.
 - **Electron Web Speech finding**: The Web Speech API is unusable in Electron even though constructors exist: recognition fails with `error:network` (no Google speech API keys in Electron build) and `speechSynthesis` reports zero voices. Capability detection keys off `MediaRecorder`/`getUserMedia`.
 
+### 7. Chat rendering (shared by every surface)
+
+`packages/webview-ui` renders the whole thread eagerly — there is no virtualization, on
+purpose. What keeps that affordable on a 200k-token session:
+
+- **Markdown is parsed once per distinct string.** `src/markdown.ts` owns `marked` +
+  the HTML sanitizer behind a 2000-entry LRU (`renderMarkdown`); `MarkdownText` is a
+  `memo` component on top. Parsing in the render body — the original behaviour — cost
+  O(whole conversation) on every render.
+- **`MessageList` and `Item` are `memo`'d, and that only works if callers keep props
+  reference-stable.** The composer draft lives in `App` state (voice dictation writes
+  into it), so every keystroke re-renders `App`; the list bails out only because
+  `items` and `trailing` come from `useMemo` (`App`'s `confirmCards`, `ProjectsTab`'s
+  task items, `SchedulerTab`'s active-run items). Passing a freshly-built array or
+  closure inline re-freezes the UI on long conversations — this is the one thing to
+  check when touching those call sites.
+- **Collapsed tool bodies are not mounted.** A closed `<details>` still renders its
+  children in React, and tool results are the largest strings in a session, so the body
+  is gated on the open state (`ToolBlock` in `MessageList.tsx`).
+
+Escalation path if a conversation ever outgrows this: `content-visibility: auto` on the
+heavy blocks, then coalescing `chunk` messages in the hosts, and a windowing library only
+after measurement demands it.
+
 ### Tool sandbox
 
 
