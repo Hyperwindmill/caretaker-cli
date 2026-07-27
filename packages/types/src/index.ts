@@ -62,7 +62,11 @@ export type ProjectConfig = {
 };
 
 /** Voice mode configuration. One OpenAI-compatible base URL and key serve both
- *  transcription and synthesis; see docs/superpowers/specs/2026-07-25-voice-mode-design.md */
+ *  transcription and synthesis by default; an optional `ttsEndpoint` /
+ *  `ttsApiKey` splits synthesis to a separate host (e.g. a local
+ *  openai-edge-tts container for Microsoft Neural voices, which cannot
+ *  transcribe). See
+ *  docs/superpowers/specs/2026-07-27-voice-edge-tts-backend-design.md */
 export type VoiceConfig = {
   /** Master gate. False ⇒ no mic affordance on any surface. */
   enabled: boolean;
@@ -74,6 +78,13 @@ export type VoiceConfig = {
   sttModel: string;
   /** Synthesis model id. Unset ⇒ conversation mode unavailable, dictation still works. */
   ttsModel?: string;
+  /** Synthesis endpoint. Unset ⇒ synthesis uses `endpoint` (one server does
+   *  both — the Speaches case). Set ⇒ /audio/speech goes here instead, e.g. a
+   *  local openai-edge-tts container for Microsoft Neural voices. */
+  ttsEndpoint?: string;
+  /** Encrypted at rest, like `apiKey`. Only read when `ttsEndpoint` is set —
+   *  the transcription key is never sent to a third-party synthesis host. */
+  ttsApiKey?: string;
   /** Voice id for the synthesis model, e.g. af_heart */
   ttsVoice?: string;
   /** Playback rate multiplier for synthesis. 1 = the model's natural pace.
