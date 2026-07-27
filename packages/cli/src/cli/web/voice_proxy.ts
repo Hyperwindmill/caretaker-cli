@@ -150,20 +150,31 @@ export function registerVoiceProxy(app: Hono): void {
  * those are correctly scoped, unlike the global /v1/audio/voices catalogue, which
  * ignores its model_id parameter. A plain OpenAI-compatible endpoint reports
  * neither, so every id is offered for both tasks and the voice stays free text.
+ *
+ * openai-edge-tts reports models under `{"models": [...]}` (not `{"data": [...]}`),
+ * with no task metadata, and publishes its voice list at `/voices/all` rather than
+ * per model — voice ids are under the `"name"` key, not `"id"`. When no TTS entry
+ * carries its own voices, a best-effort `/voices/all` fetch fills them in; failure
+ * degrades to the free-text voice field, which already works.
  */
 export async function fetchVoiceCatalog(
   endpoint: string,
   apiKey?: string | null,
 ): Promise<VoiceCatalog> {
   const key = plainKey(apiKey);
-  const res = await fetch(url(endpoint, '/models'), {
-    headers: key ? { authorization: `Bearer ${key}` } : {},
-  });
+  const headers = authHeaders(key);
+  const res = await fetch(url(endpoint, '/models'), { headers });
   if (!res.ok) {
     throw new Error(`${res.status} ${res.statusText}: ${(await res.text()).slice(0, 300)}`);
   }
-  const body = (await res.json()) as { data?: unknown };
-  const rows = Array.isArray(body?.data) ? body.data : [];
+  const body = (await res.json()) as { data?: unknown; models?: unknown };
+  // Accept both { "data": [...] } (OpenAI/Speaches) and { "models": [...] }
+  // (openai-edge-tts) — the latter uses a non-standard envelope key.
+  const rows = Array.isArray(body?.data)
+    ? body.data
+    : Array.isArray(body?.models)
+      ? body.models
+      : [];
 
   const stt: string[] = [];
   const tts: VoiceCatalog['tts'] = [];
@@ -201,8 +212,85 @@ export async function fetchVoiceCatalog(
 
   // No task metadata anywhere: offer everything for both, voices unknown.
   if (stt.length === 0 && tts.length === 0) {
-    return { stt: untasked, tts: untasked.map((id) => ({ id, voices: [] })) };
+    const ttsModels = untasked.map((id) => ({ id, voices: [] }));
+    await fillVoicesFromCatalog(endpoint, headers, ttsModels);
+    return { stt: untasked, tts: ttsModels };
   }
   // Mixed: keep the untasked ids selectable for transcription, the likelier use.
+  if (tts.length > 0 && tts.every((m) => m.voices.length === 0)) {
+    await fillVoicesFromCatalog(endpoint, headers, tts);
+  }
   return { stt: [...stt, ...untasked], tts };
+}
+
+/** Best-effort GET <endpoint>/voices/all — openai-edge-tts publishes its voice
+ *  list here rather than per model. Voice ids are under the `"name"` key (not
+ *  `"id"`), the route defaults to en-US only on `/voices` (not `/voices/all`),
+ *  and it may require auth. Failure is silent: an endpoint without the route
+ *  degrades to the free-text voice field, which already works. */
+async function fillVoicesFromCatalog(
+  endpoint: string,
+  headers: Record<string, string>,
+  ttsModels: VoiceCatalog['tts'],
+): Promise<void> {
+  if (ttsModels.length === 0) return;
+  let res: Response;
+  try {
+    res = await fetch(url(endpoint, '/voices/all'), { headers });
+  } catch {
+    return;
+  }
+  if (!res.ok) return;
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    return;
+  }
+  // Accept both a bare array and a { "voices": [...] } envelope. The edge-tts
+  // shape is { "voices": [{ "name": "it-IT-ElsaNeural", "gender": "Female",
+  // "language": "it-IT" }, ...] }.
+  const voiceRows = Array.isArray(body)
+    ? body
+    : Array.isArray((body as { voices?: unknown })?.voices)
+      ? (body as { voices: unknown[] }).voices
+      : [];
+  if (voiceRows.length === 0) return;
+
+  const voices = voiceRows.flatMap((v) => {
+    if (!v || typeof v !== 'object') return [];
+    const voice = v as {
+      name?: unknown;
+      id?: unknown;
+      ShortName?: unknown;
+      language?: unknown;
+      Locale?: unknown;
+      gender?: unknown;
+      Gender?: unknown;
+    };
+    // edge-tts uses "name" for the voice id; Speaches uses "id"; some APIs use
+    // "ShortName". Accept any, preferring "name" first for edge-tts.
+    const id =
+      typeof voice.name === 'string'
+        ? voice.name
+        : typeof voice.id === 'string'
+          ? voice.id
+          : typeof voice.ShortName === 'string'
+            ? voice.ShortName
+            : null;
+    if (!id) return [];
+    const language = voice.language ?? voice.Locale;
+    const gender = voice.gender ?? voice.Gender;
+    return [
+      {
+        id,
+        ...(typeof language === 'string' ? { language } : {}),
+        ...(typeof gender === 'string' ? { gender } : {}),
+      },
+    ];
+  });
+
+  if (voices.length > 0) {
+    for (const model of ttsModels) model.voices = voices;
+  }
 }
