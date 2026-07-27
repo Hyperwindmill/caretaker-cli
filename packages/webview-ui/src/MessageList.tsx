@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, type ReactNode } from 'react';
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
 
 import type { ChatItem } from './App.js';
 import { MarkdownText } from './MarkdownText.js';
@@ -87,6 +87,46 @@ export const MessageList = memo(function MessageList({
   );
 });
 
+// A closed <details> still mounts its children in React; tool results are the
+// biggest strings in a long conversation, so keep them out of the DOM (and out
+// of the markdown parser) until the user actually opens the block.
+const ToolBlock = memo(function ToolBlock({ item }: { item: Extract<ChatItem, { kind: 'tool' }> }) {
+  const [open, setOpen] = useState(false);
+  const summary = toolSummary(item.args);
+  const fullArgs = prettyArgs(item.args);
+  return (
+    <details className="tool" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary className="tool__header">
+        <span className="tool__icon"><ToolIcon size={14} /></span>
+        <span className="tool__name">{item.name}</span>
+        {summary && <span className="tool__args">{summary}</span>}
+        <span className="tool__status">
+          {item.result === null ? (
+            <SpinnerIcon className="tool__spinner" size={14} />
+          ) : item.result === '' ? null : (
+            resultMetric(item.result)
+          )}
+        </span>
+        <span className="tool__chevron"></span>
+      </summary>
+      {open && (
+        <div className="tool__body">
+          {fullArgs && <pre className="tool__args-full">{fullArgs}</pre>}
+          {/* ponytail: '' result = no stored result (autonomous task tool calls); render args only */}
+          {item.result !== null && item.result !== '' && (
+            <div className="tool__result">
+              <span className="tool__arrow"><ResultArrowIcon size={13} /></span>
+              <div className="tool__result-content">
+                <MarkdownText content={item.result} />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </details>
+  );
+});
+
 const Item = memo(function Item({ item, sessionId }: { item: ChatItem; sessionId: string | null }) {
   switch (item.kind) {
     case 'user':
@@ -162,39 +202,8 @@ const Item = memo(function Item({ item, sessionId }: { item: ChatItem; sessionId
           </div>
         </details>
       );
-    case 'tool': {
-      const summary = toolSummary(item.args);
-      const fullArgs = prettyArgs(item.args);
-      return (
-        <details className="tool">
-          <summary className="tool__header">
-            <span className="tool__icon"><ToolIcon size={14} /></span>
-            <span className="tool__name">{item.name}</span>
-            {summary && <span className="tool__args">{summary}</span>}
-            <span className="tool__status">
-              {item.result === null ? (
-                <SpinnerIcon className="tool__spinner" size={14} />
-              ) : item.result === '' ? null : (
-                resultMetric(item.result)
-              )}
-            </span>
-            <span className="tool__chevron"></span>
-          </summary>
-          <div className="tool__body">
-            {fullArgs && <pre className="tool__args-full">{fullArgs}</pre>}
-            {/* ponytail: '' result = no stored result (autonomous task tool calls); render args only */}
-            {item.result !== null && item.result !== '' && (
-              <div className="tool__result">
-                <span className="tool__arrow"><ResultArrowIcon size={13} /></span>
-                <div className="tool__result-content">
-                  <MarkdownText content={item.result} />
-                </div>
-              </div>
-            )}
-          </div>
-        </details>
-      );
-    }
+    case 'tool':
+      return <ToolBlock item={item} />;
     case 'notice':
       return (
         <div className={`notice${item.variant === 'block' ? ' notice--block' : ''}`}>
