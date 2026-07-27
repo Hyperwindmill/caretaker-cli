@@ -96,6 +96,9 @@ export async function saveConfig(c: CaretakerConfig): Promise<void> {
   if (c.voice?.apiKey && !isEncrypted(c.voice.apiKey)) {
     c.voice.apiKey = encrypt(c.voice.apiKey);
   }
+  if (c.voice?.ttsApiKey && !isEncrypted(c.voice.ttsApiKey)) {
+    c.voice.ttsApiKey = encrypt(c.voice.ttsApiKey);
+  }
   await writeJson(configPath(), c);
 }
 

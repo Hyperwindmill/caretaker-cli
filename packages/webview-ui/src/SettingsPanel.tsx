@@ -22,7 +22,8 @@ interface SettingsPanelProps {
     availableTools: string[];
   } | null;
   modelsResult: ModelsResult | null;
-  voiceCatalogResult: VoiceCatalogResult | null;
+  sttCatalogResult: VoiceCatalogResult | null;
+  ttsCatalogResult: VoiceCatalogResult | null;
   setModelsResult: (res: ModelsResult | null) => void;
   refreshingSourceId: string | null;
   refreshOutcome: RefreshOutcome | null;
@@ -41,7 +42,8 @@ export function SettingsPanel({
   postMessage,
   settingsData,
   modelsResult,
-  voiceCatalogResult,
+  sttCatalogResult,
+  ttsCatalogResult,
   setModelsResult,
   refreshingSourceId,
   refreshOutcome,
@@ -137,7 +139,8 @@ export function SettingsPanel({
             config={config}
             onSave={(updatedConfig) => postMessage({ type: 'saveConfig', config: updatedConfig })}
             postMessage={postMessage}
-            catalogResult={voiceCatalogResult}
+            sttCatalogResult={sttCatalogResult}
+            ttsCatalogResult={ttsCatalogResult}
           />
         );
     }
