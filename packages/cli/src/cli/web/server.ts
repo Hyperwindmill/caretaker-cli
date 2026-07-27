@@ -652,6 +652,64 @@ export async function startServer(port: number, host: string): Promise<void> {
     });
   });
 
+  // Rewrite a task's title/objective. Absent key = leave unchanged. No running
+  // guard (unlike …/agent): the objective is read at the start of each cycle, so
+  // an edit simply lands on the next one — no reason to force a pause for a typo.
+  app.patch('/api/tasks/:id', async (c) => {
+    const taskId = Number(c.req.param('id'));
+    const body = await c.req.json();
+
+    const hasTitle = 'title' in body;
+    const hasObjective = 'objective' in body;
+    if (!hasTitle && !hasObjective) {
+      return c.json({ ok: false, error: 'Nothing to update: pass title, objective, or both.' }, 400);
+    }
+    if (hasTitle && typeof body.title !== 'string') {
+      return c.json({ ok: false, error: 'title must be a string.' }, 400);
+    }
+    if (hasObjective && typeof body.objective !== 'string') {
+      return c.json({ ok: false, error: 'objective must be a string.' }, 400);
+    }
+    const title = hasTitle ? body.title.trim() : null;
+    if (hasTitle && !title) {
+      return c.json({ ok: false, error: 'Title cannot be empty.' }, 400);
+    }
+
+    const task = await getTaskById(taskId);
+    if (!task) return c.json({ ok: false, error: 'not found' }, 404);
+
+    // Capture old values for the audit trail — the objective is what the
+    // review gate grades against, so a silent rewrite would move the
+    // goalposts with no trace. The system message is human-visible only
+    // (not replayed into agent history — same rationale as the tool path).
+    const oldTitle = task.title;
+    const oldObjective = task.objective;
+
+    if (title !== null) task.title = title;
+    if (hasObjective) task.objective = body.objective.trim();
+    task.updatedAt = new Date().toISOString();
+    await saveTask(task);
+
+    const changes: string[] = [];
+    if (title !== null && title !== oldTitle) {
+      changes.push(`Title:\n  ${oldTitle}\n  →\n  ${task.title}`);
+    }
+    if (hasObjective && task.objective !== oldObjective) {
+      changes.push(`Objective:\n  ${oldObjective || '(empty)'}\n  →\n  ${task.objective || '(empty)'}`);
+    }
+    if (changes.length > 0) {
+      await addTaskMessage({
+        taskId,
+        role: 'assistant',
+        messageType: 'system',
+        content: `Task details updated.\n\n${changes.join('\n\n')}`,
+        agentId: null,
+      });
+    }
+
+    return c.json({ ok: true, title: task.title, objective: task.objective });
+  });
+
   const nodeServer = serve({
     fetch: app.fetch,
     port,

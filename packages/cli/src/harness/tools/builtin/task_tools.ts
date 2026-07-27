@@ -161,6 +161,75 @@ export const updateChecklistTool: Tool = {
   },
 };
 
+export const taskUpdateDetailsTool: Tool = {
+  name: 'mcp__task__task_update_details',
+  description:
+    'Rewrite a task\'s title and/or objective. Omit a field to leave it unchanged. The title cannot be blank; the objective may be empty.',
+  parameters: {
+    type: 'object',
+    properties: {
+      task_id: { type: 'number' },
+      title: { type: 'string' },
+      objective: { type: 'string' },
+    },
+    required: ['task_id'],
+  },
+  execute: async (args: any): Promise<ToolResult> => {
+    const taskId = Number(args.task_id);
+    const hasTitle = args.title !== undefined;
+    const hasObjective = args.objective !== undefined;
+    if (!hasTitle && !hasObjective) return err('Nothing to update: pass title, objective, or both.');
+    if (hasTitle && typeof args.title !== 'string') return err('title must be a string.');
+    if (hasObjective && typeof args.objective !== 'string') return err('objective must be a string.');
+
+    // A blank title leaves the task unidentifiable in the list; an empty
+    // objective is fine (task_create already allows one).
+    const title = hasTitle ? String(args.title).trim() : null;
+    if (hasTitle && !title) return err('title cannot be empty.');
+
+    const task = await getTaskById(taskId);
+    if (!task) return err(`Task ${taskId} not found`);
+
+    // Capture the old values before overwriting so we can leave an audit
+    // trail in the task thread. The objective is what the review gate grades
+    // against (task_strategy.ts → runDoneReview interpolates task.objective),
+    // so a silent rewrite would let a stalling agent move its own goalposts
+    // with no trace. A system message makes the change visible to humans in
+    // the web GUI — note that system messages are NOT replayed into agent
+    // history (task_strategy.ts:370 filters to chat/heartbeat/tool_call/
+    // review/plan), so the next-cycle agent and reviewer don't see this; it's
+    // a human-visible audit trail, not an agent-visible one.
+    const oldTitle = task.title;
+    const oldObjective = task.objective;
+
+    if (title !== null) task.title = title;
+    if (hasObjective) task.objective = String(args.objective).trim();
+    task.updatedAt = new Date().toISOString();
+    await saveTask(task);
+
+    // Record what changed in the thread. A title-only rewrite is cosmetically
+    // visible but still worth logging; the objective change is the critical one.
+    const changes: string[] = [];
+    if (title !== null && title !== oldTitle) {
+      changes.push(`Title:\n  ${oldTitle}\n  →\n  ${task.title}`);
+    }
+    if (hasObjective && task.objective !== oldObjective) {
+      changes.push(`Objective:\n  ${oldObjective || '(empty)'}\n  →\n  ${task.objective || '(empty)'}`);
+    }
+    if (changes.length > 0) {
+      await addTaskMessage({
+        taskId,
+        role: 'assistant',
+        messageType: 'system',
+        content: `Task details updated.\n\n${changes.join('\n\n')}`,
+        agentId: null,
+      });
+    }
+
+    return ok({ title: task.title, objective: task.objective });
+  },
+};
+
 export const addMessageTool: Tool = {
   name: 'mcp__task__task_add_message',
   description: 'Add a message to the task thread. Use this to document what you did in this session.',

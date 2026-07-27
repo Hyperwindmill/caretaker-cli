@@ -11,7 +11,7 @@ const CT_HOME = await mkdtemp(join(tmpdir(), 'ct-tasktools-home-'));
 process.env.CARETAKER_HOME = CT_HOME;
 
 const { createTask, getTaskById, saveTask, deleteTask, addTaskMessage, runQuery } = await import('../../../store/db.js');
-const { completeTaskTool, taskArchiveTool, taskUnarchiveTool, taskDeleteTool, taskSearchTool, taskSetAgentTool, taskCreateTool, submitPlanTool, taskActivateTool, taskUnpauseTool, getTaskStateTool, updateChecklistItemTool, updateChecklistTool } = await import('./task_tools.js');
+const { completeTaskTool, taskArchiveTool, taskUnarchiveTool, taskDeleteTool, taskSearchTool, taskSetAgentTool, taskCreateTool, submitPlanTool, taskActivateTool, taskUnpauseTool, getTaskStateTool, updateChecklistItemTool, updateChecklistTool, taskUpdateDetailsTool } = await import('./task_tools.js');
 const { runningTasks } = await import('../../../cli/web/scheduler/locks.js');
 const { saveConfig, saveAgents } = await import('../../../store/json.js');
 
@@ -432,6 +432,69 @@ test('updateChecklistItemTool and updateChecklistTool return error on invalid st
   const parsed3 = JSON.parse(res3.content);
   assert.ok(parsed3.error);
   assert.ok(parsed3.error.includes('Invalid checklist item status'));
+});
+
+test('task_update_details rewrites title and objective, trimming both', async () => {
+  const t = await createTask({ ...base, title: 'Old', objective: 'old objective' });
+
+  const res = await taskUpdateDetailsTool.execute(
+    { task_id: t.id, title: '  New title  ', objective: '  new objective  ' },
+    ctx(),
+  );
+  assert.equal(JSON.parse(res.content).ok, true);
+
+  const after = await getTaskById(t.id);
+  assert.equal(after!.title, 'New title');
+  assert.equal(after!.objective, 'new objective');
+});
+
+test('task_update_details leaves absent fields untouched', async () => {
+  const t = await createTask({ ...base, title: 'Keep me', objective: 'first' });
+
+  await taskUpdateDetailsTool.execute({ task_id: t.id, objective: 'second' }, ctx());
+
+  const after = await getTaskById(t.id);
+  assert.equal(after!.title, 'Keep me');
+  assert.equal(after!.objective, 'second');
+});
+
+test('task_update_details rejects an empty title and a missing task', async () => {
+  const t = await createTask({ ...base, title: 'Untouched', objective: 'o' });
+
+  const blank = await taskUpdateDetailsTool.execute({ task_id: t.id, title: '   ' }, ctx());
+  assert.match(JSON.parse(blank.content).error, /title/i);
+
+  const after = await getTaskById(t.id);
+  assert.equal(after!.title, 'Untouched');
+
+  const missing = await taskUpdateDetailsTool.execute({ task_id: 999999, title: 'x' }, ctx());
+  assert.match(JSON.parse(missing.content).error, /not found/i);
+});
+
+test('task_update_details with an empty objective is allowed', async () => {
+  const t = await createTask({ ...base, title: 'T', objective: 'something' });
+  await taskUpdateDetailsTool.execute({ task_id: t.id, objective: '' }, ctx());
+  const after = await getTaskById(t.id);
+  assert.equal(after!.objective, '');
+});
+
+test('task_update_details writes an audit message when the objective changes', async () => {
+  const t = await createTask({ ...base, title: 'T', objective: 'original goal' });
+  await taskUpdateDetailsTool.execute({ task_id: t.id, objective: 'narrowed goal' }, ctx());
+
+  const messages = (await runQuery(`SELECT * FROM task_messages WHERE taskId = ${t.id}`)) as any[];
+  const audit = messages.find((m) => m.messageType === 'system' && m.content.includes('Objective'));
+  assert.ok(audit, 'expected a system message mentioning "Objective"');
+  assert.match(audit.content, /original goal/);
+  assert.match(audit.content, /narrowed goal/);
+});
+
+test('task_update_details does not write an audit message when nothing changes', async () => {
+  const t = await createTask({ ...base, title: 'Same', objective: 'same' });
+  const before = (await runQuery(`SELECT * FROM task_messages WHERE taskId = ${t.id}`)) as any[];
+  await taskUpdateDetailsTool.execute({ task_id: t.id, title: 'Same', objective: 'same' }, ctx());
+  const after = (await runQuery(`SELECT * FROM task_messages WHERE taskId = ${t.id}`)) as any[];
+  assert.equal(after.length, before.length, 'no new message should be written when nothing changed');
 });
 
 test.after(async () => {
