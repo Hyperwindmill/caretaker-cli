@@ -2,7 +2,7 @@ import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
 
 import type { ChatItem } from './App.js';
 import { MarkdownText } from './MarkdownText.js';
-import { prettyArgs, resultMetric, toolSummary } from './toolFormat.js';
+import { prettyArgs, popoverPosition, resultMetric, toolSummary } from './toolFormat.js';
 import { DocIcon, ThinkingIcon, ToolIcon, SpinnerIcon, ResultArrowIcon, WarningIcon, SettingsIcon } from './icons.js';
 import logo from './caretaker_cli.png';
 
@@ -12,6 +12,9 @@ export interface MessageListProps {
   trailing?: ReactNode;
   isStreaming?: boolean;
   agentName?: string;
+  /** Task log: render tool calls as compact left-aligned bubbles (no persisted
+   *  results there), instead of full-width <details> blocks. */
+  compact?: boolean;
 }
 
 const STICK_THRESHOLD = 100;
@@ -29,6 +32,7 @@ export const MessageList = memo(function MessageList({
   trailing,
   isStreaming,
   agentName,
+  compact = false,
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const prevItemsLengthRef = useRef(items.length);
@@ -74,7 +78,7 @@ export const MessageList = memo(function MessageList({
   return (
     <div ref={containerRef} className="messages" onScroll={onScroll}>
       {items.map((item, i) => (
-        <Item key={i} item={item} sessionId={sessionId} />
+        <Item key={i} item={item} sessionId={sessionId} compact={compact} />
       ))}
       {trailing}
       {isStreaming && (
@@ -127,7 +131,129 @@ const ToolBlock = memo(function ToolBlock({ item }: { item: Extract<ChatItem, { 
   );
 });
 
-const Item = memo(function Item({ item, sessionId }: { item: ChatItem; sessionId: string | null }) {
+// Compact left-aligned "chip" rendering of a tool call for the task log, where
+// results are not persisted so a full-width block per call is pure noise. The
+// full args live in a hover/focus PREVIEW and a click-to-PIN popover that must
+// escape `.messages`' overflow clip (overflow-y:auto forces overflow-x to auto,
+// clipping both axes), so it is position:fixed and anchored to the chip's
+// measured rect via popoverPosition().
+const ToolBubble = memo(function ToolBubble({ item }: { item: Extract<ChatItem, { kind: 'tool' }> }) {
+  const chipRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [hovering, setHovering] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const [rect, setRect] = useState<DOMRect | null>(null);
+
+  const summary = toolSummary(item.args);
+  const fullArgs = prettyArgs(item.args);
+  const hasResult = item.result !== null && item.result !== '';
+  const hasDetail = Boolean(fullArgs) || hasResult;
+  const open = hasDetail && (hovering || pinned);
+
+  // Keep the fixed popover glued while open: re-measure the chip on scroll
+  // (capture phase, so it catches the inner .messages scroller) and on resize.
+  useEffect(() => {
+    if (!open) return;
+    const measure = () => {
+      if (chipRef.current) setRect(chipRef.current.getBoundingClientRect());
+    };
+    measure();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setPinned(false);
+        setHovering(false);
+      }
+    };
+    window.addEventListener('scroll', measure, true);
+    window.addEventListener('resize', measure);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('scroll', measure, true);
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  // Dismiss a pinned popover on an outside click.
+  useEffect(() => {
+    if (!pinned) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (chipRef.current?.contains(t) || popoverRef.current?.contains(t)) return;
+      setPinned(false);
+    };
+    document.addEventListener('mousedown', onDown, true);
+    return () => document.removeEventListener('mousedown', onDown, true);
+  }, [pinned]);
+
+  const pos = open && rect ? popoverPosition(rect, window.innerWidth, window.innerHeight) : null;
+
+  return (
+    <div className="tool-bubble-wrap">
+      <div
+        ref={chipRef}
+        className={`tool-bubble${open ? ' tool-bubble--open' : ''}`}
+        tabIndex={hasDetail ? 0 : -1}
+        role={hasDetail ? 'button' : undefined}
+        aria-expanded={hasDetail ? open : undefined}
+        onMouseEnter={() => setHovering(true)}
+        onMouseLeave={() => setHovering(false)}
+        onFocus={() => setHovering(true)}
+        onBlur={() => setHovering(false)}
+        onClick={() => hasDetail && setPinned((p) => !p)}
+        onKeyDown={(e) => {
+          if (hasDetail && (e.key === 'Enter' || e.key === ' ')) {
+            e.preventDefault();
+            setPinned((p) => !p);
+          }
+        }}
+      >
+        <span className="tool-bubble__icon"><ToolIcon size={12} /></span>
+        <span className="tool-bubble__name">{item.name}</span>
+        {summary && <span className="tool-bubble__summary">{summary}</span>}
+        <span className="tool-bubble__status">
+          {item.result === null ? (
+            <SpinnerIcon className="tool__spinner" size={12} />
+          ) : hasResult ? (
+            resultMetric(item.result as string)
+          ) : null}
+        </span>
+      </div>
+      {pos && (
+        <div
+          ref={popoverRef}
+          className={`tool-bubble__popover${pinned ? ' tool-bubble__popover--pinned' : ''}`}
+          role="tooltip"
+          style={{
+            position: 'fixed',
+            left: pos.left,
+            top: pos.top,
+            bottom: pos.bottom,
+            maxWidth: pos.maxWidth,
+            pointerEvents: pinned ? 'auto' : 'none',
+          }}
+        >
+          {fullArgs && <pre className="tool-bubble__args">{fullArgs}</pre>}
+          {hasResult && (
+            <div className="tool-bubble__result">
+              <MarkdownText content={item.result as string} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+});
+
+const Item = memo(function Item({
+  item,
+  sessionId,
+  compact,
+}: {
+  item: ChatItem;
+  sessionId: string | null;
+  compact: boolean;
+}) {
   switch (item.kind) {
     case 'user':
       return (
@@ -208,7 +334,7 @@ const Item = memo(function Item({ item, sessionId }: { item: ChatItem; sessionId
         </details>
       );
     case 'tool':
-      return <ToolBlock item={item} />;
+      return compact ? <ToolBubble item={item} /> : <ToolBlock item={item} />;
     case 'notice':
       return (
         <div className={`notice${item.variant === 'block' ? ' notice--block' : ''}`}>
