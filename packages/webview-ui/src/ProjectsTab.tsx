@@ -1370,7 +1370,7 @@ function TaskLogView({
           {taskMessages.length === 0 ? (
             <div className="messages messages--empty">No messages in this execution yet. Agent will start on next tick.</div>
           ) : (
-            <MessageList items={chatItems} sessionId={null} />
+            <MessageList items={chatItems} sessionId={null} compact />
           )}
 
           {/* Composer */}

@@ -55,3 +55,29 @@ function previewJson(value: unknown, max = 80): string {
 function truncate(s: string, max: number): string {
   return s.length > max ? `${s.slice(0, max)}…` : s;
 }
+
+/** Placement of the compact tool-bubble popover. `.messages` clips both axes
+ *  (overflow-y:auto forces overflow-x to auto), so the popover is position:fixed
+ *  and this computes its viewport coordinates: clamp horizontally, and flip above
+ *  the chip when it sits low enough that opening below would run off-screen. */
+export interface PopoverPos {
+  left: number;
+  top?: number;
+  bottom?: number;
+  maxWidth: number;
+}
+
+export function popoverPosition(
+  rect: { top: number; left: number; bottom: number },
+  vw: number,
+  vh: number,
+  gap = 6,
+  width = 480,
+): PopoverPos {
+  const maxWidth = Math.min(width, vw - 16);
+  const left = Math.max(8, Math.min(rect.left, vw - 8 - maxWidth));
+  const placeAbove = rect.top > vh * 0.6;
+  return placeAbove
+    ? { left, bottom: vh - rect.top + gap, maxWidth }
+    : { left, top: rect.bottom + gap, maxWidth };
+}
