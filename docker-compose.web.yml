@@ -1,0 +1,53 @@
+# Runs caretaker's web GUI (`caretaker-cli web`) in a container.
+#
+#   docker compose -f docker-compose.web.yml up -d --build
+#   open http://127.0.0.1:3000
+#
+# See Dockerfile.web for the full rationale. The three things that make
+# caretaker's own autonomous-task Docker isolation work from inside a container:
+#
+#  1. The host Docker socket is mounted (Docker-out-of-Docker) so caretaker can
+#     run sibling task containers on the HOST daemon.
+#  2. group_add gives the container user access to that socket. Set DOCKER_GID to
+#     your host's docker group id:  export DOCKER_GID=$(getent group docker | cut -d: -f3)
+#  3. The caretaker home and the workspaces folder are bind-mounted at IDENTICAL
+#     absolute paths (source == target). caretaker launches task containers with
+#     `-v <path>:<path>` resolved by the HOST daemon, so the worktree and git
+#     common dir must live at the same absolute path on host and in this
+#     container. The paths default to /srv/caretaker and /srv/workspaces but can be
+#     overridden with CARETAKER_DATA and WORKSPACES_DIR (override both CARETAKER_HOME
+#     and the matching volume together — each volume is source == target by
+#     construction, since the same variable is on both sides).
+#
+# Optional: align file ownership to the host user that owns /srv/workspaces so
+# worktree/task files stay host-consistent (caretaker passes its own uid/gid to
+# the task containers it spawns):
+#   export CARETAKER_UID=$(id -u)  CARETAKER_GID=$(id -g)
+#
+# SECURITY: caretaker has no built-in auth. The port is published to loopback
+# only. To reach it from elsewhere, front it with an authenticating proxy — do
+# NOT change this to 0.0.0.0 on an untrusted network.
+
+services:
+  caretaker-web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    image: caretaker-web
+    container_name: caretaker-web
+    # Loopback publish on purpose — no auth. See note above.
+    ports:
+      - '127.0.0.1:3000:3000'
+    environment:
+      - CARETAKER_HOME=${CARETAKER_DATA:-/srv/caretaker}
+    volumes:
+      # Identical-path (source == target) — required, see header.
+      - ${CARETAKER_DATA:-/srv/caretaker}:${CARETAKER_DATA:-/srv/caretaker}
+      - ${WORKSPACES_DIR:-/srv/workspaces}:${WORKSPACES_DIR:-/srv/workspaces}
+      # Host Docker daemon for task isolation (DooD).
+      - /var/run/docker.sock:/var/run/docker.sock
+    # Socket group + optional uid/gid alignment (export before `up`).
+    group_add:
+      - '${DOCKER_GID:-999}'
+    user: '${CARETAKER_UID:-1000}:${CARETAKER_GID:-1000}'
+    restart: unless-stopped

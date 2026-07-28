@@ -217,6 +217,45 @@ pnpm -F @hyperwindmill/caretaker-cli typecheck    # tsc --noEmit
 
 Package manager: **pnpm** (≥10). The repo is a pnpm workspaces monorepo; `npm install` / `package-lock.json` are not supported.
 
+## Run the web GUI in Docker
+
+`Dockerfile.web` serves `caretaker-cli web` on Node 24; `docker-compose.web.yml`
+is the runnable reference (this is separate from the root `./Dockerfile`, which
+is the per-project *task-isolation* image).
+
+```bash
+sudo mkdir -p /srv/caretaker /srv/workspaces
+sudo chown "$(id -u):$(id -g)" /srv/caretaker /srv/workspaces
+export DOCKER_GID=$(getent group docker | cut -d: -f3)
+export CARETAKER_UID=$(id -u) CARETAKER_GID=$(id -g)
+docker compose -f docker-compose.web.yml up -d --build
+# open http://127.0.0.1:3000
+```
+
+If `/srv` isn't writable, override both the caretaker home and the workspaces
+folder to a location you own — the volume paths are parameterized (`CARETAKER_DATA`
+and `WORKSPACES_DIR`); the only hard rule is that each is `source == target`:
+
+```bash
+export CARETAKER_DATA=$HOME/.caretaker-docker  WORKSPACES_DIR=$HOME/workspaces
+```
+
+Three things make caretaker's own autonomous-task Docker isolation work from
+inside the container:
+
+- **Host Docker socket** (`-v /var/run/docker.sock:...` + `group_add` with your
+  host `docker` gid): caretaker runs each task in a *sibling* container on the
+  host daemon. Omit it and task Docker isolation is off; everything else works.
+- **Two identical-path volumes** (`source == target`): the caretaker home
+  (`/srv/caretaker`, also `CARETAKER_HOME`) holds all state including task
+  worktrees, and the workspaces folder (`/srv/workspaces`) holds your project
+  repos (put every project's working dir under it). caretaker mounts the worktree
+  and git common dir into sibling containers with `-v <path>:<path>`, resolved by
+  the host daemon — so both must be the *same absolute path* on host and in the
+  container.
+- **Loopback publish**: caretaker has no built-in auth, so the port is bound to
+  `127.0.0.1`. Front it with an authenticating reverse proxy to expose it.
+
 ## Built-in tools
 
 Filesystem (sandboxed to the agent's working directory): `read_file`, `write`, `edit`, `multiedit`, `glob`, `grep`. Rich readers: `read_document` (PDF / Word / Excel), `read_image`, `read_attachment`.
