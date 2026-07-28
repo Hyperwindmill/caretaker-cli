@@ -741,6 +741,112 @@ body.vscode-light .tool {
   max-height: 180px;
 }
 
+/* --------------------------------------------------------------------------
+   6b. Compact tool bubbles (task log)
+   Content-width chip that floats left; full args revealed in a clip-safe
+   position:fixed popover on hover (preview) / click (pinned, scrollable).
+   -------------------------------------------------------------------------- */
+.tool-bubble-wrap {
+  align-self: flex-start; /* shrink to content and sit at the left edge */
+  max-width: 100%;
+}
+
+.tool-bubble {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #8c8c8c);
+  background: oklch(0.2 0.02 240 / 0.6);
+  border: 1px solid var(--glass-border);
+  border-left: 2px solid var(--accent-cyan);
+  cursor: default;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+  animation: fadeInUp 0.24s ease forwards;
+}
+
+.tool-bubble:hover,
+.tool-bubble--open {
+  background: oklch(0.24 0.03 240 / 0.75);
+}
+
+.tool-bubble:focus-visible {
+  outline: 1px solid var(--accent-cyan);
+  outline-offset: 1px;
+}
+
+.tool-bubble__icon {
+  color: var(--accent-cyan);
+  display: inline-flex;
+  flex: none;
+}
+
+.tool-bubble__name {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--vscode-foreground);
+  flex: none;
+}
+
+.tool-bubble__summary {
+  font-family: var(--font-mono);
+  opacity: 0.8;
+  min-width: 0;
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-bubble__status {
+  font-family: var(--font-mono);
+  opacity: 0.7;
+  flex: none;
+}
+
+.tool-bubble__popover {
+  z-index: 60;
+  padding: 8px;
+  max-height: 320px;
+  overflow: hidden; /* preview: no scroll, capped */
+  border-radius: var(--radius-md);
+  border: 1px solid var(--glass-border);
+  background: var(--vscode-editorHoverWidget-background, oklch(0.16 0.02 240));
+  box-shadow: 0 8px 24px oklch(0 0 0 / 0.35);
+}
+
+.tool-bubble__popover--pinned {
+  overflow: auto; /* pinned: interactive + scrollable for long args */
+}
+
+.tool-bubble__args {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--vscode-foreground);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.tool-bubble__result {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed oklch(1 0 0 / 0.08);
+  font-size: 11.5px;
+}
+
+body.vscode-light .tool-bubble {
+  background: oklch(0.96 0.01 240);
+  border-color: oklch(0 0 0 / 0.08);
+}
+
+body.vscode-light .tool-bubble__popover {
+  background: #fff;
+}
+
 /* ==========================================================================
    7. Security & Confirmation Cards
    ========================================================================== */

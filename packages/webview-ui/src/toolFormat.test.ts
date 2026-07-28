@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { prettyArgs, resultMetric, toolSummary } from './toolFormat.js';
+import { prettyArgs, popoverPosition, resultMetric, toolSummary } from './toolFormat.js';
 
 test('toolSummary: path-like args → basename', () => {
   assert.equal(toolSummary({ path: 'src/App.tsx' }), 'App.tsx');
@@ -33,4 +33,37 @@ test('prettyArgs: empty for null / {}', () => {
   assert.equal(prettyArgs(null), '');
   assert.equal(prettyArgs({}), '');
   assert.equal(prettyArgs({ a: 1 }), '{\n  "a": 1\n}');
+});
+
+// --- popoverPosition (compact tool-bubble popover placement) ---
+
+test('popoverPosition opens below the chip when it is in the upper viewport', () => {
+  const p = popoverPosition({ top: 100, left: 40, bottom: 120 }, 1000, 800);
+  assert.equal(p.top, 126); // bottom + gap(6)
+  assert.equal(p.bottom, undefined);
+  assert.equal(p.left, 40);
+});
+
+test('popoverPosition flips above when the chip is in the lower ~40% of the viewport', () => {
+  const p = popoverPosition({ top: 600, left: 40, bottom: 620 }, 1000, 800);
+  // 600 > 800 * 0.6 → open upward, anchored by `bottom`
+  assert.equal(p.top, undefined);
+  assert.equal(p.bottom, 800 - 600 + 6); // vh - rect.top + gap
+});
+
+test('popoverPosition clamps left into the viewport', () => {
+  const wide = popoverPosition({ top: 100, left: 950, bottom: 120 }, 1000, 800, 6, 480);
+  // maxWidth = min(480, 1000-16) = 480; left clamped to 1000 - 8 - 480 = 512
+  assert.equal(wide.maxWidth, 480);
+  assert.equal(wide.left, 512);
+
+  const off = popoverPosition({ top: 100, left: -50, bottom: 120 }, 1000, 800);
+  assert.equal(off.left, 8); // never less than 8
+});
+
+test('popoverPosition shrinks maxWidth on a narrow viewport', () => {
+  const p = popoverPosition({ top: 100, left: 10, bottom: 120 }, 300, 800, 6, 480);
+  assert.equal(p.maxWidth, 300 - 16); // min(480, vw-16) = 284
+  // vw=300, maxWidth=284 → upper clamp = 300 - 8 - 284 = 8; left = max(8, min(10, 8)) = 8
+  assert.equal(p.left, 8);
 });
