@@ -1,6 +1,7 @@
-import { useState, useRef, type KeyboardEvent, type ClipboardEvent, type DragEvent } from 'react';
+import { useState, useRef, useEffect, type KeyboardEvent, type ClipboardEvent, type DragEvent } from 'react';
 import type { ContextUsage } from './bridge.js';
 import { DocIcon, CloseIcon, AttachIcon, MicIcon } from './icons.js';
+import { shouldFocusComposer } from './composer_utils.js';
 
 export interface ComposerProps {
   disabled: boolean;
@@ -48,6 +49,21 @@ export function Composer({
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragCounter = useRef(0);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Seed `true` so a composer that mounts already enabled counts as a
+  // disabled -> enabled transition and autofocuses on load (guarded below).
+  const prevDisabled = useRef(true);
+
+  // Restore focus to the input when it becomes usable again — turn finished,
+  // confirmation resolved, or an agent selected — but only when the webview
+  // already holds focus, so we never steal the caret from the editor (VSCode
+  // sidebar) or another window. See shouldFocusComposer / the design spec.
+  useEffect(() => {
+    if (shouldFocusComposer(prevDisabled.current, disabled, document.hasFocus())) {
+      inputRef.current?.focus();
+    }
+    prevDisabled.current = disabled;
+  }, [disabled]);
 
   const send = (): void => {
     onSend(value, attachments.length > 0 ? attachments : undefined);
@@ -164,6 +180,7 @@ export function Composer({
         </div>
       )}
       <textarea
+        ref={inputRef}
         className="composer__input"
         value={value}
         placeholder="Message Caretaker (Drop/paste files/images)..."
