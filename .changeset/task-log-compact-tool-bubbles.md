@@ -11,3 +11,4 @@ left-aligned bubbles with a shortened preview instead of full-width blocks. Hove
 focus a bubble to preview its full arguments; click to pin an expandable, scrollable
 popover. The main chat and scheduler views are unchanged.
 
+
