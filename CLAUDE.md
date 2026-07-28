@@ -169,6 +169,16 @@ purpose. What keeps that affordable on a 200k-token session:
   `ToolBlock` (ungrouped) because their tool results are persisted and click-to-expand
   is the right affordance there; task-log tool calls carry no result (`result: ''`),
   so the block would only add chrome.
+- **The composer autofocuses when it re-enables.** The composer `<textarea>` is
+  `disabled` during streaming / pending confirms / no-agent (`composerDisabled`), and
+  on a disabled -> enabled transition (turn finished, confirmation resolved, agent
+  selected) `Composer` re-focuses it — but only when `document.hasFocus()` is true.
+  Inside the webview iframe that is true only when focus is already in the webview, so
+  the pure `shouldFocusComposer` predicate (`composer_utils.ts`) RESTORES focus
+  without STEALING it: a turn finishing while the user is in the VSCode editor does
+  not yank the caret out. A `prevDisabled` ref seeded `true` makes an
+  already-enabled mount autofocus on load too. No `layout` gate — the focus guard is
+  surface-agnostic.
 
 Escalation path if a conversation ever outgrows this: `content-visibility: auto` on the
 heavy blocks, then coalescing `chunk` messages in the hosts, and a windowing library only
