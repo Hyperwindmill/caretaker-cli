@@ -157,13 +157,18 @@ purpose. What keeps that affordable on a 200k-token session:
   takes a `compact` prop (only `TaskLogView` sets it). In compact mode a tool call is
   a left-aligned content-width chip (`ToolBubble`) instead of the full-width
   `<details>` `ToolBlock`; the full args expand in a hover/focus preview and a
-  click-to-pin popover. That popover is `position: fixed` on purpose: `.messages` is
-  `overflow-y: auto`, which forces `overflow-x` to compute to `auto`, so an
-  in-flow/absolute popover near the container edge would be clipped — a fixed,
-  viewport-anchored popover (placed by `popoverPosition()`) escapes the clip. The
-  main chat and scheduler stay on `ToolBlock` because their tool results are
-  persisted and click-to-expand is the right affordance there; task-log tool calls
-  carry no result (`result: ''`), so the block would only add chrome.
+  click-to-pin popover. Because `.messages` is a flex column (every child is its own
+  row), a content-width chip would still sit alone on its line, so `groupCompactItems`
+  first partitions the stream: runs of consecutive `tool` items collapse into one
+  `tool-bubble-row` flex-wrap container, so the chips flow inline and wrap to the next
+  line only when they don't fit; every other item stays a standalone row. That popover
+  is `position: fixed` on purpose: `.messages` is `overflow-y: auto`, which forces
+  `overflow-x` to compute to `auto`, so an in-flow/absolute popover near the container
+  edge would be clipped — a fixed, viewport-anchored popover (placed by
+  `popoverPosition()`) escapes the clip. The main chat and scheduler stay on
+  `ToolBlock` (ungrouped) because their tool results are persisted and click-to-expand
+  is the right affordance there; task-log tool calls carry no result (`result: ''`),
+  so the block would only add chrome.
 
 Escalation path if a conversation ever outgrows this: `content-visibility: auto` on the
 heavy blocks, then coalescing `chunk` messages in the hosts, and a windowing library only

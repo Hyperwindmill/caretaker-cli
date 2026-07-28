@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
 
 import type { ChatItem } from './App.js';
 import { MarkdownText } from './MarkdownText.js';
+import { groupCompactItems } from './compactGroups.js';
 import { prettyArgs, popoverPosition, resultMetric, toolSummary } from './toolFormat.js';
 import { DocIcon, ThinkingIcon, ToolIcon, SpinnerIcon, ResultArrowIcon, WarningIcon, SettingsIcon } from './icons.js';
 import logo from './caretaker_cli.png';
@@ -77,9 +78,21 @@ export const MessageList = memo(function MessageList({
 
   return (
     <div ref={containerRef} className="messages" onScroll={onScroll}>
-      {items.map((item, i) => (
-        <Item key={i} item={item} sessionId={sessionId} compact={compact} />
-      ))}
+      {compact
+        ? groupCompactItems(items).map((g) =>
+            g.kind === 'tool-row' ? (
+              <div key={g.key} className="tool-bubble-row">
+                {g.items.map((item, j) => (
+                  <Item key={g.key + j} item={item} sessionId={sessionId} compact={compact} />
+                ))}
+              </div>
+            ) : (
+              <Item key={g.key} item={g.item} sessionId={sessionId} compact={compact} />
+            ),
+          )
+        : items.map((item, i) => (
+            <Item key={i} item={item} sessionId={sessionId} compact={compact} />
+          ))}
       {trailing}
       {isStreaming && (
         <div className="messages__loading-indicator">
