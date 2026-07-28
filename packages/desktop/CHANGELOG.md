@@ -1,5 +1,35 @@
 # caretaker-desktop
 
+## 0.19.0
+
+### Minor Changes
+
+- 032f0ea: Add `Dockerfile.web` and `docker-compose.web.yml` to run the caretaker web GUI
+  (`caretaker-cli web`) in a container on Node 24. Multi-stage build (pnpm
+  filtered install + `pnpm deploy --prod` onto a `node:24-bookworm-slim` runtime
+  with the git and Docker CLIs). Documents Docker-out-of-Docker (host socket
+  mount) and the two identical-path volumes (caretaker home + workspaces folder)
+  that autonomous-task Docker isolation requires from inside a container.
+
+### Patch Changes
+
+- abf3e47: Autofocus the chat composer when it becomes usable again (turn finished, tool
+  confirmation resolved, or an agent selected) and on initial load. Focus is only
+  restored when the webview already holds focus, so the VSCode sidebar never steals the
+  caret out of the code editor. Adds a pure shouldFocusComposer predicate
+  (composer_utils.ts) plus ref/useEffect wiring in Composer.tsx; no ComposerProps
+  contract change.
+- 1653aa1: Make the autonomous task execution log more compact: tool calls now render as
+  left-aligned bubbles with a shortened preview instead of full-width blocks, and
+  consecutive tool calls flow inline on a wrapping row instead of each occupying its
+  own line. Hover or focus a bubble to preview its full arguments; click to pin an
+  expandable, scrollable popover. The main chat and scheduler views are unchanged.
+- Updated dependencies [abf3e47]
+- Updated dependencies [1653aa1]
+- Updated dependencies [032f0ea]
+  - @hyperwindmill/caretaker-cli@0.19.0
+  - webview-ui@0.19.0
+
 ## 0.18.0
 
 ### Minor Changes
