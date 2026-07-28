@@ -751,6 +751,17 @@ body.vscode-light .tool {
   max-width: 100%;
 }
 
+/* A run of consecutive tool calls rendered as one inline-wrapping row, so the
+   bubbles flow horizontally and wrap to the next line only when they don't fit
+   — instead of each occupying its own line of the column `.messages` parent. */
+.tool-bubble-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+}
+
 .tool-bubble {
   display: inline-flex;
   align-items: center;
