@@ -189,6 +189,25 @@ test('gitAuthArgs/gitAuthEnv keep the token off argv and in the env', async () =
   assert.ok(!('CARETAKER_GIT_TOKEN' in bare));
 });
 
+test('git operations refuse a remote URL carrying embedded credentials', async () => {
+  // Entry-point validation is UX; this is the enforcement point. A credential
+  // URL that reached the config by any other route (hand-edited caretaker.json,
+  // the VSCode save path, a restored backup) must never reach git, which would
+  // write it into .git/config and put it on argv.
+  const dirty = 'https://user:ghp_secret@example.com/o/r.git';
+  const repo = await makeRepo();
+  const { branch, worktreePath } = await ensureWorktree(repo, 9, 31, 'Dirty remote');
+
+  await assert.rejects(() => pushBranch(worktreePath, branch, { url: dirty }), /credentials/i);
+  await assert.rejects(
+    () => drain(syncProjectRepo({ id: 31, workingDir: '', repositoryUrl: dirty })),
+    /credentials/i,
+  );
+
+  await finalizeDone(worktreePath);
+  await rm(repo, { recursive: true, force: true });
+});
+
 test('pushBranch pushes the task branch to the remote from the worktree', async () => {
   const repo = await makeRepo();
   const origin = await makeBareOrigin();

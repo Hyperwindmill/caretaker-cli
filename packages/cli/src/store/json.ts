@@ -5,6 +5,11 @@ import { existsSync } from 'node:fs';
 import type { AgentConfig, CaretakerConfig, McpServersFile, PluginsFile } from '../types.js';
 import { encrypt, isEncrypted } from '../lib/encryption.js';
 
+// Re-exported through the package's `./store` entry point so every surface that
+// persists config (web server, VSCode extension) enforces the same rule on
+// `projects[].repositoryUrl` before calling saveConfig.
+export { validateRepositoryUrl } from '../lib/repo_url.js';
+
 // Path accessors are resolved at call time, not import time, so test runs
 // that share a process can switch CARETAKER_HOME between suites.
 export function dataDir(): string {
