@@ -59,11 +59,37 @@ async function netGit(cwd: string, args: string[], token?: string | null): Promi
   }
 }
 
+/**
+ * Last line of defence before a remote URL reaches git. Form and API
+ * validation are UX; this is the enforcement point, because a URL git accepts
+ * gets written into `.git/config` and passed on argv. Anything that put a
+ * credential-bearing URL into the config by another route — a hand-edited
+ * `caretaker.json`, a surface whose save path lacks the check, a restored
+ * backup — is stopped here rather than leaking the secret.
+ */
+function assertCleanRemoteUrl(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return; // No scheme: a filesystem path, which cannot carry credentials.
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error(
+      'Refusing to use a repository URL with embedded credentials: git would store it in .git/config and expose it in the process list. Remove the credentials from the URL and use the access token field.',
+    );
+  }
+  // Deliberately NOT enforcing https here — that transport policy belongs to
+  // config validation (lib/repo_url.ts). A filesystem path is a legitimate
+  // remote for a local mirror and for the tests.
+}
+
 export async function pushBranch(
   worktreePath: string,
   branch: string,
   repo: { url: string; token?: string | null },
 ): Promise<void> {
+  assertCleanRemoteUrl(repo.url);
   // Push to the configured URL, not "origin": correct even when workingDir is a
   // pre-existing local repo whose origin points elsewhere.
   await netGit(worktreePath, ['push', repo.url, `${branch}:${branch}`], repo.token);
@@ -127,6 +153,7 @@ export async function* syncProjectRepo(project: {
 }): AsyncGenerator<SyncProgress> {
   const url = (project.repositoryUrl || '').trim();
   if (!url) throw new Error('Project has no repository URL');
+  assertCleanRemoteUrl(url);
   const dest = projectWorkingDir(project);
   const token = project.repositoryToken;
   let status = await projectRepoStatus(project);
