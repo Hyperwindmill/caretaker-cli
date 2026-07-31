@@ -1,7 +1,7 @@
 import { execFile, exec as execCb } from 'node:child_process';
 import { promisify } from 'node:util';
-import { rm } from 'node:fs/promises';
-import { join, relative, dirname } from 'node:path';
+import { rm, mkdir, readdir, rename } from 'node:fs/promises';
+import { join, relative, dirname, basename } from 'node:path';
 import { dataDir } from '../store/db.js';
 import { commandEnv } from '../harness/tools/builtin/shell-env.js';
 import { execInContainer } from './docker.js';
@@ -67,6 +67,107 @@ export async function pushBranch(
   // Push to the configured URL, not "origin": correct even when workingDir is a
   // pre-existing local repo whose origin points elsewhere.
   await netGit(worktreePath, ['push', repo.url, `${branch}:${branch}`], repo.token);
+}
+
+export function projectWorkingDir(project: {
+  id: number;
+  workingDir?: string | null;
+  repositoryUrl?: string | null;
+}): string {
+  const dir = (project.workingDir || '').trim();
+  if (dir) return dir;
+  // Remote-backed with no explicit dir: managed clone under the data dir.
+  // Resolved at call time (dataDir() follows CARETAKER_HOME), never persisted.
+  if ((project.repositoryUrl || '').trim()) return join(dataDir(), 'repos', String(project.id));
+  return '';
+}
+
+export type ProjectRepoStatus = { state: 'absent' | 'cloned' | 'broken'; branch?: string; commit?: string };
+
+export async function projectRepoStatus(project: {
+  id: number;
+  workingDir?: string | null;
+  repositoryUrl?: string | null;
+}): Promise<ProjectRepoStatus> {
+  const dest = projectWorkingDir(project);
+  if (!dest) return { state: 'absent' };
+  let entries: string[];
+  try {
+    entries = await readdir(dest);
+  } catch {
+    return { state: 'absent' };
+  }
+  if (entries.length === 0) return { state: 'absent' };
+  if (!(await isGitRepo(dest))) return { state: 'broken' };
+  try {
+    const branch = await git(dest, ['rev-parse', '--abbrev-ref', 'HEAD']);
+    const commit = await git(dest, ['rev-parse', '--short', 'HEAD']);
+    return { state: 'cloned', branch, commit };
+  } catch {
+    return { state: 'cloned' };
+  }
+}
+
+export type SyncProgress = {
+  step: 'clean' | 'clone' | 'pull' | 'done' | 'error';
+  message: string;
+  status?: ProjectRepoStatus;
+};
+
+/**
+ * Clone-or-pull a remote-backed project's repository. Progress is yielded for
+ * the ndjson endpoint; the heartbeat just drains it. Throws on failure —
+ * callers turn that into a blocked task / in-band error line.
+ */
+export async function* syncProjectRepo(project: {
+  id: number;
+  workingDir?: string | null;
+  repositoryUrl?: string | null;
+  repositoryToken?: string | null;
+}): AsyncGenerator<SyncProgress> {
+  const url = (project.repositoryUrl || '').trim();
+  if (!url) throw new Error('Project has no repository URL');
+  const dest = projectWorkingDir(project);
+  const token = project.repositoryToken;
+  let status = await projectRepoStatus(project);
+
+  if (status.state === 'broken') {
+    // Auto-wipe only the managed default path. A user-chosen workingDir that
+    // isn't a repo could be anything (Documents, home…) — never delete it.
+    if ((project.workingDir || '').trim()) {
+      throw new Error(
+        `Directory ${dest} exists but is not a git repository. ` +
+          `Refusing to overwrite a user-chosen directory — point the project at an empty or valid path.`,
+      );
+    }
+    yield { step: 'clean', message: `Removing broken checkout at ${dest}` };
+    await rm(dest, { recursive: true, force: true });
+    status = { state: 'absent' };
+  }
+
+  if (status.state === 'absent') {
+    const parent = dirname(dest);
+    await mkdir(parent, { recursive: true });
+    // Sweep temp dirs left by crashed clones (`<name>.cloning-<pid>`).
+    for (const entry of await readdir(parent)) {
+      if (entry.startsWith(`${basename(dest)}.cloning-`)) {
+        yield { step: 'clean', message: `Removing stale temp clone ${entry}` };
+        await rm(join(parent, entry), { recursive: true, force: true });
+      }
+    }
+    const tmp = `${dest}.cloning-${process.pid}`;
+    yield { step: 'clone', message: `Cloning ${url}` };
+    await netGit(parent, ['clone', url, tmp], token);
+    // Atomic hand-over: the destination only ever appears as a complete clone.
+    await rm(dest, { recursive: true, force: true }); // absent = missing or empty dir
+    await rename(tmp, dest);
+  } else {
+    yield { step: 'pull', message: 'Fetching and fast-forwarding' };
+    await netGit(dest, ['fetch', 'origin'], token);
+    await netGit(dest, ['pull', '--ff-only'], token);
+  }
+
+  yield { step: 'done', message: `Repository ready at ${dest}`, status: await projectRepoStatus(project) };
 }
 
 function slug(title: string): string {
