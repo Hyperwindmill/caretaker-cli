@@ -21,3 +21,10 @@ export function abortRunningTask(taskId: number): boolean {
   ctrl.abort();
   return true;
 }
+
+/**
+ * Project ids with a repository sync (clone/pull) in flight — shared between
+ * the heartbeat's pre-worktree sync and POST /api/projects/:id/sync so the
+ * two can never race a clone. Derived state only; never persisted.
+ */
+export const syncingProjects = new Set<number>();
