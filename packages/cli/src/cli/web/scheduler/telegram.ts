@@ -15,11 +15,14 @@ import {
 import type { MessageRecord } from '../../../session/types.js';
 import type { ScheduledTaskConfig } from '../../../types.js';
 import { decrypt, isEncrypted } from '../../../lib/encryption.js';
-import { schedulerLogsDir } from './logs.js';
+import { schedulerLogsDir, ensureSchedulerLogsDir } from './logs.js';
 import { runningTasks } from './locks.js';
 import type { SchedulerStrategy } from './strategy.js';
 
 export async function saveTelegramOffset(taskId: string, updateId: number): Promise<void> {
+  // The offset is committed before any run is logged, so this can be the very
+  // first write into scheduler-logs/ — the dir may not exist yet.
+  await ensureSchedulerLogsDir();
   const path = join(schedulerLogsDir(), `${taskId}.offset`);
   const tmpPath = `${path}.tmp.${process.pid}.${Date.now()}`;
   await writeFile(tmpPath, String(updateId), 'utf8');
