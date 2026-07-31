@@ -26,6 +26,7 @@ const {
   gitAuthArgs,
   gitAuthEnv,
   projectWorkingDir,
+  managedRepoDir,
   projectRepoStatus,
   syncProjectRepo,
 } = await import('./task_git.js');
@@ -287,6 +288,89 @@ test('syncProjectRepo clones when absent, then fast-forwards on the next sync', 
 
   await rm(origin, { recursive: true, force: true });
   await rm(second, { recursive: true, force: true });
+});
+
+test('managedRepoDir returns a path only for caretaker-owned clones', () => {
+  // Remote-backed, no workingDir: caretaker's own dir, safe to delete.
+  assert.equal(managedRepoDir({ id: 7, repositoryUrl: 'https://e/r' }), join(CT_HOME, 'repos', '7'));
+  // User-chosen dir, and non-remote project: never ours.
+  assert.equal(managedRepoDir({ id: 7, workingDir: '/home/me/code', repositoryUrl: 'https://e/r' }), null);
+  assert.equal(managedRepoDir({ id: 7, workingDir: '' }), null);
+});
+
+test('syncProjectRepo realigns origin to the configured URL before fetching', async () => {
+  const originA = await seededOrigin();
+  const dest = join(CT_HOME, 'repos', '96');
+  await drain(syncProjectRepo(remoteProject(96, originA)));
+
+  // Origin B: a clone of A with one extra commit, so the switch fast-forwards.
+  const originB = await makeBareOrigin();
+  const tmp = await mkdtemp(join(tmpdir(), 'ct-bwork-'));
+  await g(tmp, ['clone', '-q', originA, 'w']);
+  const w = join(tmp, 'w');
+  await g(w, ['config', 'user.email', 't@e.com']);
+  await g(w, ['config', 'user.name', 'T']);
+  await writeFile(join(w, 'from-b.txt'), 'b\n');
+  await g(w, ['add', '-A']);
+  await g(w, ['commit', '-q', '-m', 'b']);
+  await g(w, ['push', '-q', originB, 'main']);
+
+  await drain(syncProjectRepo(remoteProject(96, originB)));
+  assert.equal((await g(dest, ['remote', 'get-url', 'origin'])).stdout.trim(), originB);
+  assert.ok((await stat(join(dest, 'from-b.txt'))).isFile());
+
+  await rm(originA, { recursive: true, force: true });
+  await rm(originB, { recursive: true, force: true });
+  await rm(tmp, { recursive: true, force: true });
+});
+
+// Both sides commit, so the histories genuinely diverge and `pull --ff-only`
+// fails on every retry (a clone that is merely ahead still fast-forwards).
+async function diverge(clone: string, origin: string, marker: string): Promise<void> {
+  await g(clone, ['config', 'user.email', 't@e.com']);
+  await g(clone, ['config', 'user.name', 'T']);
+  await writeFile(join(clone, marker), 'local\n');
+  await g(clone, ['add', '-A']);
+  await g(clone, ['commit', '-q', '-m', 'local side']);
+
+  const tmp = await mkdtemp(join(tmpdir(), 'ct-upstream-'));
+  await g(tmp, ['clone', '-q', origin, 'w']);
+  const w = join(tmp, 'w');
+  await g(w, ['config', 'user.email', 't@e.com']);
+  await g(w, ['config', 'user.name', 'T']);
+  await writeFile(join(w, 'upstream.txt'), 'them\n');
+  await g(w, ['add', '-A']);
+  await g(w, ['commit', '-q', '-m', 'upstream side']);
+  await g(w, ['push', '-q', 'origin', 'main']);
+  await rm(tmp, { recursive: true, force: true });
+}
+
+test('syncProjectRepo resets a diverged MANAGED clone, refuses a user-chosen one', async () => {
+  const origin = await seededOrigin();
+  const dest = join(CT_HOME, 'repos', '97');
+  await drain(syncProjectRepo(remoteProject(97, origin)));
+  await diverge(dest, origin, 'stray.txt');
+
+  await drain(syncProjectRepo(remoteProject(97, origin)));
+  assert.equal(
+    (await g(dest, ['rev-parse', 'HEAD'])).stdout.trim(),
+    (await g(dest, ['rev-parse', 'origin/main'])).stdout.trim(),
+  );
+  await assert.rejects(() => stat(join(dest, 'stray.txt')));
+  assert.ok((await stat(join(dest, 'upstream.txt'))).isFile());
+
+  // Same divergence in a user-chosen workingDir: surface the error, keep the work.
+  const origin2 = await seededOrigin();
+  const userDir = await mkdtemp(join(tmpdir(), 'ct-userdiv-'));
+  await g(userDir, ['clone', '-q', origin2, 'r']);
+  const repo = join(userDir, 'r');
+  await diverge(repo, origin2, 'mine.txt');
+  await assert.rejects(() => drain(syncProjectRepo(remoteProject(98, origin2, repo))), /git pull failed/);
+  assert.ok((await stat(join(repo, 'mine.txt'))).isFile());
+
+  await rm(origin, { recursive: true, force: true });
+  await rm(origin2, { recursive: true, force: true });
+  await rm(userDir, { recursive: true, force: true });
 });
 
 test('syncProjectRepo wipes and re-clones a broken MANAGED dir, refuses a user-chosen one', async () => {
