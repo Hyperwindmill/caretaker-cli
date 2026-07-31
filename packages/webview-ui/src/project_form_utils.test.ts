@@ -11,3 +11,9 @@ test('validateRepositoryUrl accepts empty and https, rejects ssh and everything 
   assert.match(validateRepositoryUrl('http://host/repo.git')!, /https:\/\//);
   assert.match(validateRepositoryUrl('ftp://host/repo')!, /https:\/\//);
 });
+
+test('validateRepositoryUrl rejects credentials embedded in the URL', () => {
+  // An https prefix alone does not keep the token out of argv / .git/config.
+  assert.match(validateRepositoryUrl('https://user:ghp_secret@github.com/o/r.git')!, /credentials/i);
+  assert.match(validateRepositoryUrl('https://someone@github.com/o/r.git')!, /credentials/i);
+});

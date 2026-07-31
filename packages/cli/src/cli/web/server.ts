@@ -12,6 +12,7 @@ import * as harness from '../../harness/index.js';
 import { getDb, Task, getTaskById, saveTask, createTask, addTaskMessage, deleteTask, runQuery, tryNormalizeChecklistStatus } from '../../store/db.js';
 import { discardWorktree, syncProjectRepo, projectRepoStatus } from '../../lib/task_git.js';
 import { removeContainer } from '../../lib/docker.js';
+import { validateRepositoryUrl } from '../../lib/repo_url.js';
 import { runningTasks, abortRunningTask, syncingProjects } from './scheduler/locks.js';
 import { registerTaskBridge, setTaskBridgeUrl } from './mcp_bridge.js';
 import {
@@ -302,8 +303,9 @@ export async function startServer(port: number, host: string): Promise<void> {
       const body = await c.req.json();
       const { name, description, workingDir, agentId, plannerAgentId, reviewerAgentId, planningEnabled, reviewEnabled, sddEnabled, bootstrapCommands, maxRunSeconds, dockerImage, repositoryUrl, repositoryToken } = body;
       const repoUrl = typeof repositoryUrl === 'string' ? repositoryUrl.trim() : '';
-      if (repoUrl && !repoUrl.startsWith('https://')) {
-        return c.json({ error: 'repositoryUrl must start with https:// (SSH is not supported)' }, 400);
+      const repoUrlError = validateRepositoryUrl(repoUrl);
+      if (repoUrlError) {
+        return c.json({ error: repoUrlError }, 400);
       }
       const config = await loadConfig();
       if (!config.projects) {
@@ -620,20 +622,24 @@ export async function startServer(port: number, host: string): Promise<void> {
       }
     }
     if (task.worktreePath) {
+      const config = await loadConfig();
+      const project = (config.projects || []).find((p) => p.id === task.projectId);
+      const repoUrl = project?.repositoryUrl?.trim();
+      const push =
+        repoUrl && task.branch
+          ? { branch: task.branch, url: repoUrl, token: project?.repositoryToken }
+          : undefined;
       try {
-        const config = await loadConfig();
-        const project = (config.projects || []).find((p) => p.id === task.projectId);
-        const repoUrl = project?.repositoryUrl?.trim();
-        await discardWorktree(
-          task.worktreePath,
-          task.title,
-          repoUrl && task.branch
-            ? { branch: task.branch, url: repoUrl, token: project?.repositoryToken }
-            : undefined,
-        );
+        await discardWorktree(task.worktreePath, task.title, push);
       } catch {
-        // Best-effort: the user is deleting the task; a failed push must not
-        // block deletion (the branch still survives in the local clone).
+        // The user is deleting the task, so a failed push must not block it —
+        // but it must not leave the worktree on disk with no task row pointing
+        // at it either. Retry without the push; the branch survives locally.
+        try {
+          await discardWorktree(task.worktreePath, task.title);
+        } catch {
+          // Best-effort: proceed with deletion even if cleanup fails.
+        }
       }
     }
 
@@ -1118,6 +1124,16 @@ export async function startServer(port: number, host: string): Promise<void> {
             return;
           case 'saveConfig':
             try {
+              // The settings form saves the whole config through here, so this
+              // — not POST /api/projects — is the write path that actually
+              // needs to enforce the repository-URL rules.
+              for (const project of msg.config.projects || []) {
+                const repoUrlError = validateRepositoryUrl(project.repositoryUrl || '');
+                if (repoUrlError) {
+                  post({ type: 'error', message: `Project "${project.name}": ${repoUrlError}` });
+                  return;
+                }
+              }
               await saveConfig(msg.config);
               post({ type: 'voiceConfig', voice: voiceClientConfig(msg.config) });
               void loadAgentsAndSend();

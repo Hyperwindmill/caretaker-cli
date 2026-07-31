@@ -11,7 +11,7 @@ const CT_HOME = await mkdtemp(join(tmpdir(), 'ct-tasktools-home-'));
 process.env.CARETAKER_HOME = CT_HOME;
 
 const { createTask, getTaskById, saveTask, deleteTask, addTaskMessage, runQuery } = await import('../../../store/db.js');
-const { completeTaskTool, taskArchiveTool, taskUnarchiveTool, taskDeleteTool, taskSearchTool, taskSetAgentTool, taskCreateTool, submitPlanTool, taskActivateTool, taskUnpauseTool, getTaskStateTool, updateChecklistItemTool, updateChecklistTool, taskUpdateDetailsTool } = await import('./task_tools.js');
+const { completeTaskTool, taskArchiveTool, taskUnarchiveTool, taskDeleteTool, taskSearchTool, taskSetAgentTool, taskCreateTool, submitPlanTool, taskActivateTool, taskUnpauseTool, getTaskStateTool, updateChecklistItemTool, updateChecklistTool, taskUpdateDetailsTool, projectListTool } = await import('./task_tools.js');
 const { runningTasks } = await import('../../../cli/web/scheduler/locks.js');
 const { saveConfig, saveAgents } = await import('../../../store/json.js');
 
@@ -495,6 +495,96 @@ test('task_update_details does not write an audit message when nothing changes',
   await taskUpdateDetailsTool.execute({ task_id: t.id, title: 'Same', objective: 'same' }, ctx());
   const after = (await runQuery(`SELECT * FROM task_messages WHERE taskId = ${t.id}`)) as any[];
   assert.equal(after.length, before.length, 'no new message should be written when nothing changed');
+});
+
+test('project_list never exposes the repository token and resolves the managed working dir', async () => {
+  await saveConfig({
+    port: 3000,
+    providers: [],
+    projects: [
+      {
+        id: 42,
+        name: 'RemoteProj',
+        description: '',
+        workingDir: '', // managed clone: resolved at read time, not stored
+        agentId: 'a',
+        active: true,
+        repositoryUrl: 'https://example.com/o/r.git',
+        repositoryToken: 'ghp_plaintext_secret',
+      },
+    ],
+  } as any);
+
+  const res = await projectListTool.execute({}, ctx());
+
+  // Neither the plaintext nor the encrypted blob may reach an agent's context.
+  assert.ok(!res.content.includes('ghp_plaintext_secret'), 'plaintext token leaked to the agent');
+  assert.ok(!res.content.includes('repositoryToken'), 'token field leaked to the agent');
+
+  const listed = JSON.parse(res.content) as Array<{ id: number; workingDir: string }>;
+  const proj = listed.find((p) => p.id === 42);
+  assert.ok(proj, 'project 42 should be listed');
+  // Agents must see the effective directory, not the blank stored value.
+  assert.equal(proj!.workingDir, join(CT_HOME, 'repos', '42'));
+
+  await saveConfig({ port: 3000, providers: [] } as any);
+});
+
+test('task_delete pushes the branch to the remote before removing the worktree', async () => {
+  const { ensureWorktree } = await import('../../../lib/task_git.js');
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const { writeFile, mkdtemp: mkdt } = await import('node:fs/promises');
+  const exec = promisify(execFile);
+  const g = (cwd: string, args: string[]) => exec('git', args, { cwd });
+
+  // A bare repo acts as the project's remote; a work repo seeds it.
+  const origin = await mkdt(join(tmpdir(), 'ct-del-origin-'));
+  await g(origin, ['init', '-q', '--bare', '-b', 'main']);
+  const repo = await mkdt(join(tmpdir(), 'ct-del-repo-'));
+  await g(repo, ['init', '-q', '-b', 'main']);
+  await g(repo, ['config', 'user.email', 't@e.com']);
+  await g(repo, ['config', 'user.name', 'T']);
+  await writeFile(join(repo, 'README.md'), '# r\n');
+  await g(repo, ['add', '-A']);
+  await g(repo, ['commit', '-q', '-m', 'init']);
+
+  await saveConfig({
+    port: 3000,
+    providers: [],
+    projects: [
+      {
+        id: 55,
+        name: 'DelPush',
+        description: '',
+        workingDir: repo,
+        agentId: 'a',
+        active: true,
+        repositoryUrl: origin,
+      },
+    ],
+  } as any);
+
+  const t = await createTask({ ...base, projectId: 55, title: 'Delete pushes' });
+  const wt = await ensureWorktree(repo, 55, t.id, 'Delete pushes');
+  const stored = await getTaskById(t.id);
+  stored!.branch = wt.branch;
+  stored!.worktreePath = wt.worktreePath;
+  await saveTask(stored!);
+  await writeFile(join(wt.agentWorkingDir, 'work.txt'), 'agent output\n');
+
+  await taskDeleteTool.execute({ task_id: t.id }, ctx());
+
+  // The work reached the remote instead of vanishing with the worktree.
+  const branches = await g(origin, ['branch', '--list', wt.branch]);
+  assert.match(branches.stdout, new RegExp(wt.branch.replace(/\//g, '\\/')));
+  const log = await g(origin, ['log', '--oneline', wt.branch]);
+  assert.match(log.stdout, /chore\(auto\): Delete pushes/);
+  assert.equal(await getTaskById(t.id), null);
+
+  await saveConfig({ port: 3000, providers: [] } as any);
+  await rm(origin, { recursive: true, force: true });
+  await rm(repo, { recursive: true, force: true });
 });
 
 test.after(async () => {
