@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm, stat, chmod } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm, stat, chmod, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -14,8 +14,21 @@ const CT_HOME = await mkdtemp(join(tmpdir(), 'ct-git-home-'));
 process.env.CARETAKER_HOME = CT_HOME;
 
 // Import AFTER setting the env var (dataDir() reads it at call time, but keep the order explicit).
-const { isGitRepo, ensureWorktree, commitWip, finalizeDone, discardWorktree, agentDirIn, runBootstrap, pushBranch, gitAuthArgs, gitAuthEnv } =
-  await import('./task_git.js');
+const {
+  isGitRepo,
+  ensureWorktree,
+  commitWip,
+  finalizeDone,
+  discardWorktree,
+  agentDirIn,
+  runBootstrap,
+  pushBranch,
+  gitAuthArgs,
+  gitAuthEnv,
+  projectWorkingDir,
+  projectRepoStatus,
+  syncProjectRepo,
+} = await import('./task_git.js');
 
 async function makeRepo(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'ct-repo-'));
@@ -196,5 +209,106 @@ test('pushBranch pushes the task branch to the remote from the worktree', async 
 
   await finalizeDone(worktreePath);
   await rm(repo, { recursive: true, force: true });
+  await rm(origin, { recursive: true, force: true });
+});
+
+/** Seed a bare origin with one commit on main; returns its path (file-transport URL). */
+async function seededOrigin(): Promise<string> {
+  const origin = await makeBareOrigin();
+  const work = await makeRepo();
+  await g(work, ['remote', 'add', 'origin', origin]);
+  await g(work, ['push', '-q', 'origin', 'main']);
+  await rm(work, { recursive: true, force: true });
+  return origin;
+}
+
+async function drain(gen: AsyncGenerator<unknown>): Promise<unknown[]> {
+  const out: unknown[] = [];
+  for await (const p of gen) out.push(p);
+  return out;
+}
+
+const remoteProject = (id: number, url: string, workingDir = '') => ({
+  id, name: 'p', description: '', workingDir, agentId: 'a', active: true,
+  repositoryUrl: url,
+});
+
+test('projectWorkingDir resolves default under dataDir only for remote-backed projects', () => {
+  assert.equal(projectWorkingDir({ id: 9, workingDir: '/x', repositoryUrl: 'https://e/r' }), '/x');
+  assert.equal(
+    projectWorkingDir({ id: 9, workingDir: '', repositoryUrl: 'https://e/r' }),
+    join(CT_HOME, 'repos', '9'),
+  );
+  assert.equal(projectWorkingDir({ id: 9, workingDir: '' }), '');
+});
+
+test('syncProjectRepo clones when absent, then fast-forwards on the next sync', async () => {
+  const origin = await seededOrigin();
+  const project = remoteProject(91, origin);
+  const dest = join(CT_HOME, 'repos', '91');
+
+  await drain(syncProjectRepo(project));
+  assert.ok((await stat(join(dest, 'README.md'))).isFile());
+  assert.equal((await projectRepoStatus(project)).state, 'cloned');
+
+  // Push a new commit to the origin from a second clone...
+  const second = await mkdtemp(join(tmpdir(), 'ct-second-'));
+  await g(second, ['clone', '-q', origin, 'w']);
+  const w = join(second, 'w');
+  await g(w, ['config', 'user.email', 't@e.com']);
+  await g(w, ['config', 'user.name', 'T']);
+  await writeFile(join(w, 'new.txt'), 'x\n');
+  await g(w, ['add', '-A']);
+  await g(w, ['commit', '-q', '-m', 'more']);
+  await g(w, ['push', '-q', 'origin', 'main']);
+
+  // ...and the next sync fast-forwards it in.
+  await drain(syncProjectRepo(project));
+  assert.ok((await stat(join(dest, 'new.txt'))).isFile());
+
+  await rm(origin, { recursive: true, force: true });
+  await rm(second, { recursive: true, force: true });
+});
+
+test('syncProjectRepo wipes and re-clones a broken MANAGED dir, refuses a user-chosen one', async () => {
+  const origin = await seededOrigin();
+
+  // Managed default path (workingDir blank): junk dir is wiped and re-cloned.
+  const managedDest = join(CT_HOME, 'repos', '92');
+  await mkdir(managedDest, { recursive: true });
+  await writeFile(join(managedDest, 'junk.txt'), 'not a repo\n');
+  await drain(syncProjectRepo(remoteProject(92, origin)));
+  assert.ok((await stat(join(managedDest, 'README.md'))).isFile());
+  await assert.rejects(() => stat(join(managedDest, 'junk.txt')));
+
+  // User-chosen workingDir: refuse to wipe, fail with a readable error.
+  const userDir = await mkdtemp(join(tmpdir(), 'ct-user-'));
+  await writeFile(join(userDir, 'precious.txt'), 'do not delete\n');
+  await assert.rejects(
+    () => drain(syncProjectRepo(remoteProject(93, origin, userDir))),
+    /not a git repository/,
+  );
+  assert.ok((await stat(join(userDir, 'precious.txt'))).isFile());
+
+  await rm(origin, { recursive: true, force: true });
+  await rm(userDir, { recursive: true, force: true });
+});
+
+test('syncProjectRepo sweeps stale temp clones and surfaces clone failures', async () => {
+  const origin = await seededOrigin();
+  const dest = join(CT_HOME, 'repos', '94');
+  const stale = `${dest}.cloning-99999`;
+  await mkdir(stale, { recursive: true });
+  await drain(syncProjectRepo(remoteProject(94, origin)));
+  await assert.rejects(() => stat(stale));
+  assert.equal((await projectRepoStatus(remoteProject(94, origin))).state, 'cloned');
+
+  await assert.rejects(
+    () => drain(syncProjectRepo(remoteProject(95, join(tmpdir(), 'ct-no-remote')))),
+    /git clone failed/,
+  );
+  // A failed clone leaves no half-cloned destination.
+  assert.equal((await projectRepoStatus(remoteProject(95, 'https://x'))).state, 'absent');
+
   await rm(origin, { recursive: true, force: true });
 });
