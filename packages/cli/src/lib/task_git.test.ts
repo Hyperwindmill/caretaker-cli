@@ -14,7 +14,7 @@ const CT_HOME = await mkdtemp(join(tmpdir(), 'ct-git-home-'));
 process.env.CARETAKER_HOME = CT_HOME;
 
 // Import AFTER setting the env var (dataDir() reads it at call time, but keep the order explicit).
-const { isGitRepo, ensureWorktree, commitWip, finalizeDone, discardWorktree, agentDirIn, runBootstrap } =
+const { isGitRepo, ensureWorktree, commitWip, finalizeDone, discardWorktree, agentDirIn, runBootstrap, pushBranch, gitAuthArgs, gitAuthEnv } =
   await import('./task_git.js');
 
 async function makeRepo(): Promise<string> {
@@ -147,4 +147,54 @@ test('runBootstrap uses the probed shell environment (PATH) for commands', async
     await rm(binDir, { recursive: true, force: true });
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+async function makeBareOrigin(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'ct-origin-'));
+  await g(dir, ['init', '-q', '--bare', '-b', 'main']);
+  return dir;
+}
+
+test('gitAuthArgs/gitAuthEnv keep the token off argv and in the env', async () => {
+  const { encrypt } = await import('./encryption.js');
+
+  assert.deepEqual(gitAuthArgs(false), []);
+  const args = gitAuthArgs(true);
+  // Clears configured helpers first, then installs ours.
+  assert.equal(args[1], 'credential.helper=');
+  assert.match(args[3], /^credential\.helper=!f\(\)/);
+  assert.ok(!args.join(' ').includes('tok-plain'), 'token must never be an argument');
+
+  const env = gitAuthEnv('tok-plain');
+  assert.equal(env.CARETAKER_GIT_TOKEN, 'tok-plain');
+  assert.equal(env.GIT_TERMINAL_PROMPT, '0');
+  // Encrypted blobs are decrypted at use time.
+  assert.equal(gitAuthEnv(encrypt('tok-enc')).CARETAKER_GIT_TOKEN, 'tok-enc');
+  // No token: still non-interactive, no env var.
+  const bare = gitAuthEnv(null);
+  assert.equal(bare.GIT_TERMINAL_PROMPT, '0');
+  assert.ok(!('CARETAKER_GIT_TOKEN' in bare));
+});
+
+test('pushBranch pushes the task branch to the remote from the worktree', async () => {
+  const repo = await makeRepo();
+  const origin = await makeBareOrigin();
+  const { branch, worktreePath, agentWorkingDir } = await ensureWorktree(repo, 3, 11, 'Push me');
+  await writeFile(join(agentWorkingDir, 'out.txt'), 'work\n');
+  await commitWip(worktreePath, 'Push me');
+
+  await pushBranch(worktreePath, branch, { url: origin });
+
+  const branches = await g(origin, ['branch', '--list', branch]);
+  assert.match(branches.stdout, /caretaker\/task-11-push-me/);
+
+  // Failure is a readable error, not a hang (GIT_TERMINAL_PROMPT=0).
+  await assert.rejects(
+    () => pushBranch(worktreePath, branch, { url: join(tmpdir(), 'ct-no-such-remote') }),
+    /git push failed/,
+  );
+
+  await finalizeDone(worktreePath);
+  await rm(repo, { recursive: true, force: true });
+  await rm(origin, { recursive: true, force: true });
 });

@@ -5,14 +5,15 @@ import { join, relative, dirname } from 'node:path';
 import { dataDir } from '../store/db.js';
 import { commandEnv } from '../harness/tools/builtin/shell-env.js';
 import { execInContainer } from './docker.js';
+import { decrypt, isEncrypted } from './encryption.js';
 
 const exec = promisify(execFile);
 const execShell = promisify(execCb);
 
-async function git(cwd: string, args: string[]): Promise<string> {
+async function git(cwd: string, args: string[], extraEnv?: Record<string, string>): Promise<string> {
   const { stdout } = await exec('git', args, {
     cwd,
-    env: commandEnv(),
+    env: { ...commandEnv(), ...extraEnv },
     maxBuffer: 32 * 1024 * 1024,
   });
   return stdout.trim();
@@ -24,6 +25,48 @@ export async function isGitRepo(dir: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+// Inline credential helper: git shells this out and reads username/password
+// from stdout. The token travels only in the child env (CARETAKER_GIT_TOKEN)
+// — never on argv (visible in `ps`), never in .git/config.
+const CRED_HELPER = '!f(){ echo username=x-access-token; echo password=$CARETAKER_GIT_TOKEN; }; f';
+
+export function gitAuthArgs(hasToken: boolean): string[] {
+  if (!hasToken) return [];
+  // First -c clears any configured helpers so ours is the only one consulted —
+  // a system helper answering first with stale credentials would shadow the token.
+  return ['-c', 'credential.helper=', '-c', `credential.helper=${CRED_HELPER}`];
+}
+
+export function gitAuthEnv(token?: string | null): Record<string, string> {
+  // GIT_TERMINAL_PROMPT=0: the scheduler must never hang on an interactive
+  // username/password prompt — fail fast with a real error instead.
+  const env: Record<string, string> = { GIT_TERMINAL_PROMPT: '0' };
+  if (token) env.CARETAKER_GIT_TOKEN = isEncrypted(token) ? decrypt(token) : token;
+  return env;
+}
+
+/** Network git ops (clone/fetch/pull/push): auth + a readable error carrying
+ *  git's stderr, which becomes blockedReason / UI copy downstream. */
+async function netGit(cwd: string, args: string[], token?: string | null): Promise<string> {
+  try {
+    return await git(cwd, [...gitAuthArgs(!!token), ...args], gitAuthEnv(token));
+  } catch (err) {
+    const e = err as { stderr?: string; message?: string };
+    const detail = (e.stderr || e.message || String(err)).toString().trim();
+    throw new Error(`git ${args[0]} failed: ${detail}`);
+  }
+}
+
+export async function pushBranch(
+  worktreePath: string,
+  branch: string,
+  repo: { url: string; token?: string | null },
+): Promise<void> {
+  // Push to the configured URL, not "origin": correct even when workingDir is a
+  // pre-existing local repo whose origin points elsewhere.
+  await netGit(worktreePath, ['push', repo.url, `${branch}:${branch}`], repo.token);
 }
 
 function slug(title: string): string {
