@@ -312,3 +312,29 @@ test('syncProjectRepo sweeps stale temp clones and surfaces clone failures', asy
 
   await rm(origin, { recursive: true, force: true });
 });
+
+test('discardWorktree pushes before removal; a failed push keeps the worktree', async () => {
+  const repo = await makeRepo();
+  const origin = await makeBareOrigin();
+  const { branch, worktreePath, agentWorkingDir } = await ensureWorktree(repo, 4, 21, 'Discard remote');
+  await writeFile(join(agentWorkingDir, 'wip.txt'), 'unsaved\n');
+
+  // Failed push (bogus remote): worktree must survive.
+  await assert.rejects(
+    () => discardWorktree(worktreePath, 'Discard remote', {
+      branch,
+      url: join(tmpdir(), 'ct-missing-origin'),
+    }),
+    /git push failed/,
+  );
+  assert.ok((await stat(worktreePath)).isDirectory());
+
+  // Successful push: branch lands on the origin, worktree removed.
+  await discardWorktree(worktreePath, 'Discard remote', { branch, url: origin });
+  await assert.rejects(() => stat(worktreePath));
+  const branches = await g(origin, ['branch', '--list', branch]);
+  assert.match(branches.stdout, /caretaker\/task-21-discard-remote/);
+
+  await rm(repo, { recursive: true, force: true });
+  await rm(origin, { recursive: true, force: true });
+});
