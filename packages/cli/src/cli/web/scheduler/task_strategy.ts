@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto';
 import * as harness from '../../../harness/index.js';
 import { loadAgents, loadConfig } from '../../../store/json.js';
 import { getDb, Task, Project, TaskMessage, getTaskById, saveTask, addTaskMessage, updateTaskMessageContent, runQuery } from '../../../store/db.js';
-import { runningTasks, runningTaskControllers } from './locks.js';
-import { isGitRepo, ensureWorktree, agentDirIn, commitWip, finalizeDone, runBootstrap, gitCommonDir } from '../../../lib/task_git.js';
+import { runningTasks, runningTaskControllers, syncingProjects } from './locks.js';
+import { isGitRepo, ensureWorktree, agentDirIn, commitWip, finalizeDone, runBootstrap, gitCommonDir, syncProjectRepo, projectWorkingDir, pushBranch } from '../../../lib/task_git.js';
 import { runDoneReview, MAX_REVIEW_ROUNDS } from './task_review.js';
 import type { AgentConfig, ProviderConfig, ProjectConfig } from '../../../types.js';
 import type { Tool } from '../../../harness/tools/types.js';
@@ -175,7 +175,39 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
       throw new Error(`Provider "${agent.provider}" not found for agent "${agent.name}"`);
     }
 
-    const baseWorkingDir = project.workingDir || agent.workingDir || process.cwd();
+    const baseWorkingDir = projectWorkingDir(project) || agent.workingDir || process.cwd();
+
+    // Remote-backed project: clone-or-pull the repository right before the
+    // first worktree is created. Failure blocks the task (bootstrap pattern).
+    if (!task.worktreePath && project.repositoryUrl?.trim()) {
+      if (syncingProjects.has(project.id)) {
+        console.log(`[task_heartbeat] Task #${task.id} repo sync already in flight; skipping tick.`);
+        return;
+      }
+      syncingProjects.add(project.id);
+      try {
+        for await (const p of syncProjectRepo(project)) {
+          console.log(`[task_heartbeat] Task #${task.id} repo sync: ${p.step} — ${p.message}`);
+        }
+      } catch (syncErr) {
+        const reason = syncErr instanceof Error ? syncErr.message : String(syncErr);
+        task.status = 'blocked';
+        task.blockedReason = reason;
+        task.updatedAt = new Date().toISOString();
+        await saveTask(task);
+        await addTaskMessage({
+          taskId: task.id,
+          role: 'assistant',
+          messageType: 'block',
+          content: `Repository sync failed — task blocked.\n\n${reason}`,
+        });
+        console.error(`[task_heartbeat] Task #${task.id} repo sync failed, blocked:`, reason);
+        return;
+      } finally {
+        syncingProjects.delete(project.id);
+      }
+    }
+
     let workingDir = baseWorkingDir;
     let mountRoot = baseWorkingDir;
     let worktreeJustCreated = false;
@@ -499,7 +531,18 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
         if (await commitWip(gitTask.worktreePath, gitTask.title)) {
           console.log(`[task_heartbeat] Task #${task.id} committed WIP to ${gitTask.branch}`);
         }
+        const repoUrl = project.repositoryUrl?.trim();
+        if (repoUrl && gitTask.branch && gitTask.status !== 'done') {
+          // Per-cycle push is best-effort: the remote mirrors progress, but a
+          // flaky network must not fail the cycle. Finalize pushes are gated.
+          try {
+            await pushBranch(gitTask.worktreePath, gitTask.branch, { url: repoUrl, token: project.repositoryToken });
+          } catch (pushErr) {
+            console.error(`[task_heartbeat] Task #${task.id} per-cycle push failed (best-effort):`, pushErr);
+          }
+        }
         if (gitTask.status === 'done') {
+          if (!(await pushOrBlock(gitTask, project))) return;
           if (gitTask.dockerContainer) {
             await removeContainer(gitTask.dockerContainer);
             gitTask.dockerContainer = null;
@@ -543,6 +586,35 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
   }
 }
 
+/**
+ * Push the task branch before finalizing. Returns true when pushed (or no push
+ * applies). On failure: blocks the task with the reason and returns false —
+ * the caller must NOT finalize (worktree stays; the user fixes the remote or
+ * token and unblocks to retry).
+ */
+async function pushOrBlock(task: Task, project?: ProjectConfig | null): Promise<boolean> {
+  const url = project?.repositoryUrl?.trim();
+  if (!url || !task.branch || !task.worktreePath) return true;
+  try {
+    await pushBranch(task.worktreePath, task.branch, { url, token: project?.repositoryToken });
+    return true;
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    task.status = 'blocked';
+    task.blockedReason = reason;
+    task.updatedAt = new Date().toISOString();
+    await saveTask(task);
+    await addTaskMessage({
+      taskId: task.id,
+      role: 'assistant',
+      messageType: 'block',
+      content: `Push to remote failed — task blocked. The worktree is kept; fix the remote or token and unblock to retry.\n\n${reason}`,
+    });
+    console.error(`[task_heartbeat] Task #${task.id} push failed, blocked:`, reason);
+    return false;
+  }
+}
+
 async function runReviewCycle(opts: {
   task: Task;
   project?: ProjectConfig | null;
@@ -563,6 +635,7 @@ async function runReviewCycle(opts: {
     await commitWip(task.worktreePath, task.title);
     const current = await getTaskById(task.id);
     if (!current || current.status !== 'reviewing') return;
+    if (!(await pushOrBlock(current, project))) return;
     if (current.dockerContainer) {
       await removeContainer(current.dockerContainer);
       current.dockerContainer = null;
@@ -645,6 +718,7 @@ async function runReviewCycle(opts: {
         content: `Finished as done despite outstanding review findings after ${MAX_REVIEW_ROUNDS} rounds.`,
       });
     }
+    if (!(await pushOrBlock(current, project))) return;
     if (current.dockerContainer) {
       await removeContainer(current.dockerContainer);
       current.dockerContainer = null;
