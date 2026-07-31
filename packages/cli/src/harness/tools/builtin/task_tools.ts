@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { getDb, ChecklistItem, Project, Task, TaskMessage, getTaskById, saveTask, createTask, addTaskMessage, deleteTask, tryNormalizeChecklistStatus } from '../../../store/db.js';
 import { loadConfig, loadAgents } from '../../../store/json.js';
 import type { Tool, ToolResult } from '../types.js';
-import { discardWorktree } from '../../../lib/task_git.js';
+import { discardWorktree, projectWorkingDir } from '../../../lib/task_git.js';
 import { removeContainer } from '../../../lib/docker.js';
 import { runningTasks } from '../../../cli/web/scheduler/locks.js';
 import { resolveReviewEnabled, resolvePlanningEnabled, activationStatus } from '../../../cli/web/scheduler/task_roles.js';
@@ -59,7 +59,7 @@ export const getTaskStateTool: Tool = {
         project: project
           ? {
               name: project.name,
-              workingDir: project.workingDir,
+              workingDir: projectWorkingDir(project),
             }
           : null,
         recentMessages: messages.slice(-20),
