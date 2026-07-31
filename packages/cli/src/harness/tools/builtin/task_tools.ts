@@ -680,7 +680,20 @@ export const taskDiscardWorktreeTool: Tool = {
       await removeContainer(task.dockerContainer);
       task.dockerContainer = null;
     }
-    await discardWorktree(task.worktreePath, task.title);
+    const config = await loadConfig();
+    const project = (config.projects || []).find((p) => p.id === task.projectId);
+    const repoUrl = project?.repositoryUrl?.trim();
+    try {
+      await discardWorktree(
+        task.worktreePath,
+        task.title,
+        repoUrl && task.branch
+          ? { branch: task.branch, url: repoUrl, token: project?.repositoryToken }
+          : undefined,
+      );
+    } catch (e) {
+      return err(`Discard aborted — worktree kept: ${e instanceof Error ? e.message : String(e)}`);
+    }
     task.worktreePath = null;
     task.updatedAt = new Date().toISOString();
     await saveTask(task);

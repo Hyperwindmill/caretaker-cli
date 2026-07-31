@@ -4,14 +4,15 @@ import fs from 'node:fs';
 import { watch, existsSync, mkdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
+import { stream } from 'hono/streaming';
 import { serve } from '@hono/node-server';
 import { WebSocketServer, WebSocket } from 'ws';
 
 import * as harness from '../../harness/index.js';
 import { getDb, Task, getTaskById, saveTask, createTask, addTaskMessage, deleteTask, runQuery, tryNormalizeChecklistStatus } from '../../store/db.js';
-import { discardWorktree } from '../../lib/task_git.js';
+import { discardWorktree, syncProjectRepo, projectRepoStatus } from '../../lib/task_git.js';
 import { removeContainer } from '../../lib/docker.js';
-import { runningTasks, abortRunningTask } from './scheduler/locks.js';
+import { runningTasks, abortRunningTask, syncingProjects } from './scheduler/locks.js';
 import { registerTaskBridge, setTaskBridgeUrl } from './mcp_bridge.js';
 import {
   loadAgents,
@@ -299,7 +300,11 @@ export async function startServer(port: number, host: string): Promise<void> {
   app.post('/api/projects', async (c) => {
     try {
       const body = await c.req.json();
-      const { name, description, workingDir, agentId, plannerAgentId, reviewerAgentId, planningEnabled, reviewEnabled, sddEnabled, bootstrapCommands, maxRunSeconds, dockerImage } = body;
+      const { name, description, workingDir, agentId, plannerAgentId, reviewerAgentId, planningEnabled, reviewEnabled, sddEnabled, bootstrapCommands, maxRunSeconds, dockerImage, repositoryUrl, repositoryToken } = body;
+      const repoUrl = typeof repositoryUrl === 'string' ? repositoryUrl.trim() : '';
+      if (repoUrl && !repoUrl.startsWith('https://')) {
+        return c.json({ error: 'repositoryUrl must start with https:// (SSH is not supported)' }, 400);
+      }
       const config = await loadConfig();
       if (!config.projects) {
         config.projects = [];
@@ -322,6 +327,11 @@ export async function startServer(port: number, host: string): Promise<void> {
           : null,
         maxRunSeconds: typeof maxRunSeconds === 'number' && maxRunSeconds > 0 ? maxRunSeconds : null,
         dockerImage: typeof dockerImage === 'string' && dockerImage.trim() ? dockerImage.trim() : null,
+        repositoryUrl: repoUrl || null,
+        repositoryToken:
+          repoUrl && typeof repositoryToken === 'string' && repositoryToken.trim()
+            ? repositoryToken.trim()
+            : null,
       };
       config.projects.push(project);
       await saveConfig(config);
@@ -346,6 +356,43 @@ export async function startServer(port: number, host: string): Promise<void> {
     } catch (err) {
       return c.json({ error: String(err) }, 500);
     }
+  });
+
+  // Clone-or-pull a remote-backed project's repository. Progress streams as
+  // ndjson (voice-backend pattern); failures travel in-band as an `error` line
+  // so URL/token problems are diagnosable from the UI.
+  app.post('/api/projects/:id/sync', async (c) => {
+    const id = Number(c.req.param('id'));
+    const config = await loadConfig();
+    const project = (config.projects || []).find((p) => p.id === id);
+    if (!project) return c.json({ error: 'not found' }, 404);
+    if (!project.repositoryUrl?.trim()) return c.json({ error: 'project has no repository URL' }, 400);
+    if (syncingProjects.has(id)) return c.json({ error: 'sync already running' }, 409);
+    syncingProjects.add(id);
+    c.header('Content-Type', 'application/x-ndjson');
+    return stream(c, async (s) => {
+      try {
+        for await (const p of syncProjectRepo(project)) {
+          await s.writeln(JSON.stringify(p));
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        await s.writeln(JSON.stringify({ step: 'error', message }));
+      } finally {
+        syncingProjects.delete(id);
+      }
+    });
+  });
+
+  // Derived repo state — disk + in-flight set at request time, nothing stored.
+  app.get('/api/projects/:id/repo-status', async (c) => {
+    const id = Number(c.req.param('id'));
+    const config = await loadConfig();
+    const project = (config.projects || []).find((p) => p.id === id);
+    if (!project) return c.json({ error: 'not found' }, 404);
+    if (!project.repositoryUrl?.trim()) return c.json({ error: 'project has no repository URL' }, 400);
+    if (syncingProjects.has(id)) return c.json({ state: 'syncing' });
+    return c.json(await projectRepoStatus(project));
   });
 
   // Tasks REST endpoints
@@ -485,8 +532,24 @@ export async function startServer(port: number, host: string): Promise<void> {
     if (task.dockerContainer) {
       await removeContainer(task.dockerContainer);
       task.dockerContainer = null;
+      task.updatedAt = new Date().toISOString();
+      await saveTask(task);
     }
-    await discardWorktree(task.worktreePath, task.title);
+    const config = await loadConfig();
+    const project = (config.projects || []).find((p) => p.id === task.projectId);
+    const repoUrl = project?.repositoryUrl?.trim();
+    try {
+      await discardWorktree(
+        task.worktreePath,
+        task.title,
+        repoUrl && task.branch
+          ? { branch: task.branch, url: repoUrl, token: project?.repositoryToken }
+          : undefined,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return c.json({ ok: false, error: `Discard aborted — worktree kept. ${message}` }, 500);
+    }
     task.worktreePath = null;
     task.updatedAt = new Date().toISOString();
     await saveTask(task);
@@ -558,9 +621,19 @@ export async function startServer(port: number, host: string): Promise<void> {
     }
     if (task.worktreePath) {
       try {
-        await discardWorktree(task.worktreePath, task.title);
+        const config = await loadConfig();
+        const project = (config.projects || []).find((p) => p.id === task.projectId);
+        const repoUrl = project?.repositoryUrl?.trim();
+        await discardWorktree(
+          task.worktreePath,
+          task.title,
+          repoUrl && task.branch
+            ? { branch: task.branch, url: repoUrl, token: project?.repositoryToken }
+            : undefined,
+        );
       } catch {
-        // Best-effort: proceed with deletion even if worktree cleanup fails.
+        // Best-effort: the user is deleting the task; a failed push must not
+        // block deletion (the branch still survives in the local clone).
       }
     }
 
