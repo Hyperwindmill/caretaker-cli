@@ -10,7 +10,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 
 import * as harness from '../../harness/index.js';
 import { getDb, Task, getTaskById, saveTask, createTask, addTaskMessage, deleteTask, runQuery, tryNormalizeChecklistStatus } from '../../store/db.js';
-import { discardWorktree, syncProjectRepo, projectRepoStatus } from '../../lib/task_git.js';
+import { discardWorktree, syncProjectRepo, projectRepoStatus, managedRepoDir } from '../../lib/task_git.js';
 import { removeContainer } from '../../lib/docker.js';
 import { validateRepositoryUrl } from '../../lib/repo_url.js';
 import { runningTasks, abortRunningTask, syncingProjects } from './scheduler/locks.js';
@@ -347,10 +347,17 @@ export async function startServer(port: number, host: string): Promise<void> {
     try {
       const id = Number(c.req.param('id'));
       const config = await loadConfig();
+      const project = (config.projects || []).find((p) => p.id === id);
       if (config.projects) {
         config.projects = config.projects.filter((p) => p.id !== id);
         await saveConfig(config);
       }
+      // Ids are max+1, so deleting the highest one and creating a new project
+      // reuses the id — and with it ~/.caretaker/repos/<id>, which the new
+      // project would silently inherit (old code, old origin). Remove the
+      // managed clone; a user-chosen workingDir is never touched.
+      const managed = project ? managedRepoDir(project) : null;
+      if (managed) await fs.promises.rm(managed, { recursive: true, force: true });
       // Delete task messages first, then tasks — avoids orphaned message rows.
       await runQuery(`DELETE FROM task_messages WHERE taskId IN (SELECT id FROM tasks WHERE projectId = ${id})`);
       await runQuery(`DELETE FROM tasks WHERE projectId = ${id}`);
@@ -530,6 +537,13 @@ export async function startServer(port: number, host: string): Promise<void> {
     const task = await getTaskById(taskId);
     if (!task) return c.json({ ok: false, error: 'not found' }, 404);
     if (!task.worktreePath) return c.json({ ok: false, error: 'no worktree' }, 400);
+
+    // Same guard as delete: a manual discard racing a heartbeat cycle would rip
+    // the worktree out from under the running agent — and the critical section
+    // now includes a network push.
+    if (task.lockedAt || runningTasks.has(`task_db_${taskId}`)) {
+      return c.json({ ok: false, error: 'Task is currently running. Wait for it to finish or pause it first.' }, 409);
+    }
 
     if (task.dockerContainer) {
       await removeContainer(task.dockerContainer);

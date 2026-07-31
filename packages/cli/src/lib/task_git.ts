@@ -10,11 +10,17 @@ import { decrypt, isEncrypted } from './encryption.js';
 const exec = promisify(execFile);
 const execShell = promisify(execCb);
 
-async function git(cwd: string, args: string[], extraEnv?: Record<string, string>): Promise<string> {
+async function git(
+  cwd: string,
+  args: string[],
+  extraEnv?: Record<string, string>,
+  timeout?: number,
+): Promise<string> {
   const { stdout } = await exec('git', args, {
     cwd,
     env: { ...commandEnv(), ...extraEnv },
     maxBuffer: 32 * 1024 * 1024,
+    timeout,
   });
   return stdout.trim();
 }
@@ -47,14 +53,21 @@ export function gitAuthEnv(token?: string | null): Record<string, string> {
   return env;
 }
 
+// Network ops only: a hung TCP connection would hold syncingProjects and the
+// task lock until the OS timeout. Local git commands stay unbounded on purpose
+// (a worktree add on a huge repo is slow but legitimate).
+const NET_TIMEOUT_MS = 120_000;
+
 /** Network git ops (clone/fetch/pull/push): auth + a readable error carrying
  *  git's stderr, which becomes blockedReason / UI copy downstream. */
 async function netGit(cwd: string, args: string[], token?: string | null): Promise<string> {
   try {
-    return await git(cwd, [...gitAuthArgs(!!token), ...args], gitAuthEnv(token));
+    return await git(cwd, [...gitAuthArgs(!!token), ...args], gitAuthEnv(token), NET_TIMEOUT_MS);
   } catch (err) {
-    const e = err as { stderr?: string; message?: string };
-    const detail = (e.stderr || e.message || String(err)).toString().trim();
+    const e = err as { stderr?: string; message?: string; killed?: boolean };
+    const detail = e.killed
+      ? `timed out after ${NET_TIMEOUT_MS / 1000}s`
+      : (e.stderr || e.message || String(err)).toString().trim();
     throw new Error(`git ${args[0]} failed: ${detail}`);
   }
 }
@@ -108,7 +121,22 @@ export function projectWorkingDir(project: {
   return '';
 }
 
-export type ProjectRepoStatus = { state: 'absent' | 'cloned' | 'broken'; branch?: string; commit?: string };
+/**
+ * The clone directory caretaker owns for this project, or null when the repo
+ * lives in a user-chosen `workingDir` (or the project isn't remote-backed).
+ * The delete path uses this: anything non-null is caretaker's to remove,
+ * anything null must never be touched.
+ */
+export function managedRepoDir(project: {
+  id: number;
+  workingDir?: string | null;
+  repositoryUrl?: string | null;
+}): string | null {
+  if ((project.workingDir || '').trim()) return null;
+  return projectWorkingDir(project) || null;
+}
+
+export type ProjectRepoStatus ={ state: 'absent' | 'cloned' | 'broken'; branch?: string; commit?: string };
 
 export async function projectRepoStatus(project: {
   id: number;
@@ -189,9 +217,33 @@ export async function* syncProjectRepo(project: {
     await rm(dest, { recursive: true, force: true }); // absent = missing or empty dir
     await rename(tmp, dest);
   } else {
+    // Realign `origin` to the configured URL before touching the network:
+    // fetch/pull talk to whatever origin is, and the credential helper answers
+    // for ANY host it's asked about (no host matching). An inherited or
+    // pre-existing clone pointing elsewhere would be offered the project's
+    // token — confused deputy. `url` already passed assertCleanRemoteUrl.
+    const currentOrigin = await git(dest, ['remote', 'get-url', 'origin']).catch(() => null);
+    if (currentOrigin !== url) {
+      await git(dest, ['remote', currentOrigin === null ? 'add' : 'set-url', 'origin', url]);
+      yield { step: 'clean', message: `Realigned origin to ${url}` };
+    }
     yield { step: 'pull', message: 'Fetching and fast-forwarding' };
     await netGit(dest, ['fetch', 'origin'], token);
-    await netGit(dest, ['pull', '--ff-only'], token);
+    try {
+      await netGit(dest, ['pull', '--ff-only'], token);
+    } catch (e) {
+      // Diverged (upstream force-push, stray local commit, realigned origin):
+      // ff-only then fails identically on every retry, so without a self-heal
+      // the project is stuck until someone deletes the dir by hand. Only
+      // caretaker writes to the MANAGED clone (tasks work in worktrees), so
+      // there is no user work to lose. A user-chosen workingDir is never reset
+      // — same rule as the `broken` wipe above.
+      if ((project.workingDir || '').trim()) throw e;
+      const upstream = await git(dest, ['rev-parse', '--abbrev-ref', '@{upstream}']).catch(() => null);
+      if (!upstream) throw e;
+      yield { step: 'clean', message: `Diverged from ${upstream} — resetting the managed clone` };
+      await git(dest, ['reset', '--hard', upstream]);
+    }
   }
 
   yield { step: 'done', message: `Repository ready at ${dest}`, status: await projectRepoStatus(project) };

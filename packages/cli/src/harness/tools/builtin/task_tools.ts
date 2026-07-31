@@ -691,6 +691,12 @@ export const taskDiscardWorktreeTool: Tool = {
     if (!task) return err(`Task ${taskId} not found`);
     if (!task.worktreePath) return err(`Task ${taskId} has no active worktree`);
 
+    // Same guard as task_delete: discarding mid-cycle would rip the worktree out
+    // from under the running agent, and the critical section now pushes.
+    if (task.lockedAt || runningTasks.has(`task_db_${taskId}`)) {
+      return err(`Task ${taskId} is currently running (locked). Wait for it to finish or pause it first.`);
+    }
+
     if (task.dockerContainer) {
       await removeContainer(task.dockerContainer);
       task.dockerContainer = null;
