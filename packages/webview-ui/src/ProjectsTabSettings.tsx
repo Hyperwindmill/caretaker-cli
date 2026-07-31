@@ -3,6 +3,8 @@ import type { CaretakerConfig, AgentConfig, ProjectConfig } from 'caretaker-type
 import type { ViewToHost } from './bridge.js';
 import FolderPicker from './FolderPicker.js';
 import { WarningIcon, FolderIcon, EditIcon, DeleteIcon } from './icons.js';
+import { validateRepositoryUrl } from './project_form_utils.js';
+import { ProjectRepoSync } from './ProjectRepoSync.js';
 
 interface ProjectsTabSettingsProps {
   config: CaretakerConfig;
@@ -27,6 +29,8 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
   const [bootstrapText, setBootstrapText] = useState('');
   const [maxRunSecondsText, setMaxRunSecondsText] = useState('');
   const [dockerImage, setDockerImage] = useState('');
+  const [repositoryUrl, setRepositoryUrl] = useState('');
+  const [repositoryToken, setRepositoryToken] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const projects = config.projects || [];
@@ -46,6 +50,8 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
     setBootstrapText((proj.bootstrapCommands || []).join('\n'));
     setMaxRunSecondsText(proj.maxRunSeconds ? String(proj.maxRunSeconds) : '');
     setDockerImage(proj.dockerImage || '');
+    setRepositoryUrl(proj.repositoryUrl || '');
+    setRepositoryToken('');
     setErrorMsg(null);
   };
 
@@ -64,6 +70,8 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
     setBootstrapText('');
     setMaxRunSecondsText('');
     setDockerImage('');
+    setRepositoryUrl('');
+    setRepositoryToken('');
     setErrorMsg(null);
   };
 
@@ -82,8 +90,14 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
       setErrorMsg('Project Name is required.');
       return;
     }
-    if (!trimmedDir) {
-      setErrorMsg('Local Working Directory Path is required.');
+    const trimmedRepoUrl = repositoryUrl.trim();
+    const repoUrlError = validateRepositoryUrl(trimmedRepoUrl);
+    if (repoUrlError) {
+      setErrorMsg(repoUrlError);
+      return;
+    }
+    if (!trimmedDir && !trimmedRepoUrl) {
+      setErrorMsg('Local Working Directory Path is required (or set a Repository URL to use a managed clone).');
       return;
     }
     if (!agentId) {
@@ -120,6 +134,8 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
         bootstrapCommands,
         maxRunSeconds,
         dockerImage: trimmedDocker || null,
+        repositoryUrl: trimmedRepoUrl || null,
+        repositoryToken: trimmedRepoUrl && repositoryToken.trim() ? repositoryToken.trim() : null,
       };
       updatedProjects.push(newProj);
     } else if (editingProject) {
@@ -139,6 +155,10 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
           bootstrapCommands,
           maxRunSeconds,
           dockerImage: trimmedDocker || null,
+          repositoryUrl: trimmedRepoUrl || null,
+          repositoryToken: trimmedRepoUrl
+            ? repositoryToken.trim() || editingProject.repositoryToken || null
+            : null,
         };
       }
     }
@@ -225,6 +245,41 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
               onChange={setWorkingDir}
             />
           </div>
+
+          <div className="form-group">
+            <label htmlFor="project-repo-url">Repository URL (optional)</label>
+            <input
+              id="project-repo-url"
+              type="text"
+              placeholder="https://github.com/org/repo.git"
+              value={repositoryUrl}
+              onChange={(e) => setRepositoryUrl(e.target.value)}
+            />
+            <p style={{ fontSize: '11px', opacity: 0.65, margin: '6px 0 0 0', lineHeight: 1.5 }}>
+              Remote-backed project: caretaker clones this HTTPS repository itself (into the
+              directory above, or a managed folder under <code>~/.caretaker/repos/</code> when the
+              directory is left empty), pulls right before each task starts, and pushes task
+              branches back to the remote. SSH URLs are not supported.
+            </p>
+          </div>
+
+          {repositoryUrl.trim() && (
+            <div className="form-group">
+              <label htmlFor="project-repo-token">Repository access token (optional)</label>
+              <input
+                id="project-repo-token"
+                type="password"
+                placeholder={editingProject?.repositoryToken ? '•••••••• (leave blank to keep saved token)' : 'e.g. a GitHub/GitLab PAT'}
+                value={repositoryToken}
+                onChange={(e) => setRepositoryToken(e.target.value)}
+                autoComplete="off"
+              />
+              <p style={{ fontSize: '11px', opacity: 0.65, margin: '6px 0 0 0' }}>
+                Stored encrypted. Sent as the <code>x-access-token</code> password over HTTPS only —
+                never embedded in the URL. Leave empty for public repositories.
+              </p>
+            </div>
+          )}
 
           <div className="form-group">
             <label htmlFor="project-agent">Assigned Agent</label>
@@ -409,6 +464,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
                       <div className="settings-card__badge">Agent: {assignedAgent}</div>
                       {proj.dockerImage && <div className="settings-card__badge">Docker: {proj.dockerImage}</div>}
                     </div>
+                    {proj.repositoryUrl && <ProjectRepoSync projectId={proj.id} />}
                   </div>
                   <div className="settings-card__actions">
                     <button
