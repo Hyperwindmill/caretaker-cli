@@ -311,7 +311,14 @@ export async function finalizeDone(worktreePath: string): Promise<void> {
   }
 }
 
-export async function discardWorktree(worktreePath: string, title: string): Promise<void> {
+export async function discardWorktree(
+  worktreePath: string,
+  title: string,
+  push?: { branch: string; url: string; token?: string | null },
+): Promise<void> {
   await commitWip(worktreePath, title);
+  // Push BEFORE removal: a failed push aborts the discard so unpushed work
+  // never loses its worktree. Callers surface the error to the user/agent.
+  if (push) await pushBranch(worktreePath, push.branch, push);
   await finalizeDone(worktreePath);
 }
