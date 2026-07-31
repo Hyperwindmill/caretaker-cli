@@ -402,7 +402,22 @@ export const projectListTool: Tool = {
     const config = await loadConfig();
     const projects = [...(config.projects || [])];
     projects.sort((a, b) => a.name.localeCompare(b.name));
-    return { content: JSON.stringify(projects) };
+    // Curated projection, never the raw record: ProjectConfig carries secrets
+    // (repositoryToken) that must not reach an agent's context, its prompt, or
+    // the session logs — and workingDir must be the resolved effective dir,
+    // which is blank in storage for a managed clone.
+    return {
+      content: JSON.stringify(
+        projects.map((p) => ({
+          id: p.id,
+          name: p.name,
+          description: p.description,
+          workingDir: projectWorkingDir(p),
+          agentId: p.agentId,
+          active: p.active,
+        })),
+      ),
+    };
   },
 };
 
@@ -804,10 +819,24 @@ export const taskDeleteTool: Tool = {
       }
     }
     if (task.worktreePath) {
+      const config = await loadConfig();
+      const project = (config.projects || []).find((p) => p.id === task.projectId);
+      const repoUrl = project?.repositoryUrl?.trim();
+      const push =
+        repoUrl && task.branch
+          ? { branch: task.branch, url: repoUrl, token: project?.repositoryToken }
+          : undefined;
       try {
-        await discardWorktree(task.worktreePath, task.title);
+        await discardWorktree(task.worktreePath, task.title, push);
       } catch {
-        // Best-effort: proceed with deletion even if worktree cleanup fails.
+        // A failed push must not strand the worktree on disk with no task row
+        // pointing at it: drop the push and clean up. The branch stays in the
+        // local clone either way.
+        try {
+          await discardWorktree(task.worktreePath, task.title);
+        } catch {
+          // Best-effort: proceed with deletion even if worktree cleanup fails.
+        }
       }
     }
 
