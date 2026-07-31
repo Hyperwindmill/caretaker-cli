@@ -59,6 +59,18 @@ export type ProjectConfig = {
    * container, and file access is confined to the working dir.
    */
   dockerImage?: string | null;
+  /**
+   * HTTPS remote of the project repository. When set, the project is
+   * remote-backed: the scheduler clones it on demand (into `workingDir`, or
+   * `~/.caretaker/repos/<id>` when workingDir is blank), pulls before creating
+   * a task worktree, and pushes task branches back. Unset = plain local project.
+   */
+  repositoryUrl?: string | null;
+  /**
+   * Access token for `repositoryUrl` (HTTPS, username `x-access-token`).
+   * Encrypted at rest by saveConfig (encrypt() blob, see lib/encryption.ts).
+   */
+  repositoryToken?: string | null;
 };
 
 /** Voice mode configuration. One OpenAI-compatible base URL and key serve both

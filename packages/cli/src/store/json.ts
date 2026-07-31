@@ -93,6 +93,11 @@ export async function saveConfig(c: CaretakerConfig): Promise<void> {
       }
     }
   }
+  for (const project of c.projects || []) {
+    if (project.repositoryToken && !isEncrypted(project.repositoryToken)) {
+      project.repositoryToken = encrypt(project.repositoryToken);
+    }
+  }
   if (c.voice?.apiKey && !isEncrypted(c.voice.apiKey)) {
     c.voice.apiKey = encrypt(c.voice.apiKey);
   }
