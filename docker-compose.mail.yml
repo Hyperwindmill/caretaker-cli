@@ -1,0 +1,50 @@
+# Local IMAP server for testing the Email (IMAP) service type (Settings → Services).
+#
+# GreenMail: one container, no config file, no account provisioning, nothing
+# persisted. Note that the usual local mail catchers (Mailpit, MailHog) serve
+# SMTP and POP3 but no IMAP, so they cannot stand in for this.
+#
+#   docker compose -f docker-compose.mail.yml up -d
+#
+# Auth is disabled, so any user/password is accepted and the mailbox is created
+# on first login (or on first delivery). In Settings → Services → Email (IMAP):
+#
+#   Host      127.0.0.1
+#   Port      3143
+#   User      dev@example.com
+#   Password  anything
+#   TLS       off        (3993 speaks IMAPS, but with GreenMail's self-signed cert)
+#
+# Drop a message in that mailbox — plain SMTP on 3025, no auth:
+#
+#   python3 - <<'EOF'
+#   import smtplib
+#   from email.message import EmailMessage
+#   m = EmailMessage()
+#   m['From'], m['To'], m['Subject'] = 'ci@example.com', 'dev@example.com', 'hello'
+#   m.set_content('test body')
+#   with smtplib.SMTP('127.0.0.1', 3025) as s: s.send_message(m)
+#   EOF
+#
+# Everything lives in memory: `down` wipes every mailbox, which is the point for
+# a test fixture.
+
+services:
+  greenmail:
+    image: greenmail/standalone:2.1.6
+    container_name: caretaker-greenmail
+    environment:
+      # setup.test.all opens SMTP 3025 / IMAP 3143 / POP3 3110 (+ the S variants
+      # on 3465/3993/3995). auth.disabled makes any login succeed and
+      # autocreates the user, so there is no account provisioning step.
+      - GREENMAIL_OPTS=-Dgreenmail.setup.test.all -Dgreenmail.hostname=0.0.0.0 -Dgreenmail.auth.disabled -Dgreenmail.verbose
+    # Loopback only: an open relay with auth disabled has no business listening
+    # on every interface.
+    ports:
+      - '127.0.0.1:3025:3025' # SMTP — inject test mail here
+      - '127.0.0.1:3143:3143' # IMAP
+      - '127.0.0.1:3993:3993' # IMAPS (self-signed cert)
+    restart: unless-stopped
+    # ponytail: no POP3 and no REST API port. GreenMail 2.1.6 serves /api/user
+    # and /api/configuration but has no /api/mail, so the API buys nothing that
+    # SMTP does not already do — map 8080 if you ever need user introspection.
