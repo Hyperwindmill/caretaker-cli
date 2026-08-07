@@ -94,7 +94,7 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
 
   // Form states
   const [name, setName] = useState('');
-  const [type, setType] = useState<'heartbeat' | 'telegram'>('heartbeat');
+  const [type, setType] = useState<ServiceConfig['type']>('heartbeat');
   const [enabled, setEnabled] = useState(true);
   const [agentId, setAgentId] = useState('');
   const [workingDir, setWorkingDir] = useState('');
@@ -102,6 +102,11 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
   const [cron, setCron] = useState('*/15 * * * *');
   const [telegramBotToken, setTelegramBotToken] = useState('');
   const [telegramAllowedChats, setTelegramAllowedChats] = useState('');
+  const [imapHost, setImapHost] = useState('');
+  const [imapPort, setImapPort] = useState('993');
+  const [imapUser, setImapUser] = useState('');
+  const [imapPassword, setImapPassword] = useState('');
+  const [imapSecure, setImapSecure] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const startEdit = (task: ServiceConfig) => {
@@ -116,6 +121,11 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
     setCron(task.cron);
     setTelegramBotToken(task.telegramBotToken || '');
     setTelegramAllowedChats(task.telegramAllowedChats || '');
+    setImapHost(task.imapHost || '');
+    setImapPort(task.imapPort ? String(task.imapPort) : '993');
+    setImapUser(task.imapUser || '');
+    setImapPassword(task.imapPassword || '');
+    setImapSecure(task.imapSecure !== false);
     setErrorMsg(null);
   };
 
@@ -131,6 +141,11 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
     setCron('*/15 * * * *');
     setTelegramBotToken('');
     setTelegramAllowedChats('');
+    setImapHost('');
+    setImapPort('993');
+    setImapUser('');
+    setImapPassword('');
+    setImapSecure(true);
     setErrorMsg(null);
   };
 
@@ -151,7 +166,8 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
       setErrorMsg('Service Name is required.');
       return;
     }
-    if (!agentId) {
+    // An email service holds credentials only — there is nothing to run, so no agent.
+    if (!agentId && type !== 'email') {
       setErrorMsg('Please select an agent for this service.');
       return;
     }
@@ -182,6 +198,20 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
       // Populate defaults for cron and prompt
       finalPrompt = 'Telegram Poller';
       finalCron = '* * * * *';
+    } else if (type === 'email') {
+      if (!imapHost.trim() || !imapUser.trim() || !imapPassword.trim()) {
+        setErrorMsg('IMAP host, user and password are required.');
+        return;
+      }
+      const port = Number(imapPort);
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        setErrorMsg('IMAP port must be a whole number between 1 and 65535.');
+        return;
+      }
+      // ponytail: cron/prompt are unused for email — they stay required on the
+      // type so heartbeat/telegram keep reading them unconditionally.
+      finalPrompt = 'Email (IMAP) credentials';
+      finalCron = '';
     }
 
     const existing = tasks.find(t => t.name.toLowerCase() === trimmedName.toLowerCase());
@@ -207,6 +237,15 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
         ? {
             telegramBotToken: telegramBotToken.trim(),
             telegramAllowedChats: telegramAllowedChats.trim(),
+          }
+        : {}),
+      ...(type === 'email'
+        ? {
+            imapHost: imapHost.trim(),
+            imapPort: Number(imapPort),
+            imapUser: imapUser.trim(),
+            imapPassword: imapPassword.trim(),
+            imapSecure,
           }
         : {}),
     };
@@ -316,7 +355,7 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
             <select
               id="task-type"
               value={type}
-              onChange={(e) => setType(e.target.value as 'heartbeat' | 'telegram')}
+              onChange={(e) => setType(e.target.value as ServiceConfig['type'])}
               style={{
                 width: '100%',
                 padding: '6px 8px',
@@ -330,6 +369,7 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
             >
               <option value="heartbeat">Heartbeat (Scheduled Agent Run)</option>
               <option value="telegram">Telegram Bot (Poller)</option>
+              <option value="email">Email (IMAP credentials)</option>
             </select>
           </div>
 
@@ -346,31 +386,33 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
             </label>
           </div>
 
-          <div className="form-group">
-            <label htmlFor="task-agent">Agent to Execute</label>
-            <select
-              id="task-agent"
-              value={agentId}
-              onChange={(e) => setAgentId(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '6px 8px',
-                borderRadius: 'var(--radius-sm)',
-                background: 'var(--vscode-dropdown-background, #252526)',
-                color: 'var(--vscode-dropdown-foreground, #cccccc)',
-                border: '1px solid var(--vscode-dropdown-border, #3c3c3c)',
-                fontSize: '12px',
-                cursor: 'pointer'
-              }}
-            >
-              <option value="" disabled>-- Select Agent --</option>
-              {agents.map((agent) => (
-                <option key={agent.id} value={agent.id}>
-                  {agent.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {type !== 'email' && (
+            <div className="form-group">
+              <label htmlFor="task-agent">Agent to Execute</label>
+              <select
+                id="task-agent"
+                value={agentId}
+                onChange={(e) => setAgentId(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '6px 8px',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--vscode-dropdown-background, #252526)',
+                  color: 'var(--vscode-dropdown-foreground, #cccccc)',
+                  border: '1px solid var(--vscode-dropdown-border, #3c3c3c)',
+                  fontSize: '12px',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="" disabled>-- Select Agent --</option>
+                {agents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {type === 'heartbeat' ? (
             <>
@@ -418,7 +460,7 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
                 />
               </div>
             </>
-          ) : (
+          ) : type === 'telegram' ? (
             <>
               <div className="form-group">
                 <label htmlFor="tg-token">Telegram Bot Token</label>
@@ -475,6 +517,79 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
                   <li>Obtain your chat ID by messaging <strong>@userinfobot</strong> on Telegram.</li>
                   <li>Whitelist your chat ID above to prevent unauthorized users from using your local shell/tools!</li>
                 </ol>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="form-group">
+                <label htmlFor="imap-host">IMAP Host</label>
+                <input
+                  id="imap-host"
+                  type="text"
+                  placeholder="e.g. imap.gmail.com"
+                  value={imapHost}
+                  onChange={(e) => setImapHost(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="imap-port">Port</label>
+                <input
+                  id="imap-port"
+                  type="number"
+                  value={imapPort}
+                  onChange={(e) => setImapPort(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '14px 0' }}>
+                <input
+                  id="imap-secure"
+                  type="checkbox"
+                  checked={imapSecure}
+                  onChange={(e) => setImapSecure(e.target.checked)}
+                  style={{ width: 'auto', cursor: 'pointer' }}
+                />
+                <label htmlFor="imap-secure" style={{ cursor: 'pointer', fontWeight: 600, fontSize: '12px' }}>
+                  Use TLS (implicit, port 993)
+                </label>
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="imap-user">Username</label>
+                <input
+                  id="imap-user"
+                  type="text"
+                  placeholder="e.g. you@example.com"
+                  value={imapUser}
+                  onChange={(e) => setImapUser(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="imap-password">Password / App Password</label>
+                <input
+                  id="imap-password"
+                  type="password"
+                  value={imapPassword}
+                  onChange={(e) => setImapPassword(e.target.value)}
+                />
+              </div>
+
+              <div className="glass-form__help-card" style={{
+                background: 'rgba(255, 255, 255, 0.03)',
+                border: '1px solid rgba(255, 255, 255, 0.05)',
+                borderRadius: 'var(--radius-md)',
+                padding: '10px 12px',
+                fontSize: '11px',
+                marginTop: '12px',
+                lineHeight: '1.4',
+                color: 'var(--vscode-descriptionForeground)'
+              }}>
+                <strong><TipIcon size={14} /> Note:</strong> credentials are AES-256-GCM
+                encrypted at rest. Gmail/Outlook accounts need an <strong>app password</strong>,
+                not the account password. This service stores the connection only — nothing
+                reads mail yet; the agent-facing email tool arrives in a later task.
               </div>
             </>
           )}
@@ -536,6 +651,10 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
                       <div className="settings-card__subtitle" style={{ fontSize: '11px', marginTop: '4px' }}>
                         <strong>Agent:</strong> {agentName} · <strong>Type:</strong> <code>Telegram Poller</code>
                       </div>
+                    ) : task.type === 'email' ? (
+                      <div className="settings-card__subtitle" style={{ fontSize: '11px', marginTop: '4px' }}>
+                        <strong>Type:</strong> <code>Email (IMAP)</code> · {task.imapUser}@{task.imapHost}:{task.imapPort}
+                      </div>
                     ) : (
                       <>
                         <div className="settings-card__subtitle" style={{ fontSize: '11px', marginTop: '4px' }}>
@@ -548,7 +667,7 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
                     )}
                   </div>
                   <div className="settings-card__actions">
-                    {task.type !== 'telegram' && (
+                    {task.type === 'heartbeat' && (
                       <button
                         className="icon-btn"
                         onClick={() => openLogViewer(task)}
