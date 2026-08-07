@@ -2,15 +2,20 @@
 //
 // An account is a `type: 'email'` entry in the Services collection
 // (`caretaker.json` → `scheduler.tasks`, see store/json.ts). The record holds
-// both halves of a mailbox: IMAP for reading (no tool yet) and SMTP for
-// sending. The SMTP credentials default to the IMAP ones — one mailbox, one
-// login, in the common case — and only need their own fields when the provider
-// splits them.
+// both halves of a mailbox: IMAP for reading and SMTP for sending, each
+// independently optional — an account with no `smtpHost` cannot send, one with
+// no `imapHost` cannot read. The SMTP credentials default to the IMAP ones —
+// one mailbox, one login, in the common case — and only need their own fields
+// when the provider splits them.
 //
-// This module owns account resolution and the address allowlist. Everything
-// here except sendEmail() is pure, which is where the tests live.
+// This module owns account resolution, the address allowlists, and the two
+// network operations. Everything except sendEmail()/fetchInbox() is pure, which
+// is where the tests live.
 
 import nodemailer from 'nodemailer';
+import { ImapFlow } from 'imapflow';
+import { simpleParser } from 'mailparser';
+import TurndownService from 'turndown';
 import type { ServiceConfig } from '../types.js';
 import { loadConfig } from '../store/json.js';
 import { decrypt, isEncrypted } from './encryption.js';
@@ -24,8 +29,26 @@ export type EmailAccount = {
   smtpSecure: boolean;
   smtpUser: string;
   smtpPassword: string;
+  imapHost: string;
+  imapPort: number;
+  imapSecure: boolean;
+  imapUser: string;
+  imapPassword: string;
+  /** Outbound: who this account may send to. Enforced by email_send. */
   allowedRecipients: string[];
+  /** Inbound: whose mail this account may hand to an agent. Enforced by fetchInbox. */
+  allowedSenders: string[];
 };
+
+/** An account can send only if it has somewhere to send through. */
+export function canSend(a: EmailAccount): boolean {
+  return !!a.smtpHost;
+}
+
+/** …and can be read only if it has a mailbox to read. */
+export function canRead(a: EmailAccount): boolean {
+  return !!a.imapHost;
+}
 
 function reveal(value: string | undefined): string {
   if (!value) return '';
@@ -74,28 +97,35 @@ export function bareAddress(recipient: string): string {
   return (angled ? angled[1] : recipient).trim();
 }
 
-/** The `email` services that are enabled and have an SMTP host to send through. */
-export function sendableAccounts(services: ServiceConfig[]): EmailAccount[] {
+/** Every enabled `email` service, with defaults applied and secrets revealed.
+ *  Direction is not filtered here — ask canSend()/canRead(). */
+export function emailAccounts(services: ServiceConfig[]): EmailAccount[] {
   return services
-    .filter((s) => s.type === 'email' && s.enabled && (s.smtpHost ?? '').trim())
+    .filter((s) => s.type === 'email' && s.enabled)
     .map((s) => ({
       name: s.name,
       from: (s.smtpFrom || s.imapUser || '').trim(),
-      smtpHost: (s.smtpHost as string).trim(),
+      smtpHost: (s.smtpHost ?? '').trim(),
       // ponytail: 587 covers plaintext-or-STARTTLS, which is what smtpSecure
       // false means; a 465 account has to say so via the port anyway.
       smtpPort: s.smtpPort || (s.smtpSecure ? 465 : 587),
       smtpSecure: s.smtpSecure ?? false,
       smtpUser: (s.smtpUser || s.imapUser || '').trim(),
       smtpPassword: reveal(s.smtpPassword || s.imapPassword),
+      imapHost: (s.imapHost ?? '').trim(),
+      imapPort: s.imapPort || (s.imapSecure === false ? 143 : 993),
+      imapSecure: s.imapSecure !== false,
+      imapUser: (s.imapUser ?? '').trim(),
+      imapPassword: reveal(s.imapPassword),
       allowedRecipients: parsePatterns(s.allowedRecipients),
+      allowedSenders: parsePatterns(s.allowedSenders),
     }));
 }
 
-/** Accounts available for sending, read from the live config. */
+/** Configured accounts, read from the live config. */
 export async function listEmailAccounts(): Promise<EmailAccount[]> {
   const config = await loadConfig();
-  return sendableAccounts(config.scheduler?.tasks ?? []);
+  return emailAccounts(config.scheduler?.tasks ?? []);
 }
 
 /** Look an account up by service name, case-insensitively. */
@@ -134,5 +164,161 @@ export async function sendEmail(account: EmailAccount, mail: OutgoingMail): Prom
     return info.messageId;
   } finally {
     transport.close();
+  }
+}
+
+// ─── Inbound ──────────────────────────────────────────────────────────────
+//
+// There is no `email` scheduler strategy and no stored UID cursor: an inbound
+// workflow is a `heartbeat` service whose prompt tells the agent to call
+// email_fetch, and "already handled" is the IMAP `\Seen` flag — server state,
+// shared with the user's own mail client. Two behaviours on one account are two
+// heartbeats, which is also how a per-subject triage is expressed.
+
+/** Hard ceiling on messages per call, whatever the caller asks for. */
+export const MAX_FETCH = 50;
+/** How many unread messages we are willing to look at to fill one window.
+ *  Only matters with a sender allowlist: unlisted mail is skipped and left
+ *  unread, so without a bound a mailbox full of junk would be re-scanned
+ *  forever. The scan itself is one cheap ENVELOPE fetch, not a download. */
+export const MAX_SCAN = 200;
+/** Hard ceiling on the body text handed to the model, per message. */
+export const MAX_BODY_CHARS = 8000;
+
+export type InboundMessage = {
+  uid: number;
+  from: string;
+  to: string;
+  subject: string;
+  date: string;
+  body: string;
+  /** Set when the body hit MAX_BODY_CHARS. */
+  truncated?: boolean;
+  attachments: string[];
+};
+
+/** ISO-8601 for whatever the parser or the server gave us; '' when unusable. */
+export function isoDate(value: Date | string | undefined): string {
+  if (!value) return '';
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? '' : d.toISOString();
+}
+
+export function clampLimit(limit: unknown): number {
+  const n = Math.trunc(Number(limit));
+  if (!Number.isFinite(n) || n < 1) return 10;
+  return Math.min(n, MAX_FETCH);
+}
+
+export function truncateBody(text: string): { body: string; truncated: boolean } {
+  const clean = text.replace(/\r\n/g, '\n').trim();
+  if (clean.length <= MAX_BODY_CHARS) return { body: clean, truncated: false };
+  return { body: clean.slice(0, MAX_BODY_CHARS) + '\n[…truncated]', truncated: true };
+}
+
+const turndown = new TurndownService();
+
+/** Best-effort plain text for a message: the text/plain part, else the HTML converted. */
+export function messageText(parsed: { text?: string; html?: string | false }): string {
+  if (parsed.text?.trim()) return parsed.text;
+  if (typeof parsed.html === 'string' && parsed.html.trim()) return turndown.turndown(parsed.html);
+  return '';
+}
+
+export type FetchOptions = {
+  limit?: number;
+  /** Unread only (default true) — the whole point of the \Seen convention. */
+  unreadOnly?: boolean;
+  /** Server-side subject substring filter. */
+  subject?: string;
+  /** Mark the delivered messages \Seen (default true), so the next run skips them. */
+  markSeen?: boolean;
+};
+
+/** Read the oldest matching messages from INBOX. */
+export async function fetchInbox(
+  account: EmailAccount,
+  opts: FetchOptions = {},
+): Promise<{ messages: InboundMessage[]; refused: number; scanTruncated?: boolean }> {
+  const limit = clampLimit(opts.limit);
+  const markSeen = opts.markSeen !== false;
+  const client = new ImapFlow({
+    host: account.imapHost,
+    port: account.imapPort,
+    secure: account.imapSecure,
+    auth: { user: account.imapUser, pass: account.imapPassword },
+    logger: false,
+  });
+  await client.connect();
+  const lock = await client.getMailboxLock('INBOX');
+  try {
+    // Only the two criteria every server implements the same way. The sender
+    // allowlist is applied below, host-side: IMAP `SEARCH FROM` is substring by
+    // spec but not in practice (GreenMail matches whole addresses only and
+    // errors on a leading `@`), and `OR` is just as uneven — a filter that
+    // silently returns nothing on some servers is worse than no filter.
+    const criteria: Record<string, unknown> = {};
+    if (opts.unreadOnly !== false) criteria.seen = false;
+    if (opts.subject?.trim()) criteria.subject = opts.subject.trim();
+    const uids = (await client.search(Object.keys(criteria).length ? criteria : { all: true }, {
+      uid: true,
+    })) as number[] | false;
+    if (!uids || uids.length === 0) return { messages: [], refused: 0 };
+
+    // Oldest first: a queue is processed from the front, never sampled.
+    const window = uids.slice(0, MAX_SCAN);
+    const scanTruncated = uids.length > window.length;
+
+    // One cheap pass over envelopes decides who is allowed, so mail we may not
+    // read is never downloaded.
+    const allowed: number[] = [];
+    let refused = 0;
+    for await (const msg of client.fetch(
+      window.join(','),
+      { envelope: true, uid: true },
+      { uid: true },
+    )) {
+      const address = msg.envelope?.from?.[0]?.address ?? '';
+      if (matchesAllowlist(address, account.allowedSenders)) {
+        if (allowed.length < limit) allowed.push(msg.uid);
+      } else {
+        refused++;
+      }
+      if (allowed.length >= limit) break;
+    }
+
+    const messages: InboundMessage[] = [];
+    for (const uid of allowed) {
+      const msg = await client.fetchOne(
+        String(uid),
+        { source: true, internalDate: true },
+        { uid: true },
+      );
+      if (!msg || !msg.source) continue;
+      const parsed = await simpleParser(msg.source);
+      const { body, truncated } = truncateBody(messageText(parsed));
+      messages.push({
+        uid,
+        from: parsed.from?.text ?? '',
+        to: (parsed.to as { text?: string } | undefined)?.text ?? '',
+        subject: parsed.subject ?? '',
+        // The server's INTERNALDATE always exists; a Date header may be absent
+        // or malformed, and mailparser then leaves the field undefined. (imapflow
+        // types internalDate as string | Date depending on the fetch shape.)
+        date: isoDate(parsed.date ?? msg.internalDate),
+        body,
+        ...(truncated ? { truncated } : {}),
+        attachments: (parsed.attachments ?? []).map((a) => a.filename ?? '(unnamed)'),
+      });
+    }
+    // Only what the agent actually received is marked read — a refused message
+    // is left untouched for the human.
+    if (markSeen && messages.length) {
+      await client.messageFlagsAdd(messages.map((m) => m.uid).join(','), ['\\Seen'], { uid: true });
+    }
+    return { messages, refused, ...(scanTruncated ? { scanTruncated } : {}) };
+  } finally {
+    lock.release();
+    await client.logout().catch(() => client.close());
   }
 }
