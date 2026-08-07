@@ -12,3 +12,6 @@ The Services form now supports creating/editing an `email` service (IMAP host/po
 with its own validation and list-card rendering; it requires no agent and is never ticked by the scheduler.
 CLAUDE.md and README.md are updated to describe the Services tab, the `email` service type, and the
 `imapPassword` secret in the encrypted-at-rest list.
+Fixed post-review: an email service now always persists `agentId: ''` (matches the type's own
+documentation), the list card no longer double-prints the `@` in the user/host pair, and a leftover
+"Toggle task active state" title reads "Toggle service active state".
