@@ -92,7 +92,18 @@ export async function activationStatus(
  *  bash is stripped too — it cannot be made read-only, and the planner keeps
  *  read_file/glob/grep for exploration. Same post-filter mechanism as the
  *  reviewer's mcp__task__* strip in task_review.ts. */
-export const PLANNER_TOOL_DENYLIST = new Set(['write', 'edit', 'multiedit', 'bash']);
+/** Denied to the planner in every mode, SDD included: `bash` is the real
+ *  implementation brake, and sending mail is an *external* side effect — worse
+ *  than an unreviewed write, which is what the read-only planner exists to
+ *  prevent. Listing the accounts stays allowed; a plan may name one. */
+const PLANNER_ALWAYS_DENIED = new Set(['bash', 'mcp__email__email_send']);
+
+export const PLANNER_TOOL_DENYLIST = new Set([
+  'write',
+  'edit',
+  'multiedit',
+  ...PLANNER_ALWAYS_DENIED,
+]);
 
 /** Tools the SDD wrapper applies to: workspace writers that take a `path` arg. */
 const SDD_WRAPPED_TOOLS = new Set(['write', 'edit', 'multiedit']);
@@ -119,6 +130,6 @@ export function filterPlannerTools(tools: Tool[], sdd = false): Tool[] {
   // SDD mode: bash stays out (the actual implementation brake); the file
   // writers survive but only for markdown targets.
   return tools
-    .filter((t) => t.name !== 'bash')
+    .filter((t) => !PLANNER_ALWAYS_DENIED.has(t.name))
     .map((t) => (SDD_WRAPPED_TOOLS.has(t.name) ? markdownOnly(t) : t));
 }

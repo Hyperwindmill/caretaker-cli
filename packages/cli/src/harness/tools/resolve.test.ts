@@ -113,3 +113,22 @@ test('resolveAgentTools: mcp__task__* wildcard resolves all task tools', async (
   const tools = await resolveAgentTools(agent({ allowedTools: ['mcp__task__*'] }), r);
   assert.deepEqual(tools.map((t) => t.name).sort(), ['mcp__task__complete', 'mcp__task__get_state']);
 });
+
+test('resolveAgentTools: the namespace wildcard is generic and scoped to its namespace', async () => {
+  const r = new ToolRegistry();
+  r.register(fakeTool('mcp__task__complete'));
+  r.register(fakeTool('mcp__email__email_send'));
+  r.register(fakeTool('mcp__email__email_list_accounts'));
+
+  const email = await resolveAgentTools(agent({ allowedTools: ['mcp__email__*'] }), r);
+  assert.deepEqual(email.map((t) => t.name).sort(), [
+    'mcp__email__email_list_accounts',
+    'mcp__email__email_send',
+  ]);
+
+  const both = await resolveAgentTools(
+    agent({ allowedTools: ['mcp__email__*', 'mcp__task__*'] }),
+    r,
+  );
+  assert.equal(both.length, 3);
+});

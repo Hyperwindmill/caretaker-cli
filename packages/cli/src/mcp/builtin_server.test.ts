@@ -7,12 +7,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { buildTaskMcpServer } from './task_server.js';
+import { buildBuiltinMcpServer } from './builtin_server.js';
 // instance.ts registers builtins as a load-time side effect.
 import '../harness/tools/instance.js';
 
 async function connected() {
-  const server = buildTaskMcpServer();
+  const server = buildBuiltinMcpServer();
   const [clientT, serverT] = InMemoryTransport.createLinkedPair();
   const mcp = new Client({ name: 'test', version: '0.0.0' });
   await Promise.all([server.connect(serverT), mcp.connect(clientT)]);
@@ -26,6 +26,18 @@ test('lists task tools un-prefixed', async () => {
   assert.ok(names.includes('task_complete'));
   assert.ok(names.includes('task_submit_plan'));
   assert.ok(names.every((n) => !n.startsWith('mcp__')));
+  await mcp.close();
+});
+
+test('serves the email namespace too, un-prefixed and callable', async () => {
+  const { mcp } = await connected();
+  const names = (await mcp.listTools()).tools.map((t) => t.name);
+  assert.ok(names.includes('email_list_accounts'));
+  assert.ok(names.includes('email_send'));
+
+  const res = await mcp.callTool({ name: 'email_list_accounts', arguments: {} });
+  const text = (res.content as any[]).find((c) => c.type === 'text')?.text;
+  assert.deepEqual(JSON.parse(text), { accounts: [] });
   await mcp.close();
 });
 

@@ -46,11 +46,15 @@ export async function resolveAgentTools(
 ): Promise<Tool[]> {
   const tools = registry.filtered(agent.allowedTools);
 
-  if (agent.allowedTools.includes('mcp__task__*')) {
-    const taskTools = registry.list().filter((t) => t.name.startsWith('mcp__task__'));
+  // Namespace wildcards: `mcp__task__*`, `mcp__email__*`, … pull in every
+  // builtin carrying that prefix. The picker offers the wildcard, not the
+  // individual tools, so a namespace gaining a tool needs no config change.
+  for (const entry of agent.allowedTools) {
+    const ns = /^(mcp__[a-z]+__)\*$/.exec(entry);
+    if (!ns) continue;
     const have = new Set(tools.map((t) => t.name));
-    for (const t of taskTools) {
-      if (!have.has(t.name)) {
+    for (const t of registry.list()) {
+      if (t.name.startsWith(ns[1]) && !have.has(t.name)) {
         tools.push(t);
       }
     }

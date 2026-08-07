@@ -1,5 +1,6 @@
-// Exposes the built-in mcp__task__* tools as a streamable-HTTP MCP endpoint
-// so claude-code agents can drive the task state machine. Token-guarded:
+// Exposes the built-in mcp__task__* / mcp__email__* tools as a streamable-HTTP
+// MCP endpoint so claude-code agents can drive the task state machine (and send
+// mail through a configured account). Token-guarded:
 // the task heartbeat issues a per-run bearer token and revokes it after.
 // Stateless MCP (no session): a fresh Server per request. The task tools
 // are context-free (they take task_id as an argument), so no per-run
@@ -9,7 +10,7 @@ import { randomBytes } from 'node:crypto';
 import type { Hono } from 'hono';
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { buildTaskMcpServer } from '../../mcp/task_server.js';
+import { buildBuiltinMcpServer } from '../../mcp/builtin_server.js';
 
 const activeTokens = new Set<string>();
 
@@ -36,7 +37,7 @@ export function registerTaskBridge(app: Hono): void {
     const token = auth.replace(/^Bearer\s+/i, '');
     if (!token || !activeTokens.has(token)) return c.json({ error: 'unauthorized' }, 401);
     const body = await c.req.json().catch(() => null);
-    const server = buildTaskMcpServer();
+    const server = buildBuiltinMcpServer();
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined, // stateless
       enableJsonResponse: true, // plain JSON responses, no SSE needed
