@@ -1,11 +1,11 @@
 import { useState, useMemo } from 'react';
-import type { CaretakerConfig, AgentConfig, ScheduledTaskConfig } from 'caretaker-types';
+import type { CaretakerConfig, AgentConfig, ServiceConfig } from 'caretaker-types';
 import type { ViewToHost, ChatMessage } from './bridge.js';
 import type { ChatItem } from './App.js';
 import { MessageList } from './MessageList.js';
 import { WarningIcon, TipIcon, LogsIcon, EditIcon, DeleteIcon, CloseIcon, StatusIcon } from './icons.js';
 
-interface SchedulerTabProps {
+interface ServicesTabProps {
   config: CaretakerConfig;
   agents: AgentConfig[];
   postMessage: (msg: ViewToHost) => void;
@@ -81,15 +81,15 @@ function reconstructChatItems(messages: ChatMessage[]): ChatItem[] {
   return closeStreamingAssistant(items);
 }
 
-export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: SchedulerTabProps) {
+export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: ServicesTabProps) {
   // Ensure tasks array is initialized
   const tasks = config.scheduler?.tasks || [];
 
-  const [editingTask, setEditingTask] = useState<ScheduledTaskConfig | null>(null);
+  const [editingTask, setEditingTask] = useState<ServiceConfig | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
   // Task log viewer states
-  const [viewingTaskLogs, setViewingTaskLogs] = useState<ScheduledTaskConfig | null>(null);
+  const [viewingTaskLogs, setViewingTaskLogs] = useState<ServiceConfig | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
 
   // Form states
@@ -104,7 +104,7 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
   const [telegramAllowedChats, setTelegramAllowedChats] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const startEdit = (task: ScheduledTaskConfig) => {
+  const startEdit = (task: ServiceConfig) => {
     setEditingTask(task);
     setIsCreating(false);
     setName(task.name);
@@ -148,11 +148,11 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
     const trimmedCron = cron.trim();
 
     if (!trimmedName) {
-      setErrorMsg('Task Name is required.');
+      setErrorMsg('Service Name is required.');
       return;
     }
     if (!agentId) {
-      setErrorMsg('Please select an agent for this task.');
+      setErrorMsg('Please select an agent for this service.');
       return;
     }
 
@@ -186,15 +186,15 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
 
     const existing = tasks.find(t => t.name.toLowerCase() === trimmedName.toLowerCase());
     if (isCreating && existing) {
-      setErrorMsg(`A task named "${trimmedName}" already exists.`);
+      setErrorMsg(`A service named "${trimmedName}" already exists.`);
       return;
     }
     if (editingTask && editingTask.name.toLowerCase() !== trimmedName.toLowerCase() && existing) {
-      setErrorMsg(`A task named "${trimmedName}" already exists.`);
+      setErrorMsg(`A service named "${trimmedName}" already exists.`);
       return;
     }
 
-    const taskData: ScheduledTaskConfig = {
+    const taskData: ServiceConfig = {
       id: editingTask ? editingTask.id : 'task_' + Math.random().toString(36).substring(2, 9),
       name: trimmedName,
       type,
@@ -248,7 +248,7 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
     });
   };
 
-  const toggleTaskEnabled = (task: ScheduledTaskConfig) => {
+  const toggleTaskEnabled = (task: ServiceConfig) => {
     const updatedTasks = tasks.map(t => {
       if (t.id === task.id) {
         return { ...t, enabled: !t.enabled };
@@ -267,7 +267,7 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
     });
   };
 
-  const openLogViewer = (task: ScheduledTaskConfig) => {
+  const openLogViewer = (task: ServiceConfig) => {
     setViewingTaskLogs(task);
     setSelectedRunId(null);
     postMessage({ type: 'getTaskRuns', taskId: task.id });
@@ -283,12 +283,12 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
   const selectedAgentName = viewingTaskLogs ? agents.find(a => a.id === viewingTaskLogs.agentId)?.name : '';
 
   return (
-    <div className="tab-pane scheduler-tab">
+    <div className="tab-pane services-tab">
       <div className="tab-pane__header">
-        <h3>Scheduled Tasks</h3>
+        <h3>Services</h3>
         {!showForm && (
           <button className="btn btn--primary btn--xs" onClick={startCreate}>
-            + Add Task
+            + Add Service
           </button>
         )}
       </div>
@@ -297,11 +297,11 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
 
       {showForm ? (
         <div className="glass-form">
-          <h4>{isCreating ? 'Add Scheduled Task' : `Edit Task: ${editingTask?.name}`}</h4>
-          
+          <h4>{isCreating ? 'Add Service' : `Edit Service: ${editingTask?.name}`}</h4>
+
           <div className="glass-form__body">
           <div className="form-group">
-            <label htmlFor="task-name">Task Name</label>
+            <label htmlFor="task-name">Service Name</label>
             <input
               id="task-name"
               type="text"
@@ -312,7 +312,7 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
           </div>
 
           <div className="form-group">
-            <label htmlFor="task-type">Task Type</label>
+            <label htmlFor="task-type">Service Type</label>
             <select
               id="task-type"
               value={type}
@@ -328,8 +328,8 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
                 cursor: 'pointer'
               }}
             >
-              <option value="heartbeat">Heartbeat (Recurring Agent Execution)</option>
-              <option value="telegram">Telegram Poller (Autonomous Telegram Agent)</option>
+              <option value="heartbeat">Heartbeat (Scheduled Agent Run)</option>
+              <option value="telegram">Telegram Bot (Poller)</option>
             </select>
           </div>
 
@@ -342,7 +342,7 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
               style={{ width: 'auto', cursor: 'pointer' }}
             />
             <label htmlFor="task-enabled" style={{ cursor: 'pointer', fontWeight: 600, fontSize: '12px' }}>
-              Active (Run scheduler for this task)
+              Active
             </label>
           </div>
 
@@ -485,7 +485,7 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
               Cancel
             </button>
             <button className="btn btn--primary" onClick={validateAndSave}>
-              Save Task
+              Save Service
             </button>
           </div>
         </div>
@@ -493,7 +493,7 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
         <div className="settings-list">
           {tasks.length === 0 ? (
             <p className="empty-message">
-              No scheduled tasks configured. Add a heartbeat task to run agents periodically.
+              No services configured. Add a heartbeat to run an agent periodically, a Telegram bot, or email credentials.
             </p>
           ) : (
             tasks.map((task) => {
@@ -562,16 +562,16 @@ export function SchedulerTab({ config, agents, postMessage, taskRuns = {} }: Sch
                     <button
                       className="icon-btn"
                       onClick={() => startEdit(task)}
-                      title="Edit task"
-                      aria-label="Edit task"
+                      title="Edit service"
+                      aria-label="Edit service"
                     >
                       <EditIcon size={14} />
                     </button>
                     <button
                       className="icon-btn icon-btn--danger"
                       onClick={() => deleteTask(task.id)}
-                      title="Delete task"
-                      aria-label="Delete task"
+                      title="Delete service"
+                      aria-label="Delete service"
                     >
                       <DeleteIcon size={14} />
                     </button>
