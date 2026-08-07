@@ -96,6 +96,9 @@ export async function saveConfig(c: CaretakerConfig): Promise<void> {
           task.telegramBotToken = encrypt(task.telegramBotToken);
         }
       }
+      if (task.type === 'email' && task.imapPassword && !isEncrypted(task.imapPassword)) {
+        task.imapPassword = encrypt(task.imapPassword);
+      }
     }
   }
   for (const project of c.projects || []) {
