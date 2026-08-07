@@ -91,7 +91,13 @@ test('email_send checks cc and bcc against the allowlist too', async () => {
   await writeServices([service()]);
   for (const field of ['cc', 'bcc']) {
     const res = await emailSendTool.execute(
-      { account: 'Work', to: ['ada@example.com'], [field]: 'eve@evil.net', subject: 'hi', body: 'x' },
+      {
+        account: 'Work',
+        to: ['ada@example.com'],
+        [field]: 'eve@evil.net',
+        subject: 'hi',
+        body: 'x',
+      },
       ctx,
     );
     assert.match(parse(res.content).error, /eve@evil\.net/, `${field} must be checked`);
