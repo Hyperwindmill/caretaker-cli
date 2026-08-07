@@ -53,7 +53,12 @@ export function matchesAllowlist(address: string, patterns: string[]): boolean {
   const addr = address.trim().toLowerCase();
   return patterns.some((pattern) => {
     const rx = new RegExp(
-      '^' + pattern.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '.*') + '$',
+      '^' +
+        pattern
+          .toLowerCase()
+          .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          .replace(/\\\*/g, '.*') +
+        '$',
     );
     return rx.test(addr);
   });
