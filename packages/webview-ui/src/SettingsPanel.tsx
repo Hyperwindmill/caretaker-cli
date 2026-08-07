@@ -7,7 +7,7 @@ import { ProjectsTabSettings } from './ProjectsTabSettings.js';
 import { AgentsTab } from './AgentsTab.js';
 import { PluginsTab } from './PluginsTab.js';
 import { McpTab } from './McpTab.js';
-import { SchedulerTab } from './SchedulerTab.js';
+import { ServicesTab } from './ServicesTab.js';
 import { VoiceTab } from './VoiceTab.js';
 import { BackIcon } from './icons.js';
 
@@ -35,7 +35,7 @@ interface SettingsPanelProps {
 }
 
 
-type TabId = 'providers' | 'projects' | 'agents' | 'plugins' | 'mcp' | 'scheduler' | 'voice';
+type TabId = 'providers' | 'projects' | 'agents' | 'plugins' | 'mcp' | 'services' | 'voice';
 
 export function SettingsPanel({
   layout = 'compact',
@@ -123,9 +123,9 @@ export function SettingsPanel({
           />
         );
 
-      case 'scheduler':
+      case 'services':
         return (
-          <SchedulerTab
+          <ServicesTab
             config={config}
             agents={agents}
             postMessage={postMessage}
@@ -190,15 +190,15 @@ export function SettingsPanel({
         </button>
         {layout === 'sidebar' && (
           <button
-            className={`settings-panel__tab-btn ${activeTab === 'scheduler' ? 'settings-panel__tab-btn--active' : ''}`}
-            onClick={() => setActiveTab('scheduler')}
+            className={`settings-panel__tab-btn ${activeTab === 'services' ? 'settings-panel__tab-btn--active' : ''}`}
+            onClick={() => setActiveTab('services')}
           >
-            Scheduler
+            Services
           </button>
         )}
         {/* Voice is out of scope for the VSCode sidebar (webview CSP blocks the
             mic), so its settings hide there too — same pattern as Projects and
-            Scheduler above. */}
+            Services above. */}
         {layout === 'sidebar' && (
           <button
             className={`settings-panel__tab-btn ${activeTab === 'voice' ? 'settings-panel__tab-btn--active' : ''}`}
