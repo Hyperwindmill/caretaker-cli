@@ -1,6 +1,6 @@
-import type { ScheduledTaskConfig } from '../../../types.js';
+import type { ServiceConfig } from '../../../types.js';
 
 export interface SchedulerStrategy {
-  type: ScheduledTaskConfig['type'];
-  tick(task: ScheduledTaskConfig, now: Date): Promise<void>;
+  type: ServiceConfig['type'];
+  tick(task: ServiceConfig, now: Date): Promise<void>;
 }

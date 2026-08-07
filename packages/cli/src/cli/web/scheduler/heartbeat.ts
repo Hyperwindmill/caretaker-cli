@@ -4,7 +4,7 @@ import * as harness from '../../../harness/index.js';
 import { loadAgents, loadConfig } from '../../../store/json.js';
 import { userMessage } from '../../../session/store.js';
 import type { MessageRecord } from '../../../session/types.js';
-import type { ScheduledTaskConfig } from '../../../types.js';
+import type { ServiceConfig } from '../../../types.js';
 import { saveTaskRun } from './logs.js';
 import { runningTasks } from './locks.js';
 import type { SchedulerStrategy } from './strategy.js';
@@ -80,7 +80,7 @@ export function matchesCron(cronStr: string, date: Date): boolean {
  * Runs completely in background, automatically approving tool runs.
  * Guards against concurrent execution: if the task is already running, skips.
  */
-export async function executeTaskRun(task: ScheduledTaskConfig): Promise<void> {
+export async function executeTaskRun(task: ServiceConfig): Promise<void> {
   if (runningTasks.has(task.id)) {
     console.log(`[scheduler] Task "${task.name}" is already running — skipping.`);
     return;
@@ -198,7 +198,7 @@ const lastCheckedMinutes = new Map<string, string>();
 
 export const HeartbeatStrategy: SchedulerStrategy = {
   type: 'heartbeat',
-  async tick(task: ScheduledTaskConfig, now: Date): Promise<void> {
+  async tick(task: ServiceConfig, now: Date): Promise<void> {
     const currentMinuteStr = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()} ${now.getHours()}:${now.getMinutes()}`;
     if (lastCheckedMinutes.get(task.id) === currentMinuteStr) return;
 

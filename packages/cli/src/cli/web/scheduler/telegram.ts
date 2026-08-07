@@ -13,7 +13,7 @@ import {
   userMessage,
 } from '../../../session/store.js';
 import type { MessageRecord } from '../../../session/types.js';
-import type { ScheduledTaskConfig } from '../../../types.js';
+import type { ServiceConfig } from '../../../types.js';
 import { decrypt, isEncrypted } from '../../../lib/encryption.js';
 import { schedulerLogsDir, ensureSchedulerLogsDir } from './logs.js';
 import { runningTasks } from './locks.js';
@@ -175,7 +175,7 @@ const pollingTasks = new Set<string>();
  * Background loop step execution run specifically formatted for interactive Telegram conversations.
  */
 async function executeTelegramTaskRun(
-  task: ScheduledTaskConfig,
+  task: ServiceConfig,
   msg: TgMessage,
   updateId: number,
 ): Promise<void> {
@@ -391,7 +391,7 @@ async function executeTelegramTaskRun(
   }
 }
 
-async function executeTelegramPoller(task: ScheduledTaskConfig): Promise<void> {
+async function executeTelegramPoller(task: ServiceConfig): Promise<void> {
   if (pollingTasks.has(task.id)) return;
   pollingTasks.add(task.id);
 
@@ -478,7 +478,7 @@ export async function runTelegramPollerTick(): Promise<void> {
 
 export const TelegramStrategy: SchedulerStrategy = {
   type: 'telegram',
-  async tick(task: ScheduledTaskConfig, now: Date): Promise<void> {
+  async tick(task: ServiceConfig, now: Date): Promise<void> {
     await executeTelegramPoller(task);
   },
 };
