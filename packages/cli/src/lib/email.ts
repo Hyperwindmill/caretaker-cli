@@ -20,6 +20,27 @@ import type { ServiceConfig } from '../types.js';
 import { loadConfig } from '../store/json.js';
 import { decrypt, isEncrypted } from './encryption.js';
 
+/**
+ * Ceiling on one mail network operation, and the same reasoning as
+ * `NET_TIMEOUT_MS` in lib/task_git.ts: an unattended run must not hang forever
+ * on a wedged server. The abort also carries `ctx.signal`, so Pause and the
+ * task's wall-clock budget reach *inside* an in-flight connection — the loop
+ * only checks the signal between turns, and would otherwise sit awaiting this
+ * tool call.
+ */
+export const NET_TIMEOUT_MS = 60_000;
+
+/** Arm `close` on abort or timeout; returns the disarm to call in a finally. */
+function armAbort(close: () => void, signal?: AbortSignal): () => void {
+  const timer = setTimeout(close, NET_TIMEOUT_MS);
+  const onAbort = () => close();
+  signal?.addEventListener('abort', onAbort, { once: true });
+  return () => {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', onAbort);
+  };
+}
+
 /** An email account with its secrets decrypted and its defaults applied. */
 export type EmailAccount = {
   name: string;
@@ -164,7 +185,12 @@ export type OutgoingMail = {
 };
 
 /** Send one plain-text message. Returns the SMTP message id. */
-export async function sendEmail(account: EmailAccount, mail: OutgoingMail): Promise<string> {
+export async function sendEmail(
+  account: EmailAccount,
+  mail: OutgoingMail,
+  signal?: AbortSignal,
+): Promise<string> {
+  if (signal?.aborted) throw new Error('aborted before connecting');
   const transport = nodemailer.createTransport({
     host: account.smtpHost,
     port: account.smtpPort,
@@ -173,6 +199,7 @@ export async function sendEmail(account: EmailAccount, mail: OutgoingMail): Prom
     // command outright, so omit the credentials rather than send empty ones.
     auth: account.smtpUser ? { user: account.smtpUser, pass: account.smtpPassword } : undefined,
   });
+  const disarm = armAbort(() => transport.close(), signal);
   try {
     const info = await transport.sendMail({
       from: account.from,
@@ -184,6 +211,7 @@ export async function sendEmail(account: EmailAccount, mail: OutgoingMail): Prom
     });
     return info.messageId;
   } finally {
+    disarm();
     transport.close();
   }
 }
@@ -254,6 +282,8 @@ export type FetchOptions = {
   subject?: string;
   /** Mark the delivered messages \Seen (default true), so the next run skips them. */
   markSeen?: boolean;
+  /** Run-level abort (ctx.signal): closes the connection mid-flight. */
+  signal?: AbortSignal;
 };
 
 /** Read the oldest matching messages from INBOX. */
@@ -263,6 +293,7 @@ export async function fetchInbox(
 ): Promise<{ messages: InboundMessage[]; refused: number; scanTruncated?: boolean }> {
   const limit = clampLimit(opts.limit);
   const markSeen = opts.markSeen !== false;
+  if (opts.signal?.aborted) throw new Error('aborted before connecting');
   const client = new ImapFlow({
     host: account.imapHost,
     port: account.imapPort,
@@ -270,7 +301,13 @@ export async function fetchInbox(
     auth: { user: account.imapUser, pass: account.imapPassword },
     logger: false,
   });
-  await client.connect();
+  const disarm = armAbort(() => client.close(), opts.signal);
+  try {
+    await client.connect();
+  } catch (err) {
+    disarm();
+    throw err;
+  }
   const lock = await client.getMailboxLock('INBOX');
   try {
     // Only the two criteria every server implements the same way. The sender
@@ -339,6 +376,7 @@ export async function fetchInbox(
     }
     return { messages, refused, ...(scanTruncated ? { scanTruncated } : {}) };
   } finally {
+    disarm();
     lock.release();
     await client.logout().catch(() => client.close());
   }

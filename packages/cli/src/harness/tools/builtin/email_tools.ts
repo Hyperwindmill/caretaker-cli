@@ -116,6 +116,7 @@ export const emailFetchTool: Tool = {
         unreadOnly: args?.unread_only !== false,
         subject: typeof args?.subject === 'string' ? args.subject : undefined,
         markSeen: args?.mark_seen !== false,
+        signal: ctx.signal,
       });
       return {
         content: JSON.stringify({
@@ -197,7 +198,7 @@ export const emailSendTool: Tool = {
     }
 
     try {
-      const messageId = await sendEmail(account, { to, cc, bcc, subject, body });
+      const messageId = await sendEmail(account, { to, cc, bcc, subject, body }, ctx.signal);
       return {
         content: JSON.stringify({ ok: true, messageId, from: account.from, to, cc, bcc }),
       };
