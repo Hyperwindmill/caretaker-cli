@@ -17,7 +17,7 @@ A terminal-native home for your agents that you can also drive from a local web 
 
 The harness, agents store, plugins, MCP servers, skills, slash commands and confirm gate are shared by every entry point. **The web server is the functional superset** — some features only ship there, and both the desktop app and the web GUI run on top of it.
 
-- **Web server (`caretaker-cli web`)** — `pnpm -F @hyperwindmill/caretaker-cli dev web` (or `caretaker-cli web --port 3000`) starts a local Hono + WebSocket server that serves the webview as a desktop-grade two-column web app. It is the only surface that boots the **scheduler** (see below), and it hosts the **Scheduler** settings tab and the **Execution Console**.
+- **Web server (`caretaker-cli web`)** — `pnpm -F @hyperwindmill/caretaker-cli dev web` (or `caretaker-cli web --port 3000`) starts a local Hono + WebSocket server that serves the webview as a desktop-grade two-column web app. It is the only surface that boots the **scheduler** (see below), and it hosts the **Services** settings tab and the **Execution Console**.
 - **Desktop (`caretaker-desktop`)** — an Electron shell in [`packages/desktop`](packages/desktop). It is **not** a separate GUI: the main process picks a free port, forks the CLI's own web server (`caretaker-cli web`) as a child process, and frames `http://127.0.0.1:<port>` in a `BrowserWindow` with a system tray and single-instance lock. Because it runs the full web server, **the scheduler runs under the desktop app too**. Build/run with `pnpm desktop:dev`, package installers with `pnpm desktop:dist` (electron-builder targets Windows/macOS/Linux).
 - **TUI** — `pnpm -F @hyperwindmill/caretaker-cli dev` launches the Ink terminal app. Manage providers, agents, plugins, MCP servers, and chat. It does **not** run the scheduler and does not expose the scheduler UI.
 - **VSCode sidebar** — [`packages/vscode-extension`](packages/vscode-extension) embeds the harness as an ESM library (no subprocess). Same `~/.caretaker/` state, same agents, same conversations. Full Providers / Agents / Plugins / MCP configuration is available from the sidebar Settings panel; only the scheduler is missing because the daemon is not booted here.
@@ -37,7 +37,7 @@ State lives under `~/.caretaker/`: JSON for config, JSONL for chat sessions and 
 
 Any OpenAI-compatible provider works: hosted endpoints, internal gateways, local model servers. Add a base URL and an API key; the UI auto-fetches the model list from `/v1/models` so you pick from real options instead of typing model strings. The provider client streams chat completions over SSE — no provider-specific SDK.
 
-Secrets at rest are AES-256-GCM encrypted: plugin-source auth tokens, MCP server credentials, scheduler Telegram bot tokens. The encryption key is persisted with mode 0600.
+Secrets at rest are AES-256-GCM encrypted: plugin-source auth tokens, MCP server credentials, scheduler Telegram bot tokens, email service IMAP passwords. The encryption key is persisted with mode 0600.
 
 ### Claude Code as a provider
 
@@ -127,6 +127,8 @@ The easiest way to wire this into your own Claude Code is `caretaker-cli config 
 No web server and no token are needed: the server operates on the `CARETAKER_HOME` store it inherits from the client's env, and it exposes only the task/project tools — no file/bash/edit builtins (your external client has its own). Its security model is deliberately "local process access to the store" — the very boundary the TUI already trusts (anyone who can spawn it could already edit the store directly). The token-guarded, per-task `/api/mcp/task` HTTP bridge that feeds in-harness `claude-code` agents is a separate, unchanged surface.
 
 ### Scheduler
+
+Services are configured from the **Services** settings tab. Of the three service types only `heartbeat` is cron-scheduled and `telegram` polls; `email` stores IMAP connection credentials only — nothing reads mail yet, the agent-facing email tool is a separate future task, and an `email` service is never ticked.
 
 The web server boots an in-process background scheduler that ticks every 15 s. It runs **three** loops:
 

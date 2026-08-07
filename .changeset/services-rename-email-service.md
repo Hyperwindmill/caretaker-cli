@@ -10,3 +10,5 @@ The `caretaker.json` key stays `scheduler.tasks`, so existing configs load uncha
 The webview settings tab is renamed from Scheduler to Services (`ServicesTab`, tab id `services`).
 The Services form now supports creating/editing an `email` service (IMAP host/port/user/password/TLS),
 with its own validation and list-card rendering; it requires no agent and is never ticked by the scheduler.
+CLAUDE.md and README.md are updated to describe the Services tab, the `email` service type, and the
+`imapPassword` secret in the encrypted-at-rest list.
