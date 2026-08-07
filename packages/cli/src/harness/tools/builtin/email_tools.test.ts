@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { saveConfig } from '../../../store/json.js';
 import type { ServiceConfig } from '../../../types.js';
 import type { ToolContext } from '../types.js';
-import { emailListAccountsTool, emailSendTool } from './email_tools.js';
+import { emailListAccountsTool, emailSendTool, emailFetchTool } from './email_tools.js';
 
 const ctx = {
   workingDir: process.cwd(),
@@ -55,10 +55,24 @@ test('email_list_accounts reports the account without leaking secrets', async ()
     {
       name: 'Work',
       from: 'me@example.com',
-      smtpHost: 'smtp.invalid:587',
+      canSend: 'smtp.invalid:587',
+      canRead: 'imap.example.com:993',
       allowedRecipients: ['*@example.com'],
+      allowedSenders: 'any',
     },
   ]);
+});
+
+test('email_fetch refuses an account with no IMAP host', async () => {
+  await writeServices([service({ imapHost: '' })]);
+  const res = await emailFetchTool.execute({ account: 'Work' }, ctx);
+  assert.match(parse(res.content).error, /has no IMAP host/);
+});
+
+test('email_fetch reports the readable accounts when the name is unknown', async () => {
+  await writeServices([service()]);
+  const res = await emailFetchTool.execute({ account: 'Nope' }, ctx);
+  assert.match(parse(res.content).error, /Readable accounts: Work/);
 });
 
 test('email_list_accounts reports an unrestricted account as "any"', async () => {

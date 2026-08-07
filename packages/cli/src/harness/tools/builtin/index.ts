@@ -21,7 +21,7 @@ import { invokeAgentTool } from './invoke_agent.js';
 import { listCommandsTool } from './list_commands.js';
 import { invokeCommandTool } from './invoke_command.js';
 import { getAgentContextTool } from './get_agent_context.js';
-import { emailListAccountsTool, emailSendTool } from './email_tools.js';
+import { emailListAccountsTool, emailSendTool, emailFetchTool } from './email_tools.js';
 import {
   getTaskStateTool,
   updateChecklistItemTool,
@@ -102,6 +102,7 @@ export function registerBuiltins(registry: ToolRegistry): void {
   // MCP server exposes them over stdio and the per-task bridge alike.
   registry.register(emailListAccountsTool);
   registry.register(emailSendTool);
+  registry.register(emailFetchTool);
 }
 
 export {
@@ -145,4 +146,5 @@ export {
   taskUpdateDetailsTool,
   emailListAccountsTool,
   emailSendTool,
+  emailFetchTool,
 };

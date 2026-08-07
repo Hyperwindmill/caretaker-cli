@@ -14,6 +14,11 @@ import {
   matchesAllowlist,
   bareAddress,
   sendEmail,
+  fetchInbox,
+  canSend,
+  canRead,
+  clampLimit,
+  MAX_FETCH,
 } from '../../../lib/email.js';
 
 function err(msg: string): ToolResult {
@@ -39,7 +44,7 @@ function toList(value: unknown): string[] | null {
 export const emailListAccountsTool: Tool = {
   name: 'mcp__email__email_list_accounts',
   description:
-    'List the email accounts available for sending. Returns each account name (use it as the `account` argument of email_send), its From address, its SMTP host, and its recipient allowlist. Passwords are never returned.',
+    'List the configured email accounts. Returns each account name (use it as the `account` argument of email_send / email_fetch), its From address, whether it can send and/or be read, and its address allowlists. Passwords are never returned.',
   parameters: { type: 'object', properties: {}, additionalProperties: false },
   execute: async (): Promise<ToolResult> => {
     const accounts = await listEmailAccounts();
@@ -48,12 +53,80 @@ export const emailListAccountsTool: Tool = {
         accounts: accounts.map((a) => ({
           name: a.name,
           from: a.from,
-          smtpHost: `${a.smtpHost}:${a.smtpPort}`,
           // Empty list = no restriction; say so instead of showing `[]`.
+          canSend: canSend(a) ? `${a.smtpHost}:${a.smtpPort}` : false,
+          canRead: canRead(a) ? `${a.imapHost}:${a.imapPort}` : false,
           allowedRecipients: a.allowedRecipients.length ? a.allowedRecipients : 'any',
+          allowedSenders: a.allowedSenders.length ? a.allowedSenders : 'any',
         })),
       }),
     };
+  },
+};
+
+export const emailFetchTool: Tool = {
+  name: 'mcp__email__email_fetch',
+  description:
+    'Read the oldest unread messages from an account inbox and mark them read, so a later run does not see them again. Messages from senders outside the account allowlist are never returned. Bodies are plain text and may be truncated; attachments are listed by name only, not downloaded.',
+  parameters: {
+    type: 'object',
+    properties: {
+      account: { type: 'string', description: 'Account name from email_list_accounts.' },
+      limit: {
+        type: 'number',
+        description: `How many messages to read this call. Default 10, hard maximum ${MAX_FETCH}.`,
+      },
+      unread_only: {
+        type: 'boolean',
+        description: 'Default true. Set false to re-read messages already marked read.',
+      },
+      subject: { type: 'string', description: 'Only messages whose subject contains this text.' },
+      mark_seen: {
+        type: 'boolean',
+        description:
+          'Default true. Set false to leave the messages unread — they will come back on the next call.',
+      },
+    },
+    required: ['account'],
+  },
+  execute: async (args: any): Promise<ToolResult> => {
+    const name = typeof args?.account === 'string' ? args.account : '';
+    if (!name.trim()) return err('account must be a non-empty string');
+
+    const accounts = await listEmailAccounts();
+    const account = findAccount(accounts, name);
+    if (!account) {
+      const available = accounts.filter(canRead).map((a) => a.name);
+      return err(
+        available.length
+          ? `Unknown email account "${name}". Readable accounts: ${available.join(', ')}`
+          : `Unknown email account "${name}". No account is configured for reading — an email service needs an IMAP host and must be enabled.`,
+      );
+    }
+    if (!canRead(account)) {
+      return err(`Account "${account.name}" has no IMAP host, so it cannot be read.`);
+    }
+
+    try {
+      const { messages, refused } = await fetchInbox(account, {
+        limit: clampLimit(args?.limit),
+        unreadOnly: args?.unread_only !== false,
+        subject: typeof args?.subject === 'string' ? args.subject : undefined,
+        markSeen: args?.mark_seen !== false,
+      });
+      return {
+        content: JSON.stringify({
+          account: account.name,
+          count: messages.length,
+          // Surfaced rather than silent: "nothing new" and "3 messages you are
+          // not allowed to see" are different situations for the agent.
+          ...(refused ? { refusedBySenderAllowlist: refused } : {}),
+          messages,
+        }),
+      };
+    } catch (e: any) {
+      return err(`IMAP fetch failed: ${e?.message ?? String(e)}`);
+    }
   },
 };
 
@@ -95,12 +168,15 @@ export const emailSendTool: Tool = {
     const accounts = await listEmailAccounts();
     const account = findAccount(accounts, name);
     if (!account) {
-      const available = accounts.map((a) => a.name);
+      const available = accounts.filter(canSend).map((a) => a.name);
       return err(
         available.length
           ? `Unknown email account "${name}". Available: ${available.join(', ')}`
           : `Unknown email account "${name}". No account is configured for sending — an email service needs an SMTP host and must be enabled.`,
       );
+    }
+    if (!canSend(account)) {
+      return err(`Account "${account.name}" has no SMTP host, so it cannot send.`);
     }
     if (!account.from) {
       return err(`Account "${account.name}" has no From address — set its From or IMAP user.`);

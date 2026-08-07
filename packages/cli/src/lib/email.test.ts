@@ -11,8 +11,16 @@ import {
   parsePatterns,
   matchesAllowlist,
   bareAddress,
-  sendableAccounts,
+  emailAccounts,
   findAccount,
+  canSend,
+  canRead,
+  clampLimit,
+  isoDate,
+  truncateBody,
+  messageText,
+  MAX_FETCH,
+  MAX_BODY_CHARS,
 } from './email.js';
 
 function email(over: Partial<ServiceConfig> = {}): ServiceConfig {
@@ -72,8 +80,8 @@ test('bareAddress unwraps a display-name recipient', () => {
   assert.equal(bareAddress('  ada@example.com '), 'ada@example.com');
 });
 
-test('sendableAccounts defaults from/user/password to the IMAP values', () => {
-  const [account] = sendableAccounts([email()]);
+test('emailAccounts defaults from/user/password to the IMAP values', () => {
+  const [account] = emailAccounts([email()]);
   assert.equal(account.from, 'me@example.com');
   assert.equal(account.smtpUser, 'me@example.com');
   assert.equal(account.smtpPassword, 'imap-pw');
@@ -82,8 +90,8 @@ test('sendableAccounts defaults from/user/password to the IMAP values', () => {
   assert.deepEqual(account.allowedRecipients, []);
 });
 
-test('sendableAccounts honours explicit SMTP overrides', () => {
-  const [account] = sendableAccounts([
+test('emailAccounts honours explicit SMTP overrides', () => {
+  const [account] = emailAccounts([
     email({
       smtpFrom: 'noreply@example.com',
       smtpUser: 'apikey',
@@ -101,15 +109,14 @@ test('sendableAccounts honours explicit SMTP overrides', () => {
   assert.deepEqual(account.allowedRecipients, ['*@example.com']);
 });
 
-test('sendableAccounts defaults the port to 465 when implicit TLS is on', () => {
-  const [account] = sendableAccounts([email({ smtpSecure: true, smtpPort: undefined })]);
+test('emailAccounts defaults the port to 465 when implicit TLS is on', () => {
+  const [account] = emailAccounts([email({ smtpSecure: true, smtpPort: undefined })]);
   assert.equal(account.smtpPort, 465);
 });
 
-test('sendableAccounts skips disabled entries, other types and accounts without an SMTP host', () => {
-  const accounts = sendableAccounts([
+test('emailAccounts skips disabled entries and other service types', () => {
+  const accounts = emailAccounts([
     email({ id: 'a', name: 'Off', enabled: false }),
-    email({ id: 'b', name: 'No SMTP', smtpHost: '  ' }),
     { ...email({ id: 'c', name: 'Telegram' }), type: 'telegram' },
     email({ id: 'd', name: 'Good' }),
   ]);
@@ -119,8 +126,58 @@ test('sendableAccounts skips disabled entries, other types and accounts without 
   );
 });
 
+test('canSend / canRead follow the two hosts independently', () => {
+  const [sendOnly] = emailAccounts([email({ imapHost: '' })]);
+  assert.equal(canSend(sendOnly), true);
+  assert.equal(canRead(sendOnly), false);
+
+  const [readOnly] = emailAccounts([email({ smtpHost: '  ' })]);
+  assert.equal(canSend(readOnly), false);
+  assert.equal(canRead(readOnly), true);
+});
+
+test('emailAccounts resolves the IMAP half, defaulting the port to TLS/plaintext', () => {
+  const [tls] = emailAccounts([email({ imapPort: undefined })]);
+  assert.equal(tls.imapPort, 993);
+  assert.equal(tls.imapSecure, true);
+  const [plain] = emailAccounts([email({ imapPort: undefined, imapSecure: false })]);
+  assert.equal(plain.imapPort, 143);
+  assert.equal(plain.imapSecure, false);
+});
+
+test('clampLimit floors at 1, defaults on junk and caps at MAX_FETCH', () => {
+  assert.equal(clampLimit(undefined), 10);
+  assert.equal(clampLimit('nope'), 10);
+  assert.equal(clampLimit(0), 10);
+  assert.equal(clampLimit(-5), 10);
+  assert.equal(clampLimit(3.7), 3);
+  assert.equal(clampLimit(1000), MAX_FETCH);
+});
+
+test('isoDate accepts a Date, a string, and refuses junk', () => {
+  assert.equal(isoDate(new Date('2026-08-07T10:00:00Z')), '2026-08-07T10:00:00.000Z');
+  assert.equal(isoDate('2026-08-07T10:00:00Z'), '2026-08-07T10:00:00.000Z');
+  assert.equal(isoDate(undefined), '');
+  assert.equal(isoDate('not a date'), '');
+});
+
+test('truncateBody caps the body and flags it', () => {
+  const short = truncateBody('  hello\r\nworld  ');
+  assert.deepEqual(short, { body: 'hello\nworld', truncated: false });
+  const long = truncateBody('x'.repeat(MAX_BODY_CHARS + 100));
+  assert.equal(long.truncated, true);
+  assert.ok(long.body.endsWith('[…truncated]'));
+  assert.ok(long.body.length < MAX_BODY_CHARS + 20);
+});
+
+test('messageText prefers text/plain and converts html-only mail', () => {
+  assert.equal(messageText({ text: 'plain' }), 'plain');
+  assert.equal(messageText({ text: '  ', html: '<p>rich <b>text</b></p>' }), 'rich **text**');
+  assert.equal(messageText({ html: false }), '');
+});
+
 test('findAccount matches the service name case-insensitively', () => {
-  const accounts = sendableAccounts([email({ name: 'Work Inbox' })]);
+  const accounts = emailAccounts([email({ name: 'Work Inbox' })]);
   assert.equal(findAccount(accounts, 'work inbox')?.name, 'Work Inbox');
   assert.equal(findAccount(accounts, 'nope'), undefined);
 });
