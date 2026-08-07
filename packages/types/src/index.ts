@@ -9,18 +9,46 @@ export type ProviderConfig = {
   command?: string;
 };
 
-export type ScheduledTaskConfig = {
+/** One entry in the **Services** settings collection (persisted under the
+ *  `scheduler.tasks` key in caretaker.json — the key is kept for backward
+ *  compatibility).
+ *
+ *  Only `heartbeat` is cron-scheduled. `telegram` is a poller. `email` is inert
+ *  configuration: it stores IMAP credentials for a future agent-facing email
+ *  tool and is never ticked (no strategy is registered for it). */
+export type ServiceConfig = {
   id: string;
   name: string;
-  type: 'heartbeat' | 'telegram';
+  type: 'heartbeat' | 'telegram' | 'email';
   enabled: boolean;
+  /** Agent that runs this service. Empty for `email` — a credentials-only
+   *  record has nothing to run. */
   agentId: string;
+  /** 5-field cron. Meaningful for `heartbeat` only; the form fills a
+   *  placeholder for the other types. */
   cron: string;
   workingDir?: string;
+  /** Periodic instructions. `heartbeat` only; placeholder otherwise. */
   prompt: string;
   telegramBotToken?: string;
   telegramAllowedChats?: string;
+  // ─── email (IMAP) ───────────────────────────────────────────────────
+  /** IMAP server host, e.g. imap.gmail.com */
+  imapHost?: string;
+  /** IMAP port. 993 for implicit TLS, 143 for plaintext/STARTTLS. */
+  imapPort?: number;
+  /** Account/login name. */
+  imapUser?: string;
+  /** Password or app password. Encrypted at rest by saveConfig
+   *  (encrypt() blob, see lib/encryption.ts). */
+  imapPassword?: string;
+  /** Implicit TLS. Unset/true = TLS. */
+  imapSecure?: boolean;
 };
+
+/** @deprecated Renamed to {@link ServiceConfig}. Kept because the type is
+ *  re-exported from the published CLI's `./types` entry point. */
+export type ScheduledTaskConfig = ServiceConfig;
 
 export type ProjectConfig = {
   id: number;
@@ -114,7 +142,7 @@ export type CaretakerConfig = {
   port: number;
   providers: ProviderConfig[];
   scheduler?: {
-    tasks: ScheduledTaskConfig[];
+    tasks: ServiceConfig[];
   };
   projects?: ProjectConfig[];
   voice?: VoiceConfig;
