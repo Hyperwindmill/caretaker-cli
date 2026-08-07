@@ -10,7 +10,7 @@ import { saveConfig, configPath } from './json.js';
 import { isEncrypted, decrypt } from '../lib/encryption.js';
 import type { ServiceConfig } from '../types.js';
 
-function emailService(imapPassword: string): ServiceConfig {
+function emailService(imapPassword: string, smtpPassword?: string): ServiceConfig {
   return {
     id: 'svc_email_1',
     name: 'Work inbox',
@@ -24,6 +24,11 @@ function emailService(imapPassword: string): ServiceConfig {
     imapUser: 'me@example.com',
     imapPassword,
     imapSecure: true,
+    smtpHost: 'smtp.example.com',
+    smtpPort: 587,
+    smtpSecure: false,
+    smtpPassword,
+    allowedRecipients: '*@example.com',
   };
 }
 
@@ -66,6 +71,29 @@ test('saveConfig leaves non-secret email fields and other service types alone', 
   assert.equal(email.imapUser, 'me@example.com');
   assert.equal(email.imapPort, 993);
   assert.equal(email.imapSecure, true);
+  assert.equal(email.smtpHost, 'smtp.example.com');
+  assert.equal(email.smtpPort, 587);
+  assert.equal(email.smtpSecure, false);
+  assert.equal(email.allowedRecipients, '*@example.com');
   assert.equal(hb.cron, '0 9 * * *');
   assert.equal(hb.imapPassword, undefined);
+});
+
+test('saveConfig encrypts smtpPassword and does not double-encrypt it', async () => {
+  await saveConfig({
+    port: 3000,
+    providers: [],
+    scheduler: { tasks: [emailService('imap-pw', 'smtp-pw')] },
+  });
+  const once = JSON.parse(readFileSync(configPath(), 'utf8')).scheduler.tasks[0].smtpPassword;
+  assert.ok(isEncrypted(once), 'smtpPassword must be encrypted on disk');
+  assert.equal(decrypt(once), 'smtp-pw');
+
+  await saveConfig({
+    port: 3000,
+    providers: [],
+    scheduler: { tasks: [emailService('imap-pw', once)] },
+  });
+  const twice = JSON.parse(readFileSync(configPath(), 'utf8')).scheduler.tasks[0].smtpPassword;
+  assert.equal(twice, once);
 });

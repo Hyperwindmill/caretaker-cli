@@ -44,6 +44,30 @@ export type ServiceConfig = {
   imapPassword?: string;
   /** Implicit TLS. Unset/true = TLS. */
   imapSecure?: boolean;
+  // ─── email (SMTP, outbound) ─────────────────────────────────────────
+  /** SMTP server host, e.g. smtp.gmail.com. Required to send. */
+  smtpHost?: string;
+  /** SMTP port. 465 for implicit TLS, 587 for STARTTLS, 25 for plaintext. */
+  smtpPort?: number;
+  /** Implicit TLS (port 465). Unset/false = plaintext or STARTTLS if offered. */
+  smtpSecure?: boolean;
+  /** Envelope + header From. Unset = imapUser. */
+  smtpFrom?: string;
+  /** SMTP login, when it differs from the IMAP one. Unset = imapUser. */
+  smtpUser?: string;
+  /** SMTP password, when it differs from the IMAP one. Unset = imapPassword.
+   *  Encrypted at rest by saveConfig (encrypt() blob, see lib/encryption.ts). */
+  smtpPassword?: string;
+  // ─── email (address allowlists) ─────────────────────────────────────
+  /** Inbound allowlist: who may write *to* this account. Comma/newline
+   *  separated glob patterns (`*` only), e.g. `*@example.com`. Stored for the
+   *  future IMAP read tool — nothing enforces it yet, and it is deliberately
+   *  NOT checked against the outbound From. */
+  allowedSenders?: string;
+  /** Outbound allowlist: who this account may send to. Same glob syntax.
+   *  Enforced by the email_send tool on every to/cc/bcc address. Empty or
+   *  unset = no restriction. */
+  allowedRecipients?: string;
 };
 
 /** @deprecated Renamed to {@link ServiceConfig}. Kept because the type is
