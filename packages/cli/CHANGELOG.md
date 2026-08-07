@@ -18,6 +18,11 @@
   already-present turndown): `mcp__email__email_list_accounts`, `mcp__email__email_send`,
   `mcp__email__email_fetch`. Passwords are never returned by `email_list_accounts`.
 
+  The new runtime dependencies are pinned to nodemailer 9.0.4, imapflow 1.6.5 and mailparser 3.9.14:
+  the releases `npm view` reports as `latest` were published the same day and fail the lockfile's
+  `minimumReleaseAge` supply-chain policy. Those versions declare exact pins for the shared
+  libmime / @zone-eu/mailsplit, so no overrides are needed.
+
   Reading needs **no new configuration and no scheduler strategy**: an inbound workflow is a
   `heartbeat` service whose prompt tells the agent to call `email_fetch`, and "already handled" is the
   IMAP `\Seen` flag rather than a stored UID cursor. Two treatments of one mailbox are two heartbeats.
