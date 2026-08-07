@@ -99,6 +99,9 @@ export async function saveConfig(c: CaretakerConfig): Promise<void> {
       if (task.type === 'email' && task.imapPassword && !isEncrypted(task.imapPassword)) {
         task.imapPassword = encrypt(task.imapPassword);
       }
+      if (task.type === 'email' && task.smtpPassword && !isEncrypted(task.smtpPassword)) {
+        task.smtpPassword = encrypt(task.smtpPassword);
+      }
     }
   }
   for (const project of c.projects || []) {
