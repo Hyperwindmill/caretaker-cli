@@ -13,9 +13,9 @@ export type ProviderConfig = {
  *  `scheduler.tasks` key in caretaker.json — the key is kept for backward
  *  compatibility).
  *
- *  Only `heartbeat` is cron-scheduled. `telegram` is a poller. `email` is inert
- *  configuration: it stores IMAP credentials for a future agent-facing email
- *  tool and is never ticked (no strategy is registered for it). */
+ *  Only `heartbeat` is cron-scheduled. `telegram` is a poller. `email` is a
+ *  credentials record: it holds one mailbox's IMAP and SMTP settings for the
+ *  `mcp__email__*` tools and is never ticked (no strategy is registered for it). */
 export type ServiceConfig = {
   id: string;
   name: string;
@@ -60,14 +60,18 @@ export type ServiceConfig = {
   smtpPassword?: string;
   // ─── email (address allowlists) ─────────────────────────────────────
   /** Inbound allowlist: who may write *to* this account. Comma/newline
-   *  separated glob patterns (`*` only), e.g. `*@example.com`. Stored for the
-   *  future IMAP read tool — nothing enforces it yet, and it is deliberately
-   *  NOT checked against the outbound From. */
+   *  separated glob patterns (`*` only), e.g. `*@example.com`. Enforced by the
+   *  email_fetch tool; deliberately NOT checked against the outbound From. */
   allowedSenders?: string;
   /** Outbound allowlist: who this account may send to. Same glob syntax.
    *  Enforced by the email_send tool on every to/cc/bcc address. Empty or
    *  unset = no restriction. */
   allowedRecipients?: string;
+  /** Agent ids allowed to use this account. Empty or unset = every agent.
+   *  A scoped account is *invisible* to other agents — it is filtered out of
+   *  email_list_accounts, and naming it returns "unknown account" — so the
+   *  model cannot learn that a mailbox it may not touch exists. */
+  allowedAgents?: string[];
 };
 
 /** @deprecated Renamed to {@link ServiceConfig}. Kept because the type is

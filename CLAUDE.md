@@ -100,7 +100,7 @@ MCP servers are pooled by `mcp/client.ts` (both stdio and HTTP/SSE); their tools
   - **Git worktree isolation** (`lib/task_git.ts`): if the task's project `workingDir` is inside a git repo, the first heartbeat lazily creates a dedicated worktree + branch (`caretaker/task-<id>-<slug>`, under `~/.caretaker/worktrees/<projectId>-<taskId>`), persisted on the task as `branch`/`worktreePath`; the agent runs there instead of the live tree. Remote-backed projects (`ProjectConfig.repositoryUrl`, HTTPS + optional encrypted `repositoryToken`, `x-access-token` convention) are cloned/ff-pulled host-side by `syncProjectRepo` (`lib/task_git.ts`) right before the first worktree is created — into `workingDir`, or a managed `~/.caretaker/repos/<projectId>` when blank (`projectWorkingDir`, runtime-resolved). Clones are atomic (temp sibling + rename). The pull branch first realigns `origin` to the configured `repositoryUrl` (`remote set-url`/`add`) so fetch/pull/push all talk to that URL and nothing else — the credential helper answers for *any* host git asks about, so an inherited or pre-existing clone whose `origin` points elsewhere would otherwise be offered the project's token. Two self-heals, both **only** on the managed path, never on a user-chosen `workingDir`: a broken destination (not a git repo) is wiped and re-cloned, and a clone that has *diverged* — `pull --ff-only` fails, which it then would on every retry — is `reset --hard` to its `@{upstream}` (safe because only caretaker writes to the managed clone: tasks work in worktrees). Network git ops carry a 120 s `execFile` timeout (`NET_TIMEOUT_MS`) so a hung connection can't hold `syncingProjects` and the task lock indefinitely; local git commands stay unbounded (a worktree add on a huge repo is slow but legitimate). Sync failures block the task (bootstrap pattern). Pushes: best-effort after each per-cycle WIP commit; **gating** before every `finalizeDone` and before manual discard (`pushOrBlock` — failure blocks the task, worktree kept; discard endpoints/tool return the error). Task deletion pushes best-effort. `DELETE /api/projects/:id` removes the managed clone (`managedRepoDir` — non-null only when `workingDir` is blank *and* the project is remote-backed; a user-chosen dir is never touched), because project ids are `max+1` and a reused id would otherwise inherit the previous project's `~/.caretaker/repos/<id>` and its `origin`. Token auth is an inline credential helper reading `CARETAKER_GIT_TOKEN` from the child env — never argv, never `.git/config`. That invariant is enforced in **two** places on purpose: `validateRepositoryUrl` (`lib/repo_url.ts`) rejects an https URL carrying userinfo on every config write path (`POST /api/projects`, the web server's `saveConfig` websocket handler, and the VSCode extension's own — it is re-exported from the `./store` entry point for that third one), and `assertCleanRemoteUrl` in `task_git.ts` refuses such a URL again inside `pushBranch`/`syncProjectRepo`, because a hand-edited `caretaker.json` or a restored backup reaches no entry point at all. The use-site guard checks **only** the credential rule, not https-only: a filesystem path is a legitimate remote for a local mirror and for the tests. Concurrency: `syncingProjects` in `scheduler/locks.ts`, shared with `POST /api/projects/:id/sync` (ndjson progress, voice-backend pattern; 409 when in flight) and `GET /api/projects/:id/repo-status` (state derived from disk, never persisted). Immediately after that first creation, the project's `bootstrapCommands` (optional `string[]` on `ProjectConfig`) run once via `runBootstrap` in the agent working dir, in order, before the agent's first cycle — e.g. `pnpm install` — so the agent doesn't spend tokens on setup. **Each array entry is a separate shell invocation** — `docker exec … sh -lc <cmd>` under Docker (`containerExecArgs`), otherwise `promisify(exec)` (`/bin/sh -c <cmd>`) — always spawned with the working dir fixed (`-w`/`cwd`); shell state does **not** persist across entries, so a `cd` in one entry is a no-op for the next (they all still run from the fixed working dir). Dependent steps must be chained inside one entry with `&&`, not written as consecutive array items. Each command (and every internal `git()` call in the same file) spawns with `commandEnv()` from `harness/tools/builtin/shell-env.ts` — the same scrubbed + probed interactive-shell env the `bash` tool uses — so version-manager binaries (`pnpm`/`node`/`nvm`/`fnm`/`volta`) are on `PATH` on Linux even though the scheduler process is a non-interactive shell. The run stops at the first non-zero exit; a failure sends the task to `blocked` with the failed command + output as `blockedReason` and a `block` message, and the agent doesn't run. Each cycle commits WIP (`git add -A` + `--no-verify`, with a fallback identity only when the repo has none) — note `add -A` stages **everything** in the worktree that isn't gitignored, so any bootstrap/agent-produced artifact not covered by `.gitignore` lands on the task branch (a known footgun: pnpm under a bind-mounted Docker worktree falls back to a repo-local `.pnpm-store/` on a different filesystem, which `add -A` then commits by the thousands — the repo's `.gitignore` must cover such stores/caches). After the worktree is created (and before bootstrap, which then runs *inside* the container), if the project has a `dockerImage` (`lib/docker.ts`, task-agnostic on purpose — the container name is a parameter, leaving room for a future agent-level isolation) — either a pullable ref or, when the value starts with `.`/`/`/`\`, a **Dockerfile path** built (cached, on container (re)creation) into a per-project image `caretaker-project-<projectId>:latest` (`isDockerfilePath`/`buildImage`, context = the Dockerfile's dir, resolved against the project dir) — a per-task container (`caretaker-task-<projectId>-<taskId>`, bind-mounting the worktree **and** the git common dir at identical absolute paths, `--user` host uid/gid) is ensured each tick (idempotent by name; reused across cycles) and torn down at DONE/discard/delete; the keep-alive is passed as **`--entrypoint sleep` + arg `infinity`**, not as the CMD — a CMD only overrides the image's CMD, so a product runtime image whose ENTRYPOINT boots services (apache/supervisord/…) and never `exec "$@"`s would otherwise swallow the CMD, run its services (which fail to setuid to root under `--user` and exit non-zero), and let the container die mid-bootstrap, taking every in-flight `docker exec` with it — overriding the entrypoint makes PID 1 be `sleep infinity` regardless of the image (caretaker uses the container as an isolated `docker exec` shell target, not to run the image's service stack); native `bash` runs via `docker exec` (`ToolContext.dockerContainer`), claude-code via a `PreToolUse` Bash-rewrite hook (`--settings` temp file, base64-wrapped to dodge quoting) plus a workdir-scoped permission allowlist (`--permission-mode dontAsk`, replacing `bypassPermissions` for that run). The git common dir is mounted so a linked worktree's gitdir resolves inside the container; in-container git is nonetheless **best-effort** (a minimal image may ship none — the agent is warned via the prompt, and the WIP commit is host-side regardless; a project that needs git in-container adds it via `bootstrapCommands`, e.g. `apt-get install -y git`). **All three cycles run in the container** — developer, planner, and the DONE-review pass (`task_review.ts` threads `dockerContainer` into `runDoneReview`, using the same `docker exec` redirect / claude-code hook + allowlist as the dev cycle) — so the reviewer can't execute the code under review on the host and gets toolchain parity with the dev cycle. Only the host-side WIP commit / worktree management (`task_git.ts`) stays outside the container. Because `--user` makes the container run as the (non-root) host user, root-owned global installs fail (`npm i -g` → `EACCES`); the package manager belongs in the image (custom image + `corepack enable`), and `bootstrapCommands` should install only dependencies — see README. The claude-code confinement allowlist (`dockerDevAllowlist`) uses Claude Code's **`//<abs>`** rule syntax for absolute paths (a single leading `/` is project-relative and matches nothing, which under `--permission-mode dontAsk` silently denies *every* file-tool call — verified the hard way). Non-git projects run in place, unchanged (bootstrap is worktree-only). Cleanup happens at DONE (below) or via the manual discard affordance (`task_discard_worktree` tool + `POST /api/tasks/:id/discard-worktree` + a webview button) — both discard paths refuse (409 / tool error) while the task is locked or in `runningTasks`, the same guard their delete twins have, since discarding mid-cycle would rip the worktree out from under a running agent and the critical section includes a network push.
   - **Review gate via a `reviewing` state** (`scheduler/task_review.ts` + `runReviewCycle` in `scheduler/task_strategy.ts`): git worktree tasks don't finalize directly. When the agent calls `task_complete`, a git task goes to `reviewing` (non-git → `done`, no review — the review is git-diff based and needs a branch). The gate is **toggleable** (`reviewEnabled` tri-state on the task inheriting from the project, default on) and read at decision time: `task_complete` with the gate off goes straight to `done` (the worktree is finalized by the heartbeat's post-run git step, never inside `task_complete` — the agent is still running inside it), and a task already `reviewing` when the gate is turned off is finalized on the next tick without running the review. The heartbeat selection includes `reviewing`, and such a task runs one independent review pass (`runReviewCycle` → `runDoneReview`, **reviewer-role agent identity** with `mcp__task__*` stripped) over the branch **as its own tick**, not inline in the agent loop. The verdict comes from a sentinel line parsed by `parseReviewVerdict` (fail-safe: anything but an explicit `PASS` → changes). `CHANGES_REQUESTED` reopens the task (`active`, worktree kept) and stores the review as a replayed `review` message the agent reads next cycle; `PASS` (or hitting `MAX_REVIEW_ROUNDS` = 3) finalizes — sets `done`, removes the worktree, keeps the branch. Round count is derived from the `review` message stream, not a stored counter. A Pause landing mid-review is respected (the cycle re-reads the status before transitioning) and a crash mid-review leaves the task `reviewing` so the next tick retries. The UI renders `reviewing` as active (purple, Pause not Activate).
 
-The first two are per-agent strategies keyed by `task.type` and configured from the **Services** settings panel; the task heartbeat is always-on. A third service type, `email`, is a **credentials record, not a strategy**: it stores an account's IMAP and SMTP settings (passwords encrypted, see State on disk), has **no strategy registered**, and is therefore never ticked — only `heartbeat` is cron-scheduled, `telegram` polls. Its outbound half is what the `mcp__email__*` tools send through (layer 8); nothing reads mail yet. Cross-strategy shared state lives in `scheduler/locks.ts` (`runningTasks` Set, plus `runningTaskControllers` — a `Map<taskId, AbortController>` registered while a heartbeat run is in flight) and `scheduler/logs.ts` (log dir + JSONL append/read). Pausing/blocking a task (`POST /api/tasks/:id/status` → non-`active`) calls `abortRunningTask(taskId)`, which aborts the in-flight run mid-cycle — the loop checks `opts.signal` between turns — rather than only skipping the next tick; the signal is threaded into the developer/planner run and the review pass, so an off-the-rails agent stops now. Strategies depend on sibling modules, never on the parent `scheduler.ts`.
+The first two are per-agent strategies keyed by `task.type` and configured from the **Services** settings panel; the task heartbeat is always-on. A third service type, `email`, is a **credentials record, not a strategy**: it stores an account's IMAP and SMTP settings (passwords encrypted, see State on disk), has **no strategy registered**, and is therefore never ticked — only `heartbeat` is cron-scheduled, `telegram` polls. It is what the `mcp__email__*` tools send and read through (layer 8); reading is driven by an ordinary `heartbeat` service, not by a strategy of its own. Cross-strategy shared state lives in `scheduler/locks.ts` (`runningTasks` Set, plus `runningTaskControllers` — a `Map<taskId, AbortController>` registered while a heartbeat run is in flight) and `scheduler/logs.ts` (log dir + JSONL append/read). Pausing/blocking a task (`POST /api/tasks/:id/status` → non-`active`) calls `abortRunningTask(taskId)`, which aborts the in-flight run mid-cycle — the loop checks `opts.signal` between turns — rather than only skipping the next tick; the signal is threaded into the developer/planner run and the review pass, so an off-the-rails agent stops now. Strategies depend on sibling modules, never on the parent `scheduler.ts`.
 
 ### State on disk
 
@@ -184,35 +184,74 @@ Escalation path if a conversation ever outgrows this: `content-visibility: auto`
 heavy blocks, then coalescing `chunk` messages in the hosts, and a windowing library only
 after measurement demands it.
 
-### 8. Email (outbound only)
+### 8. Email (send and read)
 
-An `email` service (layer 5, Services panel) is one mailbox: IMAP settings for a future
-read tool, SMTP settings for sending now. `packages/cli/src/lib/email.ts` turns the
-records into `EmailAccount`s — secrets decrypted, `smtpFrom`/`smtpUser`/`smtpPassword`
-defaulting to the `imap*` values, port defaulting to 465/587 by `smtpSecure` — and owns
-the allowlist matcher. Only `enabled` records that carry an `smtpHost` are sendable; the
-UI leaves the SMTP block optional, so an IMAP-only record simply cannot send.
+An `email` service (layer 5, Services panel) is one mailbox with two independent halves:
+SMTP for sending, IMAP for reading. `packages/cli/src/lib/email.ts` turns the records
+into `EmailAccount`s — secrets decrypted, `smtpFrom`/`smtpUser`/`smtpPassword` defaulting
+to the `imap*` values, ports defaulting by the `*Secure` flags — and owns the allowlists.
+`canSend()`/`canRead()` are just "has an smtpHost / imapHost", so an account can be
+send-only, read-only, or both, and the form leaves each block optional.
 
-Two builtins in `harness/tools/builtin/email_tools.ts`:
-`mcp__email__email_list_accounts` (name, From, SMTP target, recipient allowlist — never a
-password) and `mcp__email__email_send` (plain text only; no HTML, no attachments).
-`email_send` resolves the account by service name (case-insensitive), then validates
-**every** `to`/`cc`/`bcc` address against the account's `allowedRecipients` **before
-opening a connection**, so a refusal costs no I/O and cannot half-deliver. An empty
-allowlist means no restriction — deliberate, retro-compatible, and the one knob to
-revisit when the wider boundary question is settled. `allowedSenders` is inbound
-semantics ("who may write *to* us"), stored for the future IMAP tool and deliberately
-**not** cross-checked against the From: a user filling it with `*@client.com` would
-otherwise break their own sending.
+Three builtins in `harness/tools/builtin/email_tools.ts`:
+
+- `mcp__email__email_list_accounts` — name, From, the two targets, the allowlists. Never
+  a password.
+- `mcp__email__email_send` — plain text only; no HTML, no attachments.
+- `mcp__email__email_fetch` — the oldest unread messages, marked `\Seen` on delivery.
+
+**No `email` scheduler strategy and no stored UID cursor exist, on purpose.** An inbound
+workflow is a `heartbeat` service whose prompt tells the agent to call `email_fetch`; the
+cron, the agent, and the enabled flag are the heartbeat's, the per-run limit and the
+subject filter are tool arguments, and "already handled" is the IMAP `\Seen` flag —
+server state, shared with the user's own mail client. Two behaviours on one account (say,
+two subject filters) are two heartbeats. Putting a schedule on the account record instead
+would mean a second cron implementation, a prompt and an agentId on a credentials record,
+and one behaviour per account.
+
+Three boundaries, all host-side, none of them the model's choice:
+
+1. **Which accounts exist for this agent** — `allowedAgents` (agent ids; empty = all). A
+   scoped account is *removed from the list*, not refused on use: the agent cannot name
+   it, be talked into naming it, or learn that it exists. Resolved from
+   `ctx.callerAgent`, which `harness/loop.ts` sets on every native run. A caller with no
+   agent identity is unscoped — that is only the `caretaker-cli mcp` stdio server (whose
+   trust boundary *is* local process access) and direct in-process calls. **A new surface
+   that runs these tools for an agent must set `ctx.callerAgent` or it silently opts out
+   of scoping**; that is why the HTTP bridge's per-run token carries the agent id
+   (`issueBridgeToken(agentId)` → `activeTokens` Map → `buildBuiltinMcpServer(info,
+   {callerAgent})`), since a claude-code agent speaks MCP over HTTP and has no other way
+   to identify itself.
+2. **Where mail may go** — `allowedRecipients`, checked on every `to`/`cc`/`bcc` address
+   **before opening a connection**, so a refusal costs no I/O and cannot half-deliver.
+3. **Whose mail may be read** — `allowedSenders`, checked on a cheap ENVELOPE pass so
+   mail the agent may not read is never downloaded. Refused messages are counted,
+   reported, and deliberately left **unread** for the human; only delivered ones are
+   marked `\Seen`.
+
+An empty allowlist means no restriction, in all three cases. Note the asymmetry:
+`allowedSenders` is inbound semantics and is deliberately **not** cross-checked against
+the outbound From — a user filling it with `*@client.com` (the correct inbound meaning)
+would otherwise break their own sending.
+
+Sender filtering is host-side only, and that is measured, not assumed: against GreenMail,
+IMAP `SEARCH FROM` is not the substring match the spec implies (whole addresses only, and
+a leading `@` makes the command fail) and `OR` returns nothing, so a server-side prefilter
+would silently drop everything on some servers. The search uses only `seen`/`subject`.
+Ceilings live in the tool, not the prompt: `MAX_FETCH` (50) caps the window, `MAX_SCAN`
+(200) caps how many envelopes one call will look at, `MAX_BODY_CHARS` (8000) caps the body
+handed to the model. `INTERNALDATE` backs up a missing or malformed `Date` header, and an
+HTML-only body goes through turndown, already a dependency.
 
 Reach: `mcp__email__*` is a namespace like `mcp__task__*` — served over both builtin MCP
-surfaces (layer 2), opt-in for native agents through `allowedTools`, and denied to the
-planner role on both paths (`PLANNER_ALWAYS_DENIED` in `scheduler/task_roles.ts`, the
-planner's `disallowedTools` in `claude_code_runner.ts`). The `mcp__<ns>__*` wildcard is
-generic in `resolveAgentTools` and in all three pickers (web server's `availableTools`,
-`AgentsTab`, the TUI's `namespacedToolList`) — adding a namespace needs no new hardcoded
-entry. `docker-compose.mail.yml` (GreenMail, SMTP on `127.0.0.1:3025`, no auth, no TLS)
-is the local fixture for trying it end to end.
+surfaces (layer 2), opt-in for native agents through `allowedTools`, and `email_send` is
+denied to the planner role on both paths (`PLANNER_ALWAYS_DENIED` in
+`scheduler/task_roles.ts`, the planner's `disallowedTools` in `claude_code_runner.ts`);
+`email_fetch` is read-only and stays. The `mcp__<ns>__*` wildcard is generic in
+`resolveAgentTools` and in all three pickers (web server's `availableTools`, `AgentsTab`,
+the TUI's `namespacedToolList`) — adding a namespace needs no new hardcoded entry.
+`docker-compose.mail.yml` (GreenMail, SMTP `127.0.0.1:3025`, IMAP `3143`, no auth) is the
+local fixture for trying it end to end.
 
 ### Tool sandbox
 
