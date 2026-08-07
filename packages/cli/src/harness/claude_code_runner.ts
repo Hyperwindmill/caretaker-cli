@@ -126,7 +126,11 @@ export function claudeCodeTaskExtras(p: {
   // and errors on older CLIs, so it's the wrong choice on both counts.)
   const allowedTools = ['Read', 'Glob', 'Grep', 'mcp__task'];
   if (p.sdd) allowedTools.push('Write(**/*.md)', 'Edit(**/*.md)', 'MultiEdit(**/*.md)');
-  return { permissionMode: 'dontAsk', allowedTools, disallowedTools: ['Bash'], extraMcpServers };
+  // The bridge serves the email tools on the same `task` server, so the prefix
+  // allowlist above would reach email_send too. Deny it explicitly: the mirror
+  // of PLANNER_ALWAYS_DENIED on the native path (see scheduler/task_roles.ts).
+  const disallowedTools = ['Bash', 'mcp__task__email_send'];
+  return { permissionMode: 'dontAsk', allowedTools, disallowedTools, extraMcpServers };
 }
 
 async function buildMcpConfigFile(

@@ -289,7 +289,9 @@ test('claudeCodeTaskExtras: developer / planner / planner+sdd', () => {
   const plan = claudeCodeTaskExtras({ planning: true, sdd: false, bridge });
   assert.equal(plan.permissionMode, 'dontAsk');
   assert.deepEqual(plan.allowedTools, ['Read', 'Glob', 'Grep', 'mcp__task']);
-  assert.deepEqual(plan.disallowedTools, ['Bash']);
+  // email_send is denied to the planner as well: the bridge serves it on the
+  // same `task` server, so the `mcp__task` prefix above would otherwise reach it.
+  assert.deepEqual(plan.disallowedTools, ['Bash', 'mcp__task__email_send']);
   const sdd = claudeCodeTaskExtras({ planning: true, sdd: true, bridge });
   assert.deepEqual(sdd.allowedTools, [
     'Read',
