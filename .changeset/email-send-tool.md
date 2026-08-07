@@ -26,7 +26,9 @@ the others: unlisted, and naming it reads as "unknown account"), `allowedRecipie
 every `to`/`cc`/`bcc` address before any connection is opened, and `allowedSenders` is checked on a
 cheap ENVELOPE pass so mail the agent may not read is never downloaded — refused messages are
 counted, reported, and left unread. Per-call ceilings (50 messages, 200 envelopes scanned, 8000
-characters of body) live in the tool. Sender filtering is deliberately host-side only: measured
+characters of body) live in the tool, and both network operations honour `ctx.signal` plus a
+60 s timeout by closing the connection — the harness loop only checks the signal between turns, so
+otherwise a Pause or a task's wall-clock budget could not interrupt a wedged IMAP/SMTP session. Sender filtering is deliberately host-side only: measured
 against GreenMail, IMAP `SEARCH FROM` is not the substring match the spec implies and `OR` returns
 nothing, so a server-side prefilter would silently drop everything on some servers.
 

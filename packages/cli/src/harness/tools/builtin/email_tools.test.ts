@@ -167,6 +167,21 @@ test('a scoped account is invisible to another agent, in both directions', async
   assert.equal(mine.accounts.length, 1);
 });
 
+test('an already-aborted run never opens a connection', async () => {
+  await writeServices([service({ imapHost: 'imap.invalid' })]);
+  const aborted = new AbortController();
+  aborted.abort();
+  const dead = { ...ctx, signal: aborted.signal } as ToolContext;
+
+  const sent = await emailSendTool.execute(
+    { account: 'Work', to: ['ada@example.com'], subject: 'hi', body: 'x' },
+    dead,
+  );
+  assert.match(parse(sent.content).error, /aborted before connecting/);
+  const fetched = await emailFetchTool.execute({ account: 'Work' }, dead);
+  assert.match(parse(fetched.content).error, /aborted before connecting/);
+});
+
 test('email_send ignores a disabled account', async () => {
   await writeServices([service({ enabled: false })]);
   const res = await emailSendTool.execute(

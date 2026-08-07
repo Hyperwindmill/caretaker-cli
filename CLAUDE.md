@@ -240,7 +240,11 @@ a leading `@` makes the command fail) and `OR` returns nothing, so a server-side
 would silently drop everything on some servers. The search uses only `seen`/`subject`.
 Ceilings live in the tool, not the prompt: `MAX_FETCH` (50) caps the window, `MAX_SCAN`
 (200) caps how many envelopes one call will look at, `MAX_BODY_CHARS` (8000) caps the body
-handed to the model. `INTERNALDATE` backs up a missing or malformed `Date` header, and an
+handed to the model. Both network operations honour `ctx.signal` and a `NET_TIMEOUT_MS`
+(60 s) backstop by closing the connection: the loop only checks the signal *between* turns,
+so without this a Pause or a task's wall-clock budget could not interrupt a run wedged
+inside an in-flight IMAP/SMTP session (verified against a server that accepts the socket
+and then goes silent). `INTERNALDATE` backs up a missing or malformed `Date` header, and an
 HTML-only body goes through turndown, already a dependency.
 
 Reach: `mcp__email__*` is a namespace like `mcp__task__*` — served over both builtin MCP
