@@ -107,6 +107,14 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
   const [imapUser, setImapUser] = useState('');
   const [imapPassword, setImapPassword] = useState('');
   const [imapSecure, setImapSecure] = useState(true);
+  const [smtpHost, setSmtpHost] = useState('');
+  const [smtpPort, setSmtpPort] = useState('587');
+  const [smtpSecure, setSmtpSecure] = useState(false);
+  const [smtpFrom, setSmtpFrom] = useState('');
+  const [smtpUser, setSmtpUser] = useState('');
+  const [smtpPassword, setSmtpPassword] = useState('');
+  const [allowedSenders, setAllowedSenders] = useState('');
+  const [allowedRecipients, setAllowedRecipients] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const startEdit = (task: ServiceConfig) => {
@@ -126,6 +134,14 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
     setImapUser(task.imapUser || '');
     setImapPassword(task.imapPassword || '');
     setImapSecure(task.imapSecure !== false);
+    setSmtpHost(task.smtpHost || '');
+    setSmtpPort(task.smtpPort ? String(task.smtpPort) : '587');
+    setSmtpSecure(task.smtpSecure === true);
+    setSmtpFrom(task.smtpFrom || '');
+    setSmtpUser(task.smtpUser || '');
+    setSmtpPassword(task.smtpPassword || '');
+    setAllowedSenders(task.allowedSenders || '');
+    setAllowedRecipients(task.allowedRecipients || '');
     setErrorMsg(null);
   };
 
@@ -146,6 +162,14 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
     setImapUser('');
     setImapPassword('');
     setImapSecure(true);
+    setSmtpHost('');
+    setSmtpPort('587');
+    setSmtpSecure(false);
+    setSmtpFrom('');
+    setSmtpUser('');
+    setSmtpPassword('');
+    setAllowedSenders('');
+    setAllowedRecipients('');
     setErrorMsg(null);
   };
 
@@ -208,6 +232,15 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
         setErrorMsg('IMAP port must be a whole number between 1 and 65535.');
         return;
       }
+      // SMTP is optional: without a host the account simply cannot send, and
+      // email_send skips it. With one, the port has to be usable.
+      if (smtpHost.trim()) {
+        const outPort = Number(smtpPort);
+        if (!Number.isInteger(outPort) || outPort < 1 || outPort > 65535) {
+          setErrorMsg('SMTP port must be a whole number between 1 and 65535.');
+          return;
+        }
+      }
       // ponytail: cron/prompt are unused for email — they stay required on the
       // type so heartbeat/telegram keep reading them unconditionally.
       finalPrompt = 'Email (IMAP) credentials';
@@ -246,6 +279,14 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
             imapUser: imapUser.trim(),
             imapPassword: imapPassword.trim(),
             imapSecure,
+            smtpHost: smtpHost.trim(),
+            smtpPort: Number(smtpPort),
+            smtpSecure,
+            smtpFrom: smtpFrom.trim(),
+            smtpUser: smtpUser.trim(),
+            smtpPassword: smtpPassword.trim(),
+            allowedSenders: allowedSenders.trim(),
+            allowedRecipients: allowedRecipients.trim(),
           }
         : {}),
     };
@@ -576,6 +617,95 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
                 />
               </div>
 
+              <div className="form-group">
+                <label htmlFor="smtp-host">SMTP Host <span style={{ opacity: 0.6, fontWeight: 400 }}>— sending</span></label>
+                <input
+                  id="smtp-host"
+                  type="text"
+                  placeholder="e.g. smtp.gmail.com — leave empty to disable sending"
+                  value={smtpHost}
+                  onChange={(e) => setSmtpHost(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="smtp-port">SMTP Port</label>
+                <input
+                  id="smtp-port"
+                  type="number"
+                  value={smtpPort}
+                  onChange={(e) => setSmtpPort(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '14px 0' }}>
+                <input
+                  id="smtp-secure"
+                  type="checkbox"
+                  checked={smtpSecure}
+                  onChange={(e) => setSmtpSecure(e.target.checked)}
+                  style={{ width: 'auto', cursor: 'pointer' }}
+                />
+                <label htmlFor="smtp-secure" style={{ cursor: 'pointer', fontWeight: 600, fontSize: '12px' }}>
+                  Use TLS (implicit, port 465) — leave off for 587/STARTTLS
+                </label>
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="smtp-from">From Address</label>
+                <input
+                  id="smtp-from"
+                  type="text"
+                  placeholder="defaults to the IMAP username"
+                  value={smtpFrom}
+                  onChange={(e) => setSmtpFrom(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="smtp-user">SMTP Username</label>
+                <input
+                  id="smtp-user"
+                  type="text"
+                  placeholder="defaults to the IMAP username"
+                  value={smtpUser}
+                  onChange={(e) => setSmtpUser(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="smtp-password">SMTP Password</label>
+                <input
+                  id="smtp-password"
+                  type="password"
+                  placeholder="defaults to the IMAP password"
+                  value={smtpPassword}
+                  onChange={(e) => setSmtpPassword(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="allowed-recipients">Allowed Recipients</label>
+                <input
+                  id="allowed-recipients"
+                  type="text"
+                  placeholder="e.g. *@example.com, boss@corp.com — empty = anyone"
+                  value={allowedRecipients}
+                  onChange={(e) => setAllowedRecipients(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="allowed-senders">Allowed Senders</label>
+                <input
+                  id="allowed-senders"
+                  type="text"
+                  placeholder="e.g. *@example.com — inbound, not enforced yet"
+                  value={allowedSenders}
+                  onChange={(e) => setAllowedSenders(e.target.value)}
+                />
+              </div>
+
               <div className="glass-form__help-card" style={{
                 background: 'rgba(255, 255, 255, 0.03)',
                 border: '1px solid rgba(255, 255, 255, 0.05)',
@@ -588,8 +718,10 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
               }}>
                 <strong><TipIcon size={14} /> Note:</strong> credentials are AES-256-GCM
                 encrypted at rest. Gmail/Outlook accounts need an <strong>app password</strong>,
-                not the account password. This service stores the connection only — nothing
-                reads mail yet; the agent-facing email tool arrives in a later task.
+                not the account password. With an SMTP host set, agents can send through this
+                account (<code>mcp__email__*</code> tools) — <strong>Allowed Recipients</strong> is
+                the limit on where, and an empty list means anyone. <strong>Allowed Senders</strong> is
+                stored for inbound filtering; nothing reads mail yet.
               </div>
             </>
           )}
@@ -653,7 +785,8 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
                       </div>
                     ) : task.type === 'email' ? (
                       <div className="settings-card__subtitle" style={{ fontSize: '11px', marginTop: '4px' }}>
-                        <strong>Type:</strong> <code>Email (IMAP)</code> · {task.imapUser} · {task.imapHost}:{task.imapPort}
+                        <strong>Type:</strong> <code>Email</code> · {task.imapUser} · IMAP {task.imapHost}:{task.imapPort}
+                        {task.smtpHost ? ` · SMTP ${task.smtpHost}:${task.smtpPort}` : ' · sending off'}
                       </div>
                     ) : (
                       <>

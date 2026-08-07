@@ -435,6 +435,30 @@ const CLAUDE_CODE_PERMISSION_MODES = [
   'plan',
 ] as const;
 
+const NAMESPACE_DESCRIPTIONS: Record<string, string> = {
+  mcp__task__: 'Manage autonomous tasks & checklists',
+  mcp__email__: 'List the configured email accounts and send mail',
+};
+
+/** The picker's tool list: one synthetic entry per `mcp__<ns>__` namespace in
+ *  place of its individual tools, everything else as-is. */
+function namespacedToolList(tools: Tool[]): Tool[] {
+  const namespaces = [
+    ...new Set(
+      tools.map((t) => /^mcp__[a-z]+__/.exec(t.name)?.[0]).filter((p): p is string => !!p),
+    ),
+  ];
+  return [
+    ...tools.filter((t) => !namespaces.some((p) => t.name.startsWith(p))),
+    ...namespaces.map((p) => ({
+      name: `${p}*`,
+      description: `${NAMESPACE_DESCRIPTIONS[p] ?? p} (enables all ${p}* tools)`,
+      parameters: { type: 'object', properties: {} },
+      execute: async () => ({ content: '' }),
+    })),
+  ];
+}
+
 // Computes the step sequence for a given form flavor, so claude-code's
 // skip-tools/plugins/maxTurns + insert-permissionMode branching lives in one
 // place instead of scattered across every transition.
@@ -476,12 +500,19 @@ function AgentForm({
   const [systemPrompt, setSystemPrompt] = useState(initial?.systemPrompt ?? '');
   const [permissionMode, setPermissionMode] = useState(initial?.permissionMode ?? '');
   const [strictMcp, setStrictMcp] = useState(initial?.strictMcp ?? false);
+  // The picker offers one entry per `mcp__<ns>__` namespace (task, email, …),
+  // not the individual tools, so a stored per-tool selection is collapsed onto
+  // the wildcard. resolveAgentTools expands it back at run time.
   const normalizeTools = (tools: string[]): string[] => {
-    const hasTaskTools = tools.some((t) => t.startsWith('mcp__task__'));
-    if (hasTaskTools) {
-      return [...tools.filter((t) => !t.startsWith('mcp__task__')), 'mcp__task__*'];
-    }
-    return tools;
+    const wildcards = new Set<string>();
+    const rest = tools.filter((t) => {
+      const ns = /^mcp__[a-z]+__/.exec(t);
+      if (!ns || t.endsWith('*')) return !ns;
+      wildcards.add(`${ns[0]}*`);
+      return false;
+    });
+    for (const t of tools) if (t.endsWith('*') && t.startsWith('mcp__')) wildcards.add(t);
+    return [...rest, ...wildcards];
   };
 
   const [allowedTools, setAllowedTools] = useState<string[]>(
@@ -665,16 +696,7 @@ function AgentForm({
           <Text>tools:</Text>
           {step === 'tools' ? (
             <ToolPicker
-              tools={[
-                ...toolRegistry.list().filter((t) => !t.name.startsWith('mcp__task__')),
-                {
-                  name: 'mcp__task__*',
-                  description:
-                    'Manage autonomous tasks & checklists (enables all mcp__task__* tools)',
-                  parameters: { type: 'object', properties: {} },
-                  execute: async () => ({ content: '' }),
-                },
-              ]}
+              tools={namespacedToolList(toolRegistry.list())}
               allowed={allowedTools}
               confirm={confirmTools}
               onChange={(a, c) => {
