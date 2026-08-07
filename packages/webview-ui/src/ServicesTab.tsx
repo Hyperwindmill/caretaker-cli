@@ -229,7 +229,7 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
       name: trimmedName,
       type,
       enabled,
-      agentId,
+      agentId: type === 'email' ? '' : agentId,
       cron: finalCron,
       prompt: finalPrompt,
       ...(trimmedWorkingDir ? { workingDir: trimmedWorkingDir } : {}),
@@ -634,7 +634,7 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
                           alignItems: 'center',
                           gap: '4px'
                         }}
-                        title="Toggle task active state"
+                        title="Toggle service active state"
                       >
                         {task.enabled ? (
                           <>
@@ -653,7 +653,7 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
                       </div>
                     ) : task.type === 'email' ? (
                       <div className="settings-card__subtitle" style={{ fontSize: '11px', marginTop: '4px' }}>
-                        <strong>Type:</strong> <code>Email (IMAP)</code> · {task.imapUser}@{task.imapHost}:{task.imapPort}
+                        <strong>Type:</strong> <code>Email (IMAP)</code> · {task.imapUser} · {task.imapHost}:{task.imapPort}
                       </div>
                     ) : (
                       <>
