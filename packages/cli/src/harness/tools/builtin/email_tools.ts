@@ -4,8 +4,11 @@
 // `mcp__task__*` set.
 //
 // Accounts come from the Services collection (`type: 'email'`); see lib/email.ts.
-// Sending is gated by the account's own `allowedRecipients` allowlist, checked
-// before any connection is opened.
+// Three boundaries, all host-side and none of them the model's choice:
+//   - which accounts exist at all for this agent (`allowedAgents`, resolved from
+//     ctx.callerAgent — a scoped account is invisible, not refused);
+//   - who an account may send to (`allowedRecipients`, checked before connecting);
+//   - whose mail it may read (`allowedSenders`, checked on the envelope pass).
 
 import type { Tool, ToolResult } from '../types.js';
 import {
@@ -46,8 +49,8 @@ export const emailListAccountsTool: Tool = {
   description:
     'List the configured email accounts. Returns each account name (use it as the `account` argument of email_send / email_fetch), its From address, whether it can send and/or be read, and its address allowlists. Passwords are never returned.',
   parameters: { type: 'object', properties: {}, additionalProperties: false },
-  execute: async (): Promise<ToolResult> => {
-    const accounts = await listEmailAccounts();
+  execute: async (_args, ctx): Promise<ToolResult> => {
+    const accounts = await listEmailAccounts(ctx.callerAgent?.id);
     return {
       content: JSON.stringify({
         accounts: accounts.map((a) => ({
@@ -89,11 +92,11 @@ export const emailFetchTool: Tool = {
     },
     required: ['account'],
   },
-  execute: async (args: any): Promise<ToolResult> => {
+  execute: async (args: any, ctx): Promise<ToolResult> => {
     const name = typeof args?.account === 'string' ? args.account : '';
     if (!name.trim()) return err('account must be a non-empty string');
 
-    const accounts = await listEmailAccounts();
+    const accounts = await listEmailAccounts(ctx.callerAgent?.id);
     const account = findAccount(accounts, name);
     if (!account) {
       const available = accounts.filter(canRead).map((a) => a.name);
@@ -151,7 +154,7 @@ export const emailSendTool: Tool = {
     required: ['account', 'to', 'subject', 'body'],
   },
   dangerous: true,
-  execute: async (args: any): Promise<ToolResult> => {
+  execute: async (args: any, ctx): Promise<ToolResult> => {
     const name = typeof args?.account === 'string' ? args.account : '';
     if (!name.trim()) return err('account must be a non-empty string');
     const subject = typeof args?.subject === 'string' ? args.subject : '';
@@ -165,7 +168,7 @@ export const emailSendTool: Tool = {
     if (!to || !cc || !bcc) return err('to/cc/bcc must be a string or an array of strings');
     if (to.length === 0) return err('to must contain at least one recipient');
 
-    const accounts = await listEmailAccounts();
+    const accounts = await listEmailAccounts(ctx.callerAgent?.id);
     const account = findAccount(accounts, name);
     if (!account) {
       const available = accounts.filter(canSend).map((a) => a.name);

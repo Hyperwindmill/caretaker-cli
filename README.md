@@ -140,16 +140,25 @@ Each task gets its own JSONL execution log under `~/.caretaker/scheduler-logs/`;
 
 ### Email
 
-An **email** service in the **Services** tab holds one mailbox: IMAP settings (host, port, user, password, TLS) plus, optionally, the SMTP settings used to **send**. Leave the SMTP host empty and the account simply cannot send. `From`, SMTP username and SMTP password default to the IMAP username/password, so a normal mailbox needs only a host and a port. Both passwords are encrypted at rest; Gmail/Outlook want an **app password**, not the account password.
+An **email** service in the **Services** tab holds one mailbox: IMAP settings (host, port, user, password, TLS) to **read**, plus the SMTP settings to **send**. Each half is optional — leave the SMTP host empty and the account cannot send, leave the IMAP host empty and it cannot be read. `From`, SMTP username and SMTP password default to the IMAP username/password, so a normal mailbox needs only a host and a port. Both passwords are encrypted at rest; Gmail/Outlook want an **app password**, not the account password.
 
-With an SMTP host configured, agents get two tools:
+Agents get three tools:
 
-- `email_list_accounts` — the account names to pick from, each with its From address, SMTP target, and recipient allowlist. Passwords are never returned.
+- `email_list_accounts` — the account names to pick from, each with its From address, whether it can send and/or be read, and its allowlists. Passwords are never returned.
 - `email_send` — send a plain-text message (no HTML, no attachments) through the account you name.
+- `email_fetch` — read the oldest unread messages and mark them read, so a later run does not see them again. Bodies are plain text (HTML mail is converted) and may be truncated; attachments are listed by name, not downloaded.
 
-**Allowed Recipients** is the boundary: a comma-separated glob list (`*@example.com`, `boss@corp.com`, or a bare `*`) checked against every To/Cc/Bcc address *before* any connection is opened, so a refused recipient means nothing was sent. **An empty list allows anyone** — fill it in for unattended work. **Allowed Senders** is the inbound counterpart, stored for a future mail-reading tool and not enforced today.
+**Reading mail is scheduled by an ordinary heartbeat, not by the account.** There is no email poller: you add a `heartbeat` service with the cron you want and a prompt like *"read the new mail on the 'Work' account, at most 10 messages, and open a task for anything that looks like an order"*. The cron, the agent and the on/off switch are the heartbeat's; the per-run limit and an optional subject filter are arguments the agent passes. Two different treatments of one mailbox — say, one for invoices and one for support — are simply two heartbeats.
 
-Reach mirrors the task tools: native agents opt into `mcp__email__*` from the tool picker, and both MCP surfaces (the `caretaker-cli mcp` stdio server and the per-task bridge that feeds `claude-code` agents) serve them — so an autonomous task, including one running in Docker, can mail you a report. The read-only **planner** phase is the exception: it can list accounts but not send. `docker-compose.mail.yml` ships a GreenMail container (SMTP on `127.0.0.1:3025`, no auth) for trying all of this locally.
+Three boundaries protect an account, and none of them depends on the agent behaving:
+
+- **Agents allowed to use this account** — tick the agents that may touch it. An account scoped to other agents is *invisible*: it is not listed, and naming it reads as "unknown account". Ticking nobody leaves it open to every agent.
+- **Allowed Recipients** — a comma-separated glob list (`*@example.com`, `boss@corp.com`, or a bare `*`) checked against every To/Cc/Bcc address *before* any connection is opened, so a refused recipient means nothing was sent.
+- **Allowed Senders** — the same syntax, applied to incoming mail. Messages from anyone else are never handed to the agent, and are left unread for you.
+
+**An empty list allows everything** in all three cases — fill them in before leaving an account to unattended work. The per-call ceilings (50 messages, 8000 characters of body) are enforced in the tool, not requested in the prompt.
+
+Reach mirrors the task tools: native agents opt into `mcp__email__*` from the tool picker, and both MCP surfaces (the `caretaker-cli mcp` stdio server and the per-task bridge that feeds `claude-code` agents) serve them — so an autonomous task, including one running in Docker, can mail you a report. The read-only **planner** phase can list and read but not send. `docker-compose.mail.yml` ships a GreenMail container (SMTP `127.0.0.1:3025`, IMAP `3143`, no auth) for trying all of this locally.
 
 ### Voice Mode (dictation & hands-free conversation)
 

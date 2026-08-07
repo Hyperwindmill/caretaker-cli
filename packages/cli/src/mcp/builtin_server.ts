@@ -7,12 +7,17 @@
 // second allowlist.
 //
 // The tools are context-free (they take task_id / account by argument), so a
-// stub ToolContext is sufficient.
+// stub ToolContext is sufficient — except for the caller's identity, which the
+// email tools use to scope which accounts exist for this agent. The HTTP bridge
+// passes it (resolved from the per-run token); the stdio server does not have
+// one and is unscoped by design, its trust boundary being local process access
+// to CARETAKER_HOME.
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { tools as registry } from '../harness/tools/instance.js';
 import type { Tool, ToolContext } from '../harness/tools/index.js';
+import type { AgentConfig } from '../types.js';
 
 export const TASK_PREFIX = 'mcp__task__';
 export const EMAIL_PREFIX = 'mcp__email__';
@@ -29,6 +34,7 @@ export function builtinMcpTools(): Tool[] {
 
 export function buildBuiltinMcpServer(
   info: { name: string; version: string } = { name: 'caretaker-task', version: '0.0.0' },
+  opts: { callerAgent?: AgentConfig } = {},
 ): Server {
   const server = new Server(info, { capabilities: { tools: {} } });
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -46,11 +52,13 @@ export function buildBuiltinMcpServer(
         isError: true,
       };
     }
-    // ponytail: these tools ignore ctx entirely; a stub keeps the types happy.
+    // ponytail: the task tools ignore ctx entirely; the email tools read only
+    // callerAgent. A stub covers the rest.
     const ctx: ToolContext = {
       workingDir: process.cwd(),
       signal: new AbortController().signal,
       readPaths: new Set(),
+      callerAgent: opts.callerAgent,
     };
     try {
       const result = await tool.execute(req.params.arguments ?? {}, ctx);

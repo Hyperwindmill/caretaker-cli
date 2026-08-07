@@ -10,6 +10,8 @@ import { serve } from '@hono/node-server';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { registerTaskBridge, issueBridgeToken, revokeBridgeToken } from './mcp_bridge.js';
+import { saveAgents, saveConfig } from '../../store/json.js';
+import type { AgentConfig, ServiceConfig } from '../../types.js';
 // Note: instance.ts registers builtins as a load-time side effect, so no
 // explicit registerBuiltins() call is needed here (it would throw "tool
 // already registered").
@@ -72,4 +74,59 @@ test('revoked token is rejected', async () => {
   revokeBridgeToken(token);
   const { transport, mcp } = client(token);
   await assert.rejects(() => mcp.connect(transport));
+});
+
+test('the token identifies the run, so email accounts are scoped per agent', async () => {
+  const agents: AgentConfig[] = [
+    {
+      id: 'agent_1',
+      name: 'Mailer',
+      provider: 'p',
+      model: 'm',
+      systemPrompt: '',
+      allowedTools: [],
+      maxTurns: 10,
+    },
+    {
+      id: 'agent_2',
+      name: 'Other',
+      provider: 'p',
+      model: 'm',
+      systemPrompt: '',
+      allowedTools: [],
+      maxTurns: 10,
+    },
+  ];
+  await saveAgents(agents);
+  const account: ServiceConfig = {
+    id: 'svc_1',
+    name: 'Boss only',
+    type: 'email',
+    enabled: true,
+    agentId: '',
+    cron: '',
+    prompt: '',
+    imapHost: 'imap.example.com',
+    imapUser: 'me@example.com',
+    imapPassword: 'pw',
+    smtpHost: 'smtp.example.com',
+    allowedAgents: ['agent_1'],
+  };
+  await saveConfig({ port: 3000, providers: [], scheduler: { tasks: [account] } });
+
+  const list = async (token: string) => {
+    const { transport, mcp } = client(token);
+    await mcp.connect(transport);
+    const res = await mcp.callTool({ name: 'email_list_accounts', arguments: {} });
+    const text = (res.content as any[]).find((c) => c.type === 'text')?.text;
+    await mcp.close();
+    revokeBridgeToken(token);
+    return JSON.parse(text).accounts as unknown[];
+  };
+
+  assert.equal((await list(issueBridgeToken('agent_1'))).length, 1, 'owner sees its account');
+  assert.equal((await list(issueBridgeToken('agent_2'))).length, 0, 'other agent sees nothing');
+  // No agent id on the token (a caller that predates the scoping) is unscoped —
+  // the documented trusted-caller behaviour, not an accident.
+  assert.equal((await list(issueBridgeToken())).length, 1);
 });

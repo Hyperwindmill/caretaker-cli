@@ -144,6 +144,29 @@ test('email_send validates its own arguments', async () => {
   }
 });
 
+test('a scoped account is invisible to another agent, in both directions', async () => {
+  await writeServices([service({ allowedAgents: ['agent_1'] })]);
+  const stranger = { ...ctx, callerAgent: { id: 'agent_2' } } as ToolContext;
+
+  const { accounts } = parse((await emailListAccountsTool.execute({}, stranger)).content);
+  assert.deepEqual(accounts, [], 'the account must not be listed');
+
+  // Naming it directly reads as "unknown", never "forbidden": the agent must not
+  // be able to confirm that a mailbox it may not use exists.
+  const sent = await emailSendTool.execute(
+    { account: 'Work', to: ['ada@example.com'], subject: 'hi', body: 'x' },
+    stranger,
+  );
+  assert.match(parse(sent.content).error, /Unknown email account "Work"/);
+  const fetched = await emailFetchTool.execute({ account: 'Work' }, stranger);
+  assert.match(parse(fetched.content).error, /Unknown email account "Work"/);
+
+  // The owner still sees it.
+  const owner = { ...ctx, callerAgent: { id: 'agent_1' } } as ToolContext;
+  const mine = parse((await emailListAccountsTool.execute({}, owner)).content);
+  assert.equal(mine.accounts.length, 1);
+});
+
 test('email_send ignores a disabled account', async () => {
   await writeServices([service({ enabled: false })]);
   const res = await emailSendTool.execute(

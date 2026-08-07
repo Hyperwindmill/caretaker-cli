@@ -13,6 +13,7 @@ import {
   bareAddress,
   emailAccounts,
   findAccount,
+  visibleAccounts,
   canSend,
   canRead,
   clampLimit,
@@ -174,6 +175,32 @@ test('messageText prefers text/plain and converts html-only mail', () => {
   assert.equal(messageText({ text: 'plain' }), 'plain');
   assert.equal(messageText({ text: '  ', html: '<p>rich <b>text</b></p>' }), 'rich **text**');
   assert.equal(messageText({ html: false }), '');
+});
+
+test('visibleAccounts hides a scoped account from every other agent', () => {
+  const accounts = emailAccounts([
+    email({ id: 'a', name: 'Shared' }),
+    email({ id: 'b', name: 'Boss only', allowedAgents: ['agent_1'] }),
+  ]);
+  assert.deepEqual(
+    visibleAccounts(accounts, 'agent_1').map((a) => a.name),
+    ['Shared', 'Boss only'],
+  );
+  assert.deepEqual(
+    visibleAccounts(accounts, 'agent_2').map((a) => a.name),
+    ['Shared'],
+  );
+  // An empty list is "every agent", not "no agent".
+  assert.deepEqual(
+    visibleAccounts(emailAccounts([email({ allowedAgents: [] })]), 'agent_9').length,
+    1,
+  );
+});
+
+test('visibleAccounts without an agent identity is unscoped (trusted local caller)', () => {
+  const accounts = emailAccounts([email({ name: 'Boss only', allowedAgents: ['agent_1'] })]);
+  assert.equal(visibleAccounts(accounts, undefined).length, 1);
+  assert.equal(visibleAccounts(accounts, '').length, 1);
 });
 
 test('findAccount matches the service name case-insensitively', () => {

@@ -424,7 +424,10 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
     const runTimer: NodeJS.Timeout = setTimeout(() => abortController.abort(), maxRunSeconds * 1000);
     if (isClaudeCode) {
       const bridgeUrl = getTaskBridgeUrl();
-      bridgeToken = bridgeUrl ? issueBridgeToken() : undefined;
+      // The token carries the role-resolved agent's id: it is the only identity
+      // a claude-code run has on the bridge, and the email tools scope accounts
+      // by it (ServiceConfig.allowedAgents).
+      bridgeToken = bridgeUrl ? issueBridgeToken(effectiveAgent.id) : undefined;
       claudeCode = claudeCodeTaskExtras({
         planning,
         sdd,

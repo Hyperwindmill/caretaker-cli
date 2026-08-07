@@ -115,6 +115,7 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
   const [smtpPassword, setSmtpPassword] = useState('');
   const [allowedSenders, setAllowedSenders] = useState('');
   const [allowedRecipients, setAllowedRecipients] = useState('');
+  const [allowedAgents, setAllowedAgents] = useState<string[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const startEdit = (task: ServiceConfig) => {
@@ -142,6 +143,7 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
     setSmtpPassword(task.smtpPassword || '');
     setAllowedSenders(task.allowedSenders || '');
     setAllowedRecipients(task.allowedRecipients || '');
+    setAllowedAgents(task.allowedAgents || []);
     setErrorMsg(null);
   };
 
@@ -170,6 +172,7 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
     setSmtpPassword('');
     setAllowedSenders('');
     setAllowedRecipients('');
+    setAllowedAgents([]);
     setErrorMsg(null);
   };
 
@@ -287,6 +290,7 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
             smtpPassword: smtpPassword.trim(),
             allowedSenders: allowedSenders.trim(),
             allowedRecipients: allowedRecipients.trim(),
+            allowedAgents,
           }
         : {}),
     };
@@ -706,6 +710,38 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
                 />
               </div>
 
+              <div className="form-group">
+                <label>Agents allowed to use this account</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                  {agents.length === 0 ? (
+                    <span style={{ fontSize: '11px', color: 'var(--vscode-descriptionForeground)' }}>
+                      No agents configured yet.
+                    </span>
+                  ) : (
+                    agents.map((a) => (
+                      <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 400, fontSize: '12px' }}>
+                        <input
+                          type="checkbox"
+                          checked={allowedAgents.includes(a.id)}
+                          onChange={(e) =>
+                            setAllowedAgents(
+                              e.target.checked
+                                ? [...allowedAgents, a.id]
+                                : allowedAgents.filter((id) => id !== a.id),
+                            )
+                          }
+                          style={{ width: 'auto', cursor: 'pointer' }}
+                        />
+                        {a.name}
+                      </label>
+                    ))
+                  )}
+                </div>
+                <span style={{ fontSize: '11px', color: 'var(--vscode-descriptionForeground)' }}>
+                  None selected = every agent may use it.
+                </span>
+              </div>
+
               <div className="glass-form__help-card" style={{
                 background: 'rgba(255, 255, 255, 0.03)',
                 border: '1px solid rgba(255, 255, 255, 0.05)',
@@ -719,9 +755,11 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
                 <strong><TipIcon size={14} /> Note:</strong> credentials are AES-256-GCM
                 encrypted at rest. Gmail/Outlook accounts need an <strong>app password</strong>,
                 not the account password. With an SMTP host set, agents can send through this
-                account (<code>mcp__email__*</code> tools) — <strong>Allowed Recipients</strong> is
-                the limit on where, and an empty list means anyone. <strong>Allowed Senders</strong> is
-                stored for inbound filtering; nothing reads mail yet.
+                account (<code>mcp__email__*</code> tools), and with an IMAP host they can read it.
+                <strong> Allowed Recipients</strong> is the limit on where mail may go, an empty list
+                means anyone; <strong>Allowed Senders</strong> is
+                what limits who <code>email_fetch</code> may read for the agent. Selecting no
+                agent above leaves the account open to every one of them.
               </div>
             </>
           )}
@@ -787,6 +825,9 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
                       <div className="settings-card__subtitle" style={{ fontSize: '11px', marginTop: '4px' }}>
                         <strong>Type:</strong> <code>Email</code> · {task.imapUser} · IMAP {task.imapHost}:{task.imapPort}
                         {task.smtpHost ? ` · SMTP ${task.smtpHost}:${task.smtpPort}` : ' · sending off'}
+                        {task.allowedAgents?.length
+                          ? ` · agents: ${task.allowedAgents.map(id => agents.find(a => a.id === id)?.name || id).join(', ')}`
+                          : ' · any agent'}
                       </div>
                     ) : (
                       <>

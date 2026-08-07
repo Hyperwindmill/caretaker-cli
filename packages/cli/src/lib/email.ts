@@ -38,6 +38,8 @@ export type EmailAccount = {
   allowedRecipients: string[];
   /** Inbound: whose mail this account may hand to an agent. Enforced by fetchInbox. */
   allowedSenders: string[];
+  /** Agent ids this account is restricted to. Empty = every agent. */
+  allowedAgents: string[];
 };
 
 /** An account can send only if it has somewhere to send through. */
@@ -119,13 +121,32 @@ export function emailAccounts(services: ServiceConfig[]): EmailAccount[] {
       imapPassword: reveal(s.imapPassword),
       allowedRecipients: parsePatterns(s.allowedRecipients),
       allowedSenders: parsePatterns(s.allowedSenders),
+      allowedAgents: (s.allowedAgents ?? []).filter(Boolean),
     }));
 }
 
-/** Configured accounts, read from the live config. */
-export async function listEmailAccounts(): Promise<EmailAccount[]> {
+/**
+ * Narrow a list to the accounts one agent may use. A scoped account is removed
+ * outright rather than refused later: the agent never sees a mailbox it cannot
+ * touch, so it cannot name it, be tricked into naming it, or report that it
+ * exists.
+ *
+ * `agentId` undefined means the caller has no agent identity, and that only
+ * happens for callers that already hold full access to CARETAKER_HOME — the
+ * `caretaker-cli mcp` stdio server (whose trust boundary IS local process
+ * access) and direct in-process calls. Those see everything. Any new surface
+ * that executes these tools on behalf of an agent MUST set `ctx.callerAgent`,
+ * or it silently opts out of scoping.
+ */
+export function visibleAccounts(accounts: EmailAccount[], agentId?: string): EmailAccount[] {
+  if (!agentId) return accounts;
+  return accounts.filter((a) => a.allowedAgents.length === 0 || a.allowedAgents.includes(agentId));
+}
+
+/** Configured accounts visible to `agentId`, read from the live config. */
+export async function listEmailAccounts(agentId?: string): Promise<EmailAccount[]> {
   const config = await loadConfig();
-  return emailAccounts(config.scheduler?.tasks ?? []);
+  return visibleAccounts(emailAccounts(config.scheduler?.tasks ?? []), agentId);
 }
 
 /** Look an account up by service name, case-insensitively. */
