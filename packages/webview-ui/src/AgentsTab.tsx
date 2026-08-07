@@ -105,9 +105,12 @@ export function AgentsTab({
     const initialTools: Record<string, boolean> = {};
     const initialConfirm: Record<string, boolean> = {};
     availableTools.forEach(t => {
-      if (t === 'mcp__task__*') {
-        initialTools[t] = agent.allowedTools.includes(t) || agent.allowedTools.some(x => x.startsWith('mcp__task__'));
-        initialConfirm[t] = agent.confirmTools?.includes(t) || agent.confirmTools?.some(x => x.startsWith('mcp__task__')) || false;
+      // A namespace entry (`mcp__task__*`, `mcp__email__*`, …) is checked when the
+      // agent has either the wildcard or any individual tool of that namespace.
+      const ns = /^(mcp__[a-z]+__)\*$/.exec(t);
+      if (ns) {
+        initialTools[t] = agent.allowedTools.includes(t) || agent.allowedTools.some(x => x.startsWith(ns[1]));
+        initialConfirm[t] = agent.confirmTools?.includes(t) || agent.confirmTools?.some(x => x.startsWith(ns[1])) || false;
       } else {
         initialTools[t] = agent.allowedTools.includes(t);
         initialConfirm[t] = agent.confirmTools?.includes(t) || false;

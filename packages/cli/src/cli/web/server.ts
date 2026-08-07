@@ -969,10 +969,18 @@ export async function startServer(port: number, host: string): Promise<void> {
           loadPlugins(),
           loadMcpServers(),
         ]);
-        const availableTools = harness.tools.list()
-          .map((t) => t.name)
-          .filter((name) => !name.startsWith('mcp__task__'));
-        availableTools.push('mcp__task__*');
+        // Collapse every builtin `mcp__<ns>__` namespace (task, email, …) into a
+        // single wildcard entry: the picker offers the namespace, so a namespace
+        // gaining a tool needs no config change. resolveAgentTools expands it.
+        const toolNames = harness.tools.list().map((t) => t.name);
+        const namespaces = [
+          ...new Set(
+            toolNames.map((name) => /^mcp__[a-z]+__/.exec(name)?.[0]).filter((p): p is string => !!p),
+          ),
+        ];
+        const availableTools = toolNames
+          .filter((name) => !namespaces.some((p) => name.startsWith(p)))
+          .concat(namespaces.map((p) => `${p}*`));
         const enrichedServers = mcpServersFile.servers.map((server) => {
           let hasMcpTokens = false;
           try {
