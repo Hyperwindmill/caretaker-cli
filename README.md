@@ -37,7 +37,7 @@ State lives under `~/.caretaker/`: JSON for config, JSONL for chat sessions and 
 
 Any OpenAI-compatible provider works: hosted endpoints, internal gateways, local model servers. Add a base URL and an API key; the UI auto-fetches the model list from `/v1/models` so you pick from real options instead of typing model strings. The provider client streams chat completions over SSE — no provider-specific SDK.
 
-Secrets at rest are AES-256-GCM encrypted: plugin-source auth tokens, MCP server credentials, scheduler Telegram bot tokens, email service IMAP passwords. The encryption key is persisted with mode 0600.
+Secrets at rest are AES-256-GCM encrypted: plugin-source auth tokens, MCP server credentials, scheduler Telegram bot tokens, email service IMAP and SMTP passwords. The encryption key is persisted with mode 0600.
 
 ### Claude Code as a provider
 
@@ -128,7 +128,7 @@ No web server and no token are needed: the server operates on the `CARETAKER_HOM
 
 ### Scheduler
 
-Services are configured from the **Services** settings tab. Of the three service types only `heartbeat` is cron-scheduled and `telegram` polls; `email` stores IMAP connection credentials only — nothing reads mail yet, the agent-facing email tool is a separate future task, and an `email` service is never ticked.
+Services are configured from the **Services** settings tab. Of the three service types only `heartbeat` is cron-scheduled and `telegram` polls; an `email` service is a credentials record and is never ticked — see **Email** below.
 
 The web server boots an in-process background scheduler that ticks every 15 s. It runs **three** loops:
 
@@ -137,6 +137,19 @@ The web server boots an in-process background scheduler that ticks every 15 s. I
 - **Autonomous task heartbeat** — advances the task/project system described above, independent of any configured scheduled task. Each cycle runs the agent for the task's current phase (planner / developer / reviewer); git-backed tasks run in a dedicated worktree/branch, commit progress each cycle, and pass through a review gate (when enabled) before the worktree is cleaned up at DONE.
 
 Each task gets its own JSONL execution log under `~/.caretaker/scheduler-logs/`; the web GUI's Execution Console shows past runs with full message rendering. In the task execution log, tool calls render as compact left-aligned bubbles — hover (or focus) one for a preview of its full arguments, or click to pin an expandable popover — keeping the log readable even when a cycle touches many files. Remember: the scheduler only runs where the web server runs (`caretaker-cli web` or the desktop app), never under the bare TUI or VSCode.
+
+### Email
+
+An **email** service in the **Services** tab holds one mailbox: IMAP settings (host, port, user, password, TLS) plus, optionally, the SMTP settings used to **send**. Leave the SMTP host empty and the account simply cannot send. `From`, SMTP username and SMTP password default to the IMAP username/password, so a normal mailbox needs only a host and a port. Both passwords are encrypted at rest; Gmail/Outlook want an **app password**, not the account password.
+
+With an SMTP host configured, agents get two tools:
+
+- `email_list_accounts` — the account names to pick from, each with its From address, SMTP target, and recipient allowlist. Passwords are never returned.
+- `email_send` — send a plain-text message (no HTML, no attachments) through the account you name.
+
+**Allowed Recipients** is the boundary: a comma-separated glob list (`*@example.com`, `boss@corp.com`, or a bare `*`) checked against every To/Cc/Bcc address *before* any connection is opened, so a refused recipient means nothing was sent. **An empty list allows anyone** — fill it in for unattended work. **Allowed Senders** is the inbound counterpart, stored for a future mail-reading tool and not enforced today.
+
+Reach mirrors the task tools: native agents opt into `mcp__email__*` from the tool picker, and both MCP surfaces (the `caretaker-cli mcp` stdio server and the per-task bridge that feeds `claude-code` agents) serve them — so an autonomous task, including one running in Docker, can mail you a report. The read-only **planner** phase is the exception: it can list accounts but not send. `docker-compose.mail.yml` ships a GreenMail container (SMTP on `127.0.0.1:3025`, no auth) for trying all of this locally.
 
 ### Voice Mode (dictation & hands-free conversation)
 
