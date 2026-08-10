@@ -137,6 +137,10 @@ test('email_send validates its own arguments', async () => {
     [{ account: 'Work', to: ['ada@example.com'], subject: ' ', body: 'x' }, /subject must be/],
     [{ account: 'Work', to: ['ada@example.com'], subject: 'hi' }, /body must be/],
     [{ account: 'Work', to: 42, subject: 'hi', body: 'x' }, /must be a string or an array/],
+    [
+      { account: 'Work', to: ['ada@example.com'], subject: 'hi', body: 'x', html: { p: 1 } },
+      /html must be a string/,
+    ],
   ];
   for (const [args, expected] of cases) {
     const res = await emailSendTool.execute(args, ctx);

@@ -22,7 +22,9 @@ import {
   messageText,
   MAX_FETCH,
   MAX_BODY_CHARS,
+  sendEmail,
 } from './email.js';
+import net from 'node:net';
 
 function email(over: Partial<ServiceConfig> = {}): ServiceConfig {
   return {
@@ -207,4 +209,83 @@ test('findAccount matches the service name case-insensitively', () => {
   const accounts = emailAccounts([email({ name: 'Work Inbox' })]);
   assert.equal(findAccount(accounts, 'work inbox')?.name, 'Work Inbox');
   assert.equal(findAccount(accounts, 'nope'), undefined);
+});
+
+/**
+ * A one-shot SMTP sink: accepts a single message and resolves with the raw DATA.
+ * ponytail: 15 lines of protocol beat pulling in a mock-SMTP dependency for the
+ * one thing worth asserting — that the wire really carries both body parts.
+ */
+function smtpSink(): Promise<{ port: number; message: Promise<string> }> {
+  let resolveMessage: (data: string) => void;
+  const message = new Promise<string>((r) => (resolveMessage = r));
+  const server = net.createServer((socket) => {
+    let inData = false;
+    let data = '';
+    socket.write('220 sink\r\n');
+    socket.on('data', (chunk) => {
+      if (inData) {
+        data += chunk.toString();
+        if (!data.includes('\r\n.\r\n')) return;
+        inData = false;
+        socket.write('250 OK queued\r\n');
+        resolveMessage(data);
+        return;
+      }
+      const verb = chunk.toString().slice(0, 4).toUpperCase();
+      if (verb.startsWith('EHLO') || verb.startsWith('HELO')) socket.write('250 sink\r\n');
+      else if (verb.startsWith('DATA')) ((inData = true), socket.write('354 go\r\n'));
+      else if (verb.startsWith('QUIT')) (socket.write('221 bye\r\n'), socket.end());
+      else socket.write('250 OK\r\n');
+    });
+  });
+  return new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', () => {
+      const port = (server.address() as net.AddressInfo).port;
+      message.finally(() => server.close());
+      resolve({ port, message });
+    });
+  });
+}
+
+test('sendEmail sends the html part alongside the text one', async () => {
+  const { port, message } = await smtpSink();
+  const [account] = emailAccounts([
+    email({
+      smtpHost: '127.0.0.1',
+      smtpPort: port,
+      smtpUser: '',
+      imapUser: '',
+      smtpFrom: 'me@x.io',
+    }),
+  ]);
+  await sendEmail(account, {
+    to: ['ada@example.com'],
+    subject: 'Report',
+    body: 'plain fallback',
+    html: '<p>rich <b>body</b></p>',
+  });
+  const raw = await message;
+  assert.match(raw, /multipart\/alternative/);
+  assert.match(raw, /text\/plain/);
+  assert.match(raw, /text\/html/);
+  assert.ok(raw.includes('plain fallback'), 'text part must survive');
+  assert.ok(raw.includes('rich <b>body</b>'), 'html part must survive');
+});
+
+test('sendEmail with no html stays a single text/plain message', async () => {
+  const { port, message } = await smtpSink();
+  const [account] = emailAccounts([
+    email({
+      smtpHost: '127.0.0.1',
+      smtpPort: port,
+      smtpUser: '',
+      imapUser: '',
+      smtpFrom: 'me@x.io',
+    }),
+  ]);
+  await sendEmail(account, { to: ['ada@example.com'], subject: 'Plain', body: 'just text' });
+  const raw = await message;
+  assert.match(raw, /text\/plain/);
+  assert.ok(!raw.includes('multipart'), 'no html means no multipart envelope');
 });

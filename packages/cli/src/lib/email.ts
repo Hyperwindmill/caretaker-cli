@@ -181,10 +181,14 @@ export type OutgoingMail = {
   cc?: string[];
   bcc?: string[];
   subject: string;
+  /** Plain-text part. Always sent — the fallback when `html` is set. */
   body: string;
+  /** Optional HTML part. Set together with `body` it makes a multipart/alternative. */
+  html?: string;
 };
 
-/** Send one plain-text message. Returns the SMTP message id. */
+/** Send one message (plain text, plus an HTML alternative when given).
+ *  Returns the SMTP message id. */
 export async function sendEmail(
   account: EmailAccount,
   mail: OutgoingMail,
@@ -208,6 +212,8 @@ export async function sendEmail(
       bcc: mail.bcc,
       subject: mail.subject,
       text: mail.body,
+      // Both parts → nodemailer builds multipart/alternative on its own.
+      ...(mail.html ? { html: mail.html } : {}),
     });
     return info.messageId;
   } finally {
