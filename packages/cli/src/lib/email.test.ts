@@ -23,6 +23,7 @@ import {
   MAX_FETCH,
   MAX_BODY_CHARS,
   sendEmail,
+  markdownToHtml,
 } from './email.js';
 import net from 'node:net';
 
@@ -288,4 +289,16 @@ test('sendEmail with no html stays a single text/plain message', async () => {
   const raw = await message;
   assert.match(raw, /text\/plain/);
   assert.ok(!raw.includes('multipart'), 'no html means no multipart envelope');
+});
+
+test('markdownToHtml renders the markdown and wraps it with inline styles', () => {
+  const html = markdownToHtml('# Report\n\n- one\n- **two**\n\n[link](https://x.io)');
+  assert.match(html, /^<div style="font-family:/, 'must carry its styling inline');
+  assert.match(html, /<h1[^>]*>Report<\/h1>/);
+  assert.match(html, /<li>one<\/li>/);
+  assert.match(html, /<strong>two<\/strong>/);
+  assert.match(html, /<a href="https:\/\/x\.io">link<\/a>/);
+  // GFM: a bare table must become a table, not a paragraph of pipes.
+  assert.match(markdownToHtml('| a | b |\n| - | - |\n| 1 | 2 |'), /<table>/);
+  assert.ok(!html.includes('<style'), 'a <style> block would be stripped by mail clients');
 });
