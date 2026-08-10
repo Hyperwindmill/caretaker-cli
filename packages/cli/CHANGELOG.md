@@ -1,5 +1,23 @@
 # caretaker-cli
 
+## 0.22.0
+
+### Minor Changes
+
+- 546b773: feat(cli): `mcp__email__email_send` accepts an optional `html` body
+
+  `body` stays required as the plain-text part (the fallback clients without HTML
+  rendering show, and the part whose absence spam filters penalise); when `html` is
+  also given, nodemailer sends both as a `multipart/alternative`. Attachments are
+  still out of scope.
+
+- effd83d: feat(cli): `email_send` renders a markdown `body` into the HTML part
+
+  `markdown: true` converts `body` host-side (marked, GFM, one inline-styled
+  wrapper div) and sends it alongside the markdown itself as the text part, so a
+  formatted mail costs one copy of the content instead of two. Mutually exclusive
+  with an explicit `html` — both set the same message part.
+
 ## 0.21.0
 
 ### Minor Changes
