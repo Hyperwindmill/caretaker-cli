@@ -197,7 +197,9 @@ Three builtins in `harness/tools/builtin/email_tools.ts`:
 
 - `mcp__email__email_list_accounts` — name, From, the two targets, the allowlists. Never
   a password.
-- `mcp__email__email_send` — plain text only; no HTML, no attachments.
+- `mcp__email__email_send` — `body` (plain text) is always required; an optional `html`
+  rides along as a second part, so nodemailer builds a `multipart/alternative` and the
+  client picks. No attachments.
 - `mcp__email__email_fetch` — the oldest unread messages, marked `\Seen` on delivery.
 
 **No `email` scheduler strategy and no stored UID cursor exist, on purpose.** An inbound

@@ -137,7 +137,7 @@ export const emailFetchTool: Tool = {
 export const emailSendTool: Tool = {
   name: 'mcp__email__email_send',
   description:
-    'Send a plain-text email through one of the configured accounts. Pick the account by its name from email_list_accounts. Recipients outside the account allowlist are refused and nothing is sent.',
+    'Send an email through one of the configured accounts. Pick the account by its name from email_list_accounts. `body` is the plain-text version and is always required; add `html` for a formatted message (both parts are sent, the client picks). No attachments. Recipients outside the account allowlist are refused and nothing is sent.',
   parameters: {
     type: 'object',
     properties: {
@@ -150,7 +150,16 @@ export const emailSendTool: Tool = {
       cc: { type: 'array', items: { type: 'string' } },
       bcc: { type: 'array', items: { type: 'string' } },
       subject: { type: 'string' },
-      body: { type: 'string', description: 'Plain text. No HTML, no attachments.' },
+      body: {
+        type: 'string',
+        description:
+          'Plain-text body. Required even when sending HTML — it is the fallback part for clients that do not render HTML, and mail without one is treated as spam by many filters.',
+      },
+      html: {
+        type: 'string',
+        description:
+          'Optional HTML body, sent as an alternative part alongside `body`. A full document or a fragment both work. Inline the CSS as style attributes — mail clients drop <style> blocks and never fetch external assets.',
+      },
     },
     required: ['account', 'to', 'subject', 'body'],
   },
@@ -162,6 +171,9 @@ export const emailSendTool: Tool = {
     const body = typeof args?.body === 'string' ? args.body : '';
     if (!subject.trim()) return err('subject must be a non-empty string');
     if (typeof args?.body !== 'string') return err('body must be a string');
+    if (args?.html !== undefined && typeof args.html !== 'string')
+      return err('html must be a string');
+    const html = typeof args?.html === 'string' && args.html.trim() ? args.html : undefined;
 
     const to = toList(args?.to);
     const cc = toList(args?.cc);
@@ -198,9 +210,17 @@ export const emailSendTool: Tool = {
     }
 
     try {
-      const messageId = await sendEmail(account, { to, cc, bcc, subject, body }, ctx.signal);
+      const messageId = await sendEmail(account, { to, cc, bcc, subject, body, html }, ctx.signal);
       return {
-        content: JSON.stringify({ ok: true, messageId, from: account.from, to, cc, bcc }),
+        content: JSON.stringify({
+          ok: true,
+          messageId,
+          from: account.from,
+          to,
+          cc,
+          bcc,
+          html: !!html,
+        }),
       };
     } catch (e: any) {
       return err(`SMTP send failed: ${e?.message ?? String(e)}`);
