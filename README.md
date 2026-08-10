@@ -145,7 +145,7 @@ An **email** service in the **Services** tab holds one mailbox: IMAP settings (h
 Agents get three tools:
 
 - `email_list_accounts` — the account names to pick from, each with its From address, whether it can send and/or be read, and its allowlists. Passwords are never returned.
-- `email_send` — send a message through the account you name. `body` is the plain-text version and is always required; pass `html` too for a formatted mail — both parts are sent and the recipient's client picks. No attachments.
+- `email_send` — send a message through the account you name. `body` is the plain-text version and is always required. For a formatted mail the agent writes `body` in markdown and sets `markdown: true` (converted for it, so the content is written once), or passes its own `html`; either way both parts are sent and the recipient's client picks. No attachments.
 - `email_fetch` — read the oldest unread messages and mark them read, so a later run does not see them again. Bodies are plain text (HTML mail is converted) and may be truncated; attachments are listed by name, not downloaded.
 
 **Reading mail is scheduled by an ordinary heartbeat, not by the account.** There is no email poller: you add a `heartbeat` service with the cron you want and a prompt like *"read the new mail on the 'Work' account, at most 10 messages, and open a task for anything that looks like an order"*. The cron, the agent and the on/off switch are the heartbeat's; the per-run limit and an optional subject filter are arguments the agent passes. Two different treatments of one mailbox — say, one for invoices and one for support — are simply two heartbeats.

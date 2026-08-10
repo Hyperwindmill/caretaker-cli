@@ -197,9 +197,15 @@ Three builtins in `harness/tools/builtin/email_tools.ts`:
 
 - `mcp__email__email_list_accounts` — name, From, the two targets, the allowlists. Never
   a password.
-- `mcp__email__email_send` — `body` (plain text) is always required; an optional `html`
-  rides along as a second part, so nodemailer builds a `multipart/alternative` and the
-  client picks. No attachments.
+- `mcp__email__email_send` — `body` (plain text) is always required; a second HTML part
+  rides along when asked for, so nodemailer builds a `multipart/alternative` and the
+  client picks. Two ways to ask, mutually exclusive (both → error, since they set the
+  same part): `markdown: true` renders `body` host-side via `markdownToHtml`
+  (`marked`, GFM, one inline-styled wrapper `<div>` because clients strip `<style>`),
+  which is the cheap path — the agent writes the content **once** and the markdown
+  doubles as the text part; or an explicit `html` string for full control. No
+  sanitizer, on purpose: outbound mail, and `html` already accepts arbitrary markup.
+  No attachments.
 - `mcp__email__email_fetch` — the oldest unread messages, marked `\Seen` on delivery.
 
 **No `email` scheduler strategy and no stored UID cursor exist, on purpose.** An inbound

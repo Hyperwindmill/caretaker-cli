@@ -16,6 +16,7 @@ import nodemailer from 'nodemailer';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import TurndownService from 'turndown';
+import { marked } from 'marked';
 import type { ServiceConfig } from '../types.js';
 import { loadConfig } from '../store/json.js';
 import { decrypt, isEncrypted } from './encryption.js';
@@ -174,6 +175,27 @@ export async function listEmailAccounts(agentId?: string): Promise<EmailAccount[
 export function findAccount(accounts: EmailAccount[], name: string): EmailAccount | undefined {
   const wanted = name.trim().toLowerCase();
   return accounts.find((a) => a.name.trim().toLowerCase() === wanted);
+}
+
+/**
+ * Render the markdown an agent already wrote as `body` into the HTML part, so a
+ * formatted mail costs one copy of the content instead of two. The wrapper is
+ * the whole styling story: `marked` emits bare `<p>`/`<h2>`, and mail clients
+ * have no sensible default for those. Inline styles only — clients strip
+ * `<style>` blocks and never fetch anything external.
+ *
+ * ponytail: no sanitizer. This is outbound mail written by the agent, which can
+ * already send arbitrary HTML through `email_send`'s `html` argument; the
+ * recipient's client is what sanitizes on render.
+ */
+export function markdownToHtml(markdown: string): string {
+  const body = marked.parse(markdown, { async: false, gfm: true });
+  return (
+    '<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;' +
+    'font-size:14px;line-height:1.5;color:#1a1a1a;max-width:40em">' +
+    body +
+    '</div>'
+  );
 }
 
 export type OutgoingMail = {
