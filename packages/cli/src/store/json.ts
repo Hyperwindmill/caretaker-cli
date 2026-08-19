@@ -9,6 +9,7 @@ import { encrypt, isEncrypted } from '../lib/encryption.js';
 // persists config (web server, VSCode extension) enforces the same rule on
 // `projects[].repositoryUrl` before calling saveConfig.
 export { validateRepositoryUrl } from '../lib/repo_url.js';
+export { validateProjectSlug, validateProjectIds, PROJECT_SLUG_RE } from '../lib/project_slug.js';
 
 // Path accessors are resolved at call time, not import time, so test runs
 // that share a process can switch CARETAKER_HOME between suites.
