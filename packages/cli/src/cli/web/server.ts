@@ -478,6 +478,7 @@ export async function startServer(port: number, host: string): Promise<void> {
 
   app.get('/api/tasks/:id/messages', async (c) => {
     const taskId = c.req.param('id');
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(taskId)) return c.json([], 200);
     try {
       const rows = (await runQuery(`SELECT * FROM task_messages WHERE taskId = '${taskId}'`)) as any[];
       rows.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
