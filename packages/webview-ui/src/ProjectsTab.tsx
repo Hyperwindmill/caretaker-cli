@@ -5,7 +5,7 @@ import { MessageList } from './MessageList.js';
 import type { ChatItem } from './App.js';
 
 interface Project {
-  id: number;
+  id: string;
   name: string;
   description: string;
   workingDir: string;
@@ -23,8 +23,9 @@ interface ChecklistItem {
 }
 
 interface Task {
-  id: number;
-  projectId: number;
+  id: string;
+  projectId: string;
+  seq?: number;
   title: string;
   objective: string;
   checklist: ChecklistItem[];
@@ -49,7 +50,7 @@ interface Task {
 
 interface TaskMessage {
   id: number;
-  taskId: number;
+  taskId: string;
   role: 'user' | 'assistant' | 'tool';
   messageType: 'chat' | 'heartbeat' | 'heartbeat_live' | 'system' | 'block' | 'tool_call' | 'yield' | 'review' | 'plan';
   content: string;
@@ -66,21 +67,19 @@ interface ProjectsTabProps {
 const LS_PROJECT_KEY = 'caretaker.taskView.selectedProjectId';
 const LS_ARCHIVED_KEY = 'caretaker.taskView.showArchived';
 
-function loadSavedProjectId(): number | null {
+function loadSavedProjectId(): string | null {
   try {
     const raw = localStorage.getItem(LS_PROJECT_KEY);
-    if (raw === null) return null;
-    const n = Number(raw);
-    return Number.isFinite(n) ? n : null;
+    return raw && raw.trim() ? raw.trim() : null;
   } catch {
     return null;
   }
 }
 
-function saveProjectId(id: number | null): void {
+function saveProjectId(id: string | null): void {
   try {
     if (id === null) localStorage.removeItem(LS_PROJECT_KEY);
-    else localStorage.setItem(LS_PROJECT_KEY, String(id));
+    else localStorage.setItem(LS_PROJECT_KEY, id);
   } catch {
     /* ignore */
   }
@@ -173,9 +172,9 @@ const PAGE_SIZE = 20;
 
 export function ProjectsTab({ agents }: ProjectsTabProps) {
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(loadSavedProjectId);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(loadSavedProjectId);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [taskMessages, setTaskMessages] = useState<TaskMessage[]>([]);
 
   // View router: which route is active in the main pane.
@@ -272,7 +271,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
     }
   };
 
-  const fetchTasks = async (projectId: number) => {
+  const fetchTasks = async (projectId: string) => {
     try {
       const qs = showArchived ? '?archived=true' : '';
       const res = await fetch(`/api/projects/${projectId}/tasks${qs}`);
@@ -285,7 +284,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
     }
   };
 
-  const fetchTaskMessages = async (taskId: number) => {
+  const fetchTaskMessages = async (taskId: string) => {
     try {
       const res = await fetch(`/api/tasks/${taskId}/messages`);
       if (res.ok) {
@@ -297,7 +296,7 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
     }
   };
 
-  const startThreadPolling = (taskId: number) => {
+  const startThreadPolling = (taskId: string) => {
     stopThreadPolling();
     // Poll for new messages every 3 seconds while viewing a task to show autonomous progress live!
     threadIntervalRef.current = setInterval(() => {
@@ -985,8 +984,8 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
 
 interface TaskListViewProps {
   projects: Project[];
-  selectedProjectId: number | null;
-  onProjectChange: (id: number) => void;
+  selectedProjectId: string | null;
+  onProjectChange: (id: string) => void;
   project: Project;
   agentName: string;
   agents: AgentSummary[];
@@ -1032,7 +1031,7 @@ function TaskListView({
           <select
             className="task-view__project-filter"
             value={selectedProjectId ?? undefined}
-            onChange={(e) => onProjectChange(Number(e.target.value))}
+            onChange={(e) => onProjectChange(e.target.value)}
             style={{
               background: 'var(--vscode-input-background, #252526)',
               color: 'var(--vscode-input-foreground)',

@@ -6,6 +6,9 @@ import { WarningIcon, FolderIcon, EditIcon, DeleteIcon } from './icons.js';
 import { validateRepositoryUrl } from './project_form_utils.js';
 import { ProjectRepoSync } from './ProjectRepoSync.js';
 
+// UX copy only — authoritative validation is host-side (lib/project_slug.ts).
+const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$/;
+
 interface ProjectsTabSettingsProps {
   config: CaretakerConfig;
   agents: AgentConfig[];
@@ -17,6 +20,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
   const [isCreating, setIsCreating] = useState(false);
 
   // Form states
+  const [slugText, setSlugText] = useState('');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [workingDir, setWorkingDir] = useState('');
@@ -38,6 +42,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
   const startEdit = (proj: ProjectConfig) => {
     setEditingProject(proj);
     setIsCreating(false);
+    setSlugText(proj.id);
     setName(proj.name);
     setDescription(proj.description || '');
     setWorkingDir(proj.workingDir);
@@ -58,6 +63,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
   const startCreate = () => {
     setIsCreating(true);
     setEditingProject(null);
+    setSlugText('');
     setName('');
     setDescription('');
     setWorkingDir('');
@@ -118,9 +124,13 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
     const updatedProjects = [...projects];
 
     if (isCreating) {
-      const nextId = projects.length > 0 ? Math.max(...projects.map((p) => p.id)) + 1 : 1;
+      const slug = slugText.trim();
+      if (!SLUG_RE.test(slug) || projects.some((p) => p.id === slug)) {
+        setErrorMsg('Project id must be 1-39 chars of a-z, 0-9 and hyphens (start/end alphanumeric) and unique.');
+        return;
+      }
       const newProj: ProjectConfig = {
-        id: nextId,
+        id: slug,
         name: trimmedName,
         description: trimmedDesc,
         workingDir: trimmedDir,
@@ -176,7 +186,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
     setErrorMsg(null);
   };
 
-  const deleteProject = (id: number) => {
+  const deleteProject = (id: string) => {
     if (!confirm('Are you sure you want to delete this project? All associated tasks will be permanently removed from disk.')) return;
     
     const updatedProjects = projects.filter((p) => p.id !== id);
@@ -214,6 +224,27 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
           <h4>{isCreating ? 'Register New Project' : `Edit Project: ${editingProject?.name}`}</h4>
 
           <div className="glass-form__body">
+          <div className="form-group">
+            <label htmlFor="project-id">Project ID {isCreating && <span style={{ opacity: 0.6 }}>(slug: a-z, 0-9, hyphens)</span>}</label>
+            {isCreating ? (
+              <input
+                id="project-id"
+                type="text"
+                placeholder="e.g. backend-service"
+                value={slugText}
+                onChange={(e) => setSlugText(e.target.value.toLowerCase())}
+              />
+            ) : (
+              <input
+                id="project-id"
+                type="text"
+                value={editingProject?.id || ''}
+                disabled
+                style={{ opacity: 0.7, cursor: 'not-allowed' }}
+              />
+            )}
+          </div>
+
           <div className="form-group">
             <label htmlFor="project-name">Project Name</label>
             <input

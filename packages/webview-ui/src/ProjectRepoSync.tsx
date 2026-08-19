@@ -12,7 +12,7 @@ function badgeText(s: RepoStatus): string {
 /** Repo badge + Clone/Sync button for a saved remote-backed project. Renders
  *  nothing where the API doesn't exist (non-web surfaces): the status fetch
  *  fails and the block stays hidden — same mechanism as the voice backend UI. */
-export function ProjectRepoSync({ projectId }: { projectId: number }) {
+export function ProjectRepoSync({ projectId }: { projectId: string }) {
   const [status, setStatus] = useState<RepoStatus | null>(null);
   const [progress, setProgress] = useState('');
   const [busy, setBusy] = useState(false);
