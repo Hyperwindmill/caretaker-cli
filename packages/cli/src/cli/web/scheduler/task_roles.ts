@@ -84,7 +84,7 @@ export async function activationStatus(
   project: ProjectConfig | undefined,
 ): Promise<'planning' | 'active'> {
   if (!resolvePlanningEnabled(task, project)) return 'active';
-  const messages = (await runQuery(`SELECT * FROM task_messages WHERE taskId = ${task.id}`)) as TaskMessage[];
+  const messages = (await runQuery(`SELECT * FROM task_messages WHERE taskId = '${task.id}'`)) as TaskMessage[];
   return messages.some((m) => m.messageType === 'plan') ? 'active' : 'planning';
 }
 

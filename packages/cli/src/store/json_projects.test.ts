@@ -11,7 +11,7 @@ const { saveConfig, configPath } = await import('./json.js');
 const { isEncrypted } = await import('../lib/encryption.js');
 
 const project = {
-  id: 1,
+  id: '1',
   name: 'p',
   description: '',
   workingDir: '',

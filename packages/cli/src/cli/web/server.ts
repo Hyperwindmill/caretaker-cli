@@ -307,13 +307,16 @@ export async function startServer(port: number, host: string): Promise<void> {
       if (repoUrlError) {
         return c.json({ error: repoUrlError }, 400);
       }
+      const id = String(body.id || '').trim();
+      if (!id) {
+        return c.json({ error: 'Project id is required.' }, 400);
+      }
       const config = await loadConfig();
       if (!config.projects) {
         config.projects = [];
       }
-      const nextId = config.projects.length > 0 ? Math.max(...config.projects.map((p) => p.id)) + 1 : 1;
       const project = {
-        id: nextId,
+        id,
         name,
         description: description || '',
         workingDir,
@@ -345,22 +348,20 @@ export async function startServer(port: number, host: string): Promise<void> {
 
   app.delete('/api/projects/:id', async (c) => {
     try {
-      const id = Number(c.req.param('id'));
+      const id = c.req.param('id');
+      if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) return c.json({ error: 'Invalid id' }, 400);
       const config = await loadConfig();
       const project = (config.projects || []).find((p) => p.id === id);
       if (config.projects) {
         config.projects = config.projects.filter((p) => p.id !== id);
         await saveConfig(config);
       }
-      // Ids are max+1, so deleting the highest one and creating a new project
-      // reuses the id — and with it ~/.caretaker/repos/<id>, which the new
-      // project would silently inherit (old code, old origin). Remove the
-      // managed clone; a user-chosen workingDir is never touched.
+      // Remove the managed clone; a user-chosen workingDir is never touched.
       const managed = project ? managedRepoDir(project) : null;
       if (managed) await fs.promises.rm(managed, { recursive: true, force: true });
       // Delete task messages first, then tasks — avoids orphaned message rows.
-      await runQuery(`DELETE FROM task_messages WHERE taskId IN (SELECT id FROM tasks WHERE projectId = ${id})`);
-      await runQuery(`DELETE FROM tasks WHERE projectId = ${id}`);
+      await runQuery(`DELETE FROM task_messages WHERE taskId IN (SELECT id FROM tasks WHERE projectId = '${id}')`);
+      await runQuery(`DELETE FROM tasks WHERE projectId = '${id}'`);
       return c.json({ ok: true });
     } catch (err) {
       return c.json({ error: String(err) }, 500);
@@ -371,7 +372,8 @@ export async function startServer(port: number, host: string): Promise<void> {
   // ndjson (voice-backend pattern); failures travel in-band as an `error` line
   // so URL/token problems are diagnosable from the UI.
   app.post('/api/projects/:id/sync', async (c) => {
-    const id = Number(c.req.param('id'));
+    const id = c.req.param('id');
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) return c.json({ error: 'Invalid id' }, 400);
     const config = await loadConfig();
     const project = (config.projects || []).find((p) => p.id === id);
     if (!project) return c.json({ error: 'not found' }, 404);
@@ -395,7 +397,8 @@ export async function startServer(port: number, host: string): Promise<void> {
 
   // Derived repo state — disk + in-flight set at request time, nothing stored.
   app.get('/api/projects/:id/repo-status', async (c) => {
-    const id = Number(c.req.param('id'));
+    const id = c.req.param('id');
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) return c.json({ error: 'Invalid id' }, 400);
     const config = await loadConfig();
     const project = (config.projects || []).find((p) => p.id === id);
     if (!project) return c.json({ error: 'not found' }, 404);
@@ -406,10 +409,11 @@ export async function startServer(port: number, host: string): Promise<void> {
 
   // Tasks REST endpoints
   app.get('/api/projects/:id/tasks', async (c) => {
-    const id = Number(c.req.param('id'));
+    const id = c.req.param('id');
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) return c.json({ error: 'Invalid id' }, 400);
     const includeArchived = c.req.query('archived') === 'true';
     try {
-      const rows = (await runQuery(`SELECT * FROM tasks WHERE projectId = ${id}`)) as Task[];
+      const rows = (await runQuery(`SELECT * FROM tasks WHERE projectId = '${id}'`)) as Task[];
       const filtered = includeArchived ? rows : rows.filter((t) => !t.archived);
       return c.json(filtered);
     } catch (err) {
@@ -418,7 +422,8 @@ export async function startServer(port: number, host: string): Promise<void> {
   });
 
   app.post('/api/projects/:id/tasks', async (c) => {
-    const projectId = Number(c.req.param('id'));
+    const projectId = c.req.param('id');
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(projectId)) return c.json({ error: 'Invalid id' }, 400);
     const body = await c.req.json();
     const { title, objective, checklist, startActive, agentId, plannerAgentId, reviewerAgentId, planningEnabled, reviewEnabled, sddEnabled, maxRunSeconds } = body;
 
@@ -469,9 +474,9 @@ export async function startServer(port: number, host: string): Promise<void> {
   });
 
   app.get('/api/tasks/:id/messages', async (c) => {
-    const taskId = Number(c.req.param('id'));
+    const taskId = c.req.param('id');
     try {
-      const rows = (await runQuery(`SELECT * FROM task_messages WHERE taskId = ${taskId}`)) as any[];
+      const rows = (await runQuery(`SELECT * FROM task_messages WHERE taskId = '${taskId}'`)) as any[];
       rows.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
       return c.json(rows);
     } catch (err) {
@@ -480,7 +485,7 @@ export async function startServer(port: number, host: string): Promise<void> {
   });
 
   app.post('/api/tasks/:id/messages', async (c) => {
-    const taskId = Number(c.req.param('id'));
+    const taskId = c.req.param('id');
     const body = await c.req.json();
     const { content } = body;
 
@@ -507,7 +512,7 @@ export async function startServer(port: number, host: string): Promise<void> {
   });
 
   app.post('/api/tasks/:id/status', async (c) => {
-    const taskId = Number(c.req.param('id'));
+    const taskId = c.req.param('id');
     const body = await c.req.json();
     const { status } = body;
 
@@ -533,7 +538,7 @@ export async function startServer(port: number, host: string): Promise<void> {
   });
 
   app.post('/api/tasks/:id/discard-worktree', async (c) => {
-    const taskId = Number(c.req.param('id'));
+    const taskId = c.req.param('id');
     const task = await getTaskById(taskId);
     if (!task) return c.json({ ok: false, error: 'not found' }, 404);
     if (!task.worktreePath) return c.json({ ok: false, error: 'no worktree' }, 400);
@@ -574,7 +579,7 @@ export async function startServer(port: number, host: string): Promise<void> {
   });
 
   app.post('/api/tasks/:id/archive', async (c) => {
-    const taskId = Number(c.req.param('id'));
+    const taskId = c.req.param('id');
     const task = await getTaskById(taskId);
     if (!task) return c.json({ ok: false, error: 'not found' }, 404);
 
@@ -596,7 +601,7 @@ export async function startServer(port: number, host: string): Promise<void> {
   });
 
   app.post('/api/tasks/:id/unarchive', async (c) => {
-    const taskId = Number(c.req.param('id'));
+    const taskId = c.req.param('id');
     const task = await getTaskById(taskId);
     if (!task) return c.json({ ok: false, error: 'not found' }, 404);
 
@@ -615,7 +620,7 @@ export async function startServer(port: number, host: string): Promise<void> {
   });
 
   app.delete('/api/tasks/:id', async (c) => {
-    const taskId = Number(c.req.param('id'));
+    const taskId = c.req.param('id');
     const task = await getTaskById(taskId);
     if (!task) return c.json({ ok: false, error: 'not found' }, 404);
 
@@ -662,7 +667,7 @@ export async function startServer(port: number, host: string): Promise<void> {
   });
 
   app.post('/api/tasks/:id/checklist-item', async (c) => {
-    const taskId = Number(c.req.param('id'));
+    const taskId = c.req.param('id');
     const body = await c.req.json();
     const { itemId, status: statusInput } = body;
 
@@ -684,7 +689,7 @@ export async function startServer(port: number, host: string): Promise<void> {
   });
 
   app.patch('/api/tasks/:id/agent', async (c) => {
-    const taskId = Number(c.req.param('id'));
+    const taskId = c.req.param('id');
     const body = await c.req.json();
     const { agentId, role } = body;
 
@@ -717,7 +722,7 @@ export async function startServer(port: number, host: string): Promise<void> {
   });
 
   app.patch('/api/tasks/:id/flags', async (c) => {
-    const taskId = Number(c.req.param('id'));
+    const taskId = c.req.param('id');
     const body = await c.req.json();
 
     const task = await getTaskById(taskId);
@@ -751,7 +756,7 @@ export async function startServer(port: number, host: string): Promise<void> {
   // guard (unlike …/agent): the objective is read at the start of each cycle, so
   // an edit simply lands on the next one — no reason to force a pause for a typo.
   app.patch('/api/tasks/:id', async (c) => {
-    const taskId = Number(c.req.param('id'));
+    const taskId = c.req.param('id');
     const body = await c.req.json();
 
     const hasTitle = 'title' in body;

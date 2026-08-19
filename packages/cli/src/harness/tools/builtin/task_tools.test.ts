@@ -24,7 +24,7 @@ function ctx(): ToolContext {
 }
 
 const base = {
-  projectId: 1,
+  projectId: '1',
   title: 'T',
   objective: 'o',
   checklist: [],
@@ -103,7 +103,7 @@ test('task_delete removes the task and its messages from the store', async () =>
   const after = await getTaskById(t.id);
   assert.equal(after, null);
 
-  const msgs = await runQuery(`SELECT * FROM task_messages WHERE taskId = ${t.id}`);
+  const msgs = await runQuery(`SELECT * FROM task_messages WHERE taskId = '${t.id}'`);
   assert.equal(msgs.length, 0);
 });
 
@@ -207,12 +207,12 @@ test('task_create stores agentId when provided', async () => {
   await saveConfig({
     port: 3000,
     providers: [],
-    projects: [{ id: 1, name: 'Test', description: '', workingDir: '/work', agentId: '', active: true }],
+    projects: [{ id: '1', name: 'Test', description: '', workingDir: '/work', agentId: '', active: true }],
   });
   await saveAgents([{ id: 'agent-special', name: 'Special', systemPrompt: '', provider: 'p', model: 'm', allowedTools: [], maxTurns: 10 }]);
 
   const result = await taskCreateTool.execute(
-    { project_id: 1, title: 'Task With Agent', objective: 'test', checklist: [{ text: 'do it' }], agent_id: 'agent-special' },
+    { project_id: '1', title: 'Task With Agent', objective: 'test', checklist: [{ text: 'do it' }], agent_id: 'agent-special' },
     ctx(),
   );
   const parsed = JSON.parse(result.content);
@@ -225,12 +225,12 @@ test('task_create rejects a non-existent agent_id', async () => {
   await saveConfig({
     port: 3000,
     providers: [],
-    projects: [{ id: 1, name: 'Test', description: '', workingDir: '/work', agentId: '', active: true }],
+    projects: [{ id: '1', name: 'Test', description: '', workingDir: '/work', agentId: '', active: true }],
   });
   await saveAgents([{ id: 'agent-real', name: 'Real', systemPrompt: '', provider: 'p', model: 'm', allowedTools: [], maxTurns: 10 }]);
 
   const result = await taskCreateTool.execute(
-    { project_id: 1, title: 'Bad Agent', objective: 'test', checklist: [{ text: 'do it' }], agent_id: 'agent-nonexistent' },
+    { project_id: '1', title: 'Bad Agent', objective: 'test', checklist: [{ text: 'do it' }], agent_id: 'agent-nonexistent' },
     ctx(),
   );
   const parsed = JSON.parse(result.content);
@@ -259,7 +259,7 @@ test('task_submit_plan on a planning task -> plan message persisted, status acti
   assert.equal(after!.status, 'active');
   assert.equal(after!.noProgressCount, 0);
 
-  const msgs = (await runQuery(`SELECT * FROM task_messages WHERE taskId = ${t.id}`)) as any[];
+  const msgs = (await runQuery(`SELECT * FROM task_messages WHERE taskId = '${t.id}'`)) as any[];
   const plan = msgs.find((m) => m.messageType === 'plan');
   assert.ok(plan);
   assert.equal(plan.content, '1. do X\n2. do Y');
@@ -301,9 +301,9 @@ test('task_complete on a git task with reviewEnabled=false on the project -> don
   await saveConfig({
     port: 3000,
     providers: [],
-    projects: [{ id: 77, name: 'NoReview', description: '', workingDir: '/w', agentId: 'a', active: true, reviewEnabled: false }],
+    projects: [{ id: '77', name: 'NoReview', description: '', workingDir: '/w', agentId: 'a', active: true, reviewEnabled: false }],
   } as any);
-  const t = await createTask({ ...base, projectId: 77, title: 'Project Review Off' });
+  const t = await createTask({ ...base, projectId: '77', title: 'Project Review Off' });
   const gt = await getTaskById(t.id);
   gt!.worktreePath = join(CT_HOME, 'worktrees', 'pro');
   gt!.branch = 'caretaker/task-pro';
@@ -343,12 +343,12 @@ test('task_create with start_active and default planning -> status planning; rol
   ] as any);
   await saveConfig({
     port: 3000, providers: [],
-    projects: [{ id: 9, name: 'RoleProj', description: '', workingDir: '/w', agentId: 'a-dev', active: true }],
+    projects: [{ id: '9', name: 'RoleProj', description: '', workingDir: '/w', agentId: 'a-dev', active: true }],
   } as any);
 
   const res = await taskCreateTool.execute(
     {
-      project_id: 9, title: 'Roles', objective: 'o', checklist: [{ text: 's1' }],
+      project_id: '9', title: 'Roles', objective: 'o', checklist: [{ text: 's1' }],
       start_active: true, agent_id: 'a-dev', planner_agent_id: 'a-plan', review_enabled: false,
     },
     ctx(),
@@ -386,10 +386,10 @@ test('task_set_agent with role planner/reviewer sets the role fields', async () 
 test('task_create persists sdd_enabled; task_get_state exposes it', async () => {
   await saveConfig({
     port: 3000, providers: [],
-    projects: [{ id: 11, name: 'SddProj', description: '', workingDir: '/w', agentId: 'a', active: true }],
+    projects: [{ id: '11', name: 'SddProj', description: '', workingDir: '/w', agentId: 'a', active: true }],
   } as any);
   const res = await taskCreateTool.execute(
-    { project_id: 11, title: 'Sdd', objective: 'o', checklist: [], sdd_enabled: true },
+    { project_id: '11', title: 'Sdd', objective: 'o', checklist: [], sdd_enabled: true },
     ctx(),
   );
   const parsed = JSON.parse(res.content);
@@ -467,7 +467,7 @@ test('task_update_details rejects an empty title and a missing task', async () =
   const after = await getTaskById(t.id);
   assert.equal(after!.title, 'Untouched');
 
-  const missing = await taskUpdateDetailsTool.execute({ task_id: 999999, title: 'x' }, ctx());
+  const missing = await taskUpdateDetailsTool.execute({ task_id: '999999', title: 'x' }, ctx());
   assert.match(JSON.parse(missing.content).error, /not found/i);
 });
 
@@ -482,7 +482,7 @@ test('task_update_details writes an audit message when the objective changes', a
   const t = await createTask({ ...base, title: 'T', objective: 'original goal' });
   await taskUpdateDetailsTool.execute({ task_id: t.id, objective: 'narrowed goal' }, ctx());
 
-  const messages = (await runQuery(`SELECT * FROM task_messages WHERE taskId = ${t.id}`)) as any[];
+  const messages = (await runQuery(`SELECT * FROM task_messages WHERE taskId = '${t.id}'`)) as any[];
   const audit = messages.find((m) => m.messageType === 'system' && m.content.includes('Objective'));
   assert.ok(audit, 'expected a system message mentioning "Objective"');
   assert.match(audit.content, /original goal/);
@@ -491,9 +491,9 @@ test('task_update_details writes an audit message when the objective changes', a
 
 test('task_update_details does not write an audit message when nothing changes', async () => {
   const t = await createTask({ ...base, title: 'Same', objective: 'same' });
-  const before = (await runQuery(`SELECT * FROM task_messages WHERE taskId = ${t.id}`)) as any[];
+  const before = (await runQuery(`SELECT * FROM task_messages WHERE taskId = '${t.id}'`)) as any[];
   await taskUpdateDetailsTool.execute({ task_id: t.id, title: 'Same', objective: 'same' }, ctx());
-  const after = (await runQuery(`SELECT * FROM task_messages WHERE taskId = ${t.id}`)) as any[];
+  const after = (await runQuery(`SELECT * FROM task_messages WHERE taskId = '${t.id}'`)) as any[];
   assert.equal(after.length, before.length, 'no new message should be written when nothing changed');
 });
 
@@ -503,7 +503,7 @@ test('project_list never exposes the repository token and resolves the managed w
     providers: [],
     projects: [
       {
-        id: 42,
+        id: '42',
         name: 'RemoteProj',
         description: '',
         workingDir: '', // managed clone: resolved at read time, not stored
@@ -521,8 +521,8 @@ test('project_list never exposes the repository token and resolves the managed w
   assert.ok(!res.content.includes('ghp_plaintext_secret'), 'plaintext token leaked to the agent');
   assert.ok(!res.content.includes('repositoryToken'), 'token field leaked to the agent');
 
-  const listed = JSON.parse(res.content) as Array<{ id: number; workingDir: string }>;
-  const proj = listed.find((p) => p.id === 42);
+  const listed = JSON.parse(res.content) as Array<{ id: string; workingDir: string }>;
+  const proj = listed.find((p) => p.id === '42');
   assert.ok(proj, 'project 42 should be listed');
   // Agents must see the effective directory, not the blank stored value.
   assert.equal(proj!.workingDir, join(CT_HOME, 'repos', '42'));
@@ -554,7 +554,7 @@ test('task_delete pushes the branch to the remote before removing the worktree',
     providers: [],
     projects: [
       {
-        id: 55,
+        id: '55',
         name: 'DelPush',
         description: '',
         workingDir: repo,
@@ -565,8 +565,8 @@ test('task_delete pushes the branch to the remote before removing the worktree',
     ],
   } as any);
 
-  const t = await createTask({ ...base, projectId: 55, title: 'Delete pushes' });
-  const wt = await ensureWorktree(repo, 55, t.id, 'Delete pushes');
+  const t = await createTask({ ...base, projectId: '55', title: 'Delete pushes' });
+  const wt = await ensureWorktree(repo, t.id, 'Delete pushes');
   const stored = await getTaskById(t.id);
   stored!.branch = wt.branch;
   stored!.worktreePath = wt.worktreePath;

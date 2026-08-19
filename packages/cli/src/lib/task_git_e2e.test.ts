@@ -56,7 +56,7 @@ function mockFetchResponse(content: string): Response {
 async function clearDb(db: any) {
   const tasks = (await db.query('SELECT * FROM tasks')) as any[];
   for (const t of tasks) {
-    await db.query(`DELETE FROM tasks WHERE id = ${t.id}`);
+    await db.query(`DELETE FROM tasks WHERE id = '${t.id}'`);
   }
   const messages = (await db.query('SELECT * FROM task_messages')) as any[];
   for (const m of messages) {
@@ -81,7 +81,7 @@ test('End-to-end task heartbeat worktree lifecycle', async () => {
     ],
     projects: [
       {
-        id: 101,
+        id: '101',
         name: 'E2E Git Project',
         description: 'Test project',
         workingDir: repo,
@@ -105,7 +105,7 @@ test('End-to-end task heartbeat worktree lifecycle', async () => {
 
   // Create a task
   const task = await createTask({
-    projectId: 101,
+    projectId: '101',
     title: 'E2E Task Title',
     objective: 'Create a test file',
     checklist: [
@@ -120,7 +120,7 @@ test('End-to-end task heartbeat worktree lifecycle', async () => {
 
   // Mock fetch to simulate agent behavior
   __setFetch(async () => {
-    await writeFile(join(CT_HOME, 'worktrees', '101-1', 'work.txt'), 'done');
+    await writeFile(join(CT_HOME, 'worktrees', task.id, 'work.txt'), 'done');
     return mockFetchResponse('Mock agent output text.');
   });
 
@@ -166,7 +166,7 @@ test('End-to-end task heartbeat worktree lifecycle', async () => {
   }
 });
 
-async function seedReviewingTask(): Promise<{ repo: string; taskId: number }> {
+async function seedReviewingTask(): Promise<{ repo: string; taskId: string }> {
   const db = getDb();
   await clearDb(db);
   await rm(join(CT_HOME, 'worktrees'), { recursive: true, force: true });
@@ -174,19 +174,19 @@ async function seedReviewingTask(): Promise<{ repo: string; taskId: number }> {
   await saveConfig({
     port: 3000,
     providers: [{ name: 'mock-provider', endpoint: 'http://localhost:8000', apiKey: 'test-key' }],
-    projects: [{ id: 202, name: 'Review Project', description: '', workingDir: repo, agentId: 'mock-agent', active: true }],
+    projects: [{ id: '202', name: 'Review Project', description: '', workingDir: repo, agentId: 'mock-agent', active: true }],
   });
   await saveAgents([{ id: 'mock-agent', name: 'Mock', systemPrompt: 'mock', provider: 'mock-provider', model: 'mock-model', allowedTools: [], maxTurns: 30 }]);
 
   const task = await createTask({
-    projectId: 202, title: 'Review Task', objective: 'Do the thing',
+    projectId: '202', title: 'Review Task', objective: 'Do the thing',
     checklist: [{ id: '1', text: 'Step 1', status: 'pending', order: 0 }],
     status: 'active', blockedReason: null, noProgressCount: 0, maxNoProgress: 5, lockedAt: null,
   });
 
   // One active tick creates the worktree + branch (agent just writes a file).
   __setFetch(async () => {
-    const wtPath = join(CT_HOME, 'worktrees', `202-${task.id}`);
+    const wtPath = join(CT_HOME, 'worktrees', task.id);
     await writeFile(join(wtPath, 'work.txt'), 'working');
     return mockFetchResponse('working');
   });

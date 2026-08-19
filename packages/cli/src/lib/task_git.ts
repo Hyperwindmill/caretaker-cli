@@ -109,7 +109,7 @@ export async function pushBranch(
 }
 
 export function projectWorkingDir(project: {
-  id: number;
+  id: string;
   workingDir?: string | null;
   repositoryUrl?: string | null;
 }): string {
@@ -117,7 +117,7 @@ export function projectWorkingDir(project: {
   if (dir) return dir;
   // Remote-backed with no explicit dir: managed clone under the data dir.
   // Resolved at call time (dataDir() follows CARETAKER_HOME), never persisted.
-  if ((project.repositoryUrl || '').trim()) return join(dataDir(), 'repos', String(project.id));
+  if ((project.repositoryUrl || '').trim()) return join(dataDir(), 'repos', project.id);
   return '';
 }
 
@@ -128,7 +128,7 @@ export function projectWorkingDir(project: {
  * anything null must never be touched.
  */
 export function managedRepoDir(project: {
-  id: number;
+  id: string;
   workingDir?: string | null;
   repositoryUrl?: string | null;
 }): string | null {
@@ -139,7 +139,7 @@ export function managedRepoDir(project: {
 export type ProjectRepoStatus ={ state: 'absent' | 'cloned' | 'broken'; branch?: string; commit?: string };
 
 export async function projectRepoStatus(project: {
-  id: number;
+  id: string;
   workingDir?: string | null;
   repositoryUrl?: string | null;
 }): Promise<ProjectRepoStatus> {
@@ -174,7 +174,7 @@ export type SyncProgress = {
  * callers turn that into a blocked task / in-band error line.
  */
 export async function* syncProjectRepo(project: {
-  id: number;
+  id: string;
   workingDir?: string | null;
   repositoryUrl?: string | null;
   repositoryToken?: string | null;
@@ -259,8 +259,8 @@ function slug(title: string): string {
   );
 }
 
-function worktreePathFor(projectId: number, taskId: number): string {
-  return join(dataDir(), 'worktrees', `${projectId}-${taskId}`);
+function worktreePathFor(taskId: string): string {
+  return join(dataDir(), 'worktrees', taskId); // task id is already <projectId>-<seq>
 }
 
 /**
@@ -287,13 +287,15 @@ export async function agentDirIn(worktreePath: string, projectWorkingDir: string
 
 export async function ensureWorktree(
   projectWorkingDir: string,
-  projectId: number,
-  taskId: number,
+  taskId: string,
   title: string,
+  existingBranch?: string | null,
 ): Promise<{ branch: string; worktreePath: string; agentWorkingDir: string }> {
   const repoRoot = await git(projectWorkingDir, ['rev-parse', '--show-toplevel']);
-  const branch = `caretaker/task-${taskId}-${slug(title)}`;
-  const worktreePath = worktreePathFor(projectId, taskId);
+  // The persisted branch is authoritative: re-deriving under the new id scheme
+  // would produce a different name and orphan a lost-path task's commits.
+  const branch = existingBranch || `caretaker/task-${taskId}-${slug(title)}`;
+  const worktreePath = worktreePathFor(taskId);
 
   try {
     await git(repoRoot, ['worktree', 'add', '-b', branch, worktreePath, 'HEAD']);
