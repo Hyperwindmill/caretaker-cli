@@ -75,8 +75,15 @@ costs the zero-rename property below, which is worth more.
 ## Slug rules
 
 ```
-^[a-z0-9][a-z0-9-]{0,38}$
+^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$
 ```
+
+(1–39 chars, starts **and ends** alphanumeric. The trailing-alnum requirement is
+not cosmetic: the docker image reference grammar —
+`[a-z0-9]+((\.|_|__|-+)[a-z0-9]+)*` — requires every name component to end
+alphanumeric, so a slug like `foo-` would make
+`caretaker-project-foo-:latest` an invalid reference and break the Dockerfile
+build path.)
 
 One regex serves five constraints at once, which is why a slug works where a
 uuid was unpleasant: docker container names, git ref names, filesystem path
@@ -101,27 +108,50 @@ Enforcement follows the `validateRepositoryUrl` precedent exactly
 ([lib/repo_url.ts](../../../packages/cli/src/lib/repo_url.ts)): a
 `lib/project_slug.ts` module is the authority, the webview may hold its own copy
 for form feedback only, and **every** write path into `caretaker.json` calls the
-authoritative one. There are two such paths, and the second is the one that
-matters:
+authoritative one. There are **three** such paths — the same three
+`validateRepositoryUrl` already guards, which is why it is re-exported from the
+`./store` entry point:
 
 - `POST /api/projects` ([server.ts:301](../../../packages/cli/src/cli/web/server.ts#L301)).
-- The settings websocket `saveConfig` handler
-  ([server.ts:1146](../../../packages/cli/src/cli/web/server.ts#L1146)), which
-  receives the **whole** config from the client — project ids included. This is
-  where the immutability check has to live, because it is the only path that can
-  change an existing project's id, and it already iterates the project array to
-  validate repository URLs.
+  Note: no UI calls this route today — it is external API surface. The real
+  creation path is the settings form, which goes through `saveConfig`.
+- The web server's settings websocket `saveConfig` handler
+  ([server.ts:1146](../../../packages/cli/src/cli/web/server.ts#L1146)).
+- The VSCode sidebar's own `saveConfig` handler
+  ([sidebar.ts:376](../../../packages/vscode-extension/src/sidebar.ts#L376)) —
+  the extension imports the store directly and never passes through the web
+  server.
+
+Both `saveConfig` handlers receive the **whole** config from the client —
+project ids included — so they are the paths that can change an existing
+project's id, and the immutability check has to live in both. They already
+iterate the project array to validate repository URLs; the slug checks join
+that loop.
 
 ## Task sequence
 
+`Task` gains a persisted `seq: number` field — the sequence is **stored, never
+derived from the id**. Deriving it would mean parsing the composite id, which
+the opacity rule above forbids; the field is what keeps that rule free of
+exceptions. The migration pass seeds `seq` from the old numeric task id.
+
 ```ts
-const seq = Math.max(project.nextTaskSeq ?? 0, ...seqsOfTasksInProject) + 1;
+const seq = Math.max(project.nextTaskSeq ?? 0, ...tasksInProject.map(t => t.seq)) + 1;
 ```
 
 `nextTaskSeq` is a high-water mark persisted on the project record. The counter
 makes the sequence monotonic (no reuse after deletion); the `max` over existing
-tasks makes it self-healing if the counter is lost or the record is hand-edited;
-the `?? 0` seeds it on existing installs, so there is nothing to migrate.
+tasks' `seq` fields makes it self-healing if the counter is lost or the record
+is hand-edited; the `?? 0` seeds it on existing installs, so there is nothing to
+migrate.
+
+A second reason the self-heal earns its place: `nextTaskSeq` lives on the
+project record in `caretaker.json`, and both `saveConfig` handlers overwrite
+that file wholesale from a client-held snapshot — a settings form opened before
+a task was created and saved after silently rolls the counter back. The `max`
+term heals every such rollback except the case where the highest task was also
+deleted in between; that residue is accepted (same class as the unlocked
+counter ceiling below).
 
 `createTask` stops using `$auto` and inserts an explicit id. That removes the
 post-insert retrieval hack
@@ -137,7 +167,7 @@ and never read by a human.
 **Ceiling, to be marked in code:** the read-modify-write on `nextTaskSeq` is not
 locked, so two processes against the same `CARETAKER_HOME` (the web server and a
 `caretaker-cli mcp` stdio server) could compute the same sequence. The `max` term
-limits the damage to a genuine race, and the exposure is no worse than today's
+limits the damage to a genuine race (or the snapshot rollback above), and the exposure is no worse than today's
 `max+1`. Upgrade path: move the counter into the folder DB behind the existing
 query queue.
 
@@ -164,12 +194,15 @@ slug. No rename affordance is offered (see immutability above).
 Two coercion points:
 
 1. `loadConfig()` — `id: String(p.id)` for each project.
-2. One idempotent pass over the `tasks` and `task_messages` collections, guarded on
-   `typeof projectId === 'number'`, placed in `getDb()`
-   ([db.ts:81](../../../packages/cli/src/store/db.ts#L81)) — the single
-   chokepoint every surface goes through, including `caretaker-cli mcp`, which
-   skips the boot work in `index.ts`. The pass rewrites `Task.id` and
-   `Task.projectId`, and `TaskMessage.taskId`.
+2. One idempotent pass over the `tasks` and `task_messages` collections,
+   guarded on `typeof projectId === 'number'`. `getDb()`
+   ([db.ts:81](../../../packages/cli/src/store/db.ts#L81)) is synchronous, so
+   the pass cannot literally live there: it runs as the **first operation on
+   the `runQuery` queue** — the queue already serialises every store access, so
+   every query from every surface (including `caretaker-cli mcp`, which skips
+   the boot work in `index.ts`) waits behind it by construction. The pass
+   rewrites `Task.id` and `Task.projectId`, seeds `Task.seq` from the old
+   numeric id, and rewrites `TaskMessage.taskId`.
 
 The rewrite pass is required rather than read-time coercion because tasks are
 queried by `projectId` ([server.ts:412](../../../packages/cli/src/cli/web/server.ts#L412)):
@@ -227,6 +260,16 @@ Most are type-level and `tsc` finds them. The edits that are not mechanical:
 - **`locks.ts`** — `runningTaskControllers` and `abortRunningTask` are typed
   `number`, `syncingProjects` too; all become `string`.
 - **3 webview files** — types, plus a slug field in the project creation form.
+  The form is also the **second id-assignment site**, and it is client-side:
+  [ProjectsTabSettings.tsx:121](../../../packages/webview-ui/src/ProjectsTabSettings.tsx#L121)
+  computes its own `Math.max(...ids) + 1` and creates the project through
+  `saveConfig`. It stops computing ids and sends the user's slug instead; the
+  host-side validation above is what actually enforces it.
+- **19 MCP tool schemas** in `task_tools.ts` declare `task_id`/`project_id` as
+  `{ type: 'number' }`, with 19 matching `Number(args.…)` coercions. The
+  schemas become `{ type: 'string' }` and the coercions become `String(args.…)`
+  — which also keeps external MCP clients that still pass migrated numeric ids
+  (`3`, `17`-style) working, since `String()` accepts both.
 
 ### Where a mechanical refactor will silently go wrong
 
@@ -242,9 +285,22 @@ and `scheduler-logs/<id>.jsonl`
 by service id too.
 
 `tsc` will not flag a wrong edit in any of those places. They must be left
-alone. Note that the composite task id makes the pre-existing shared keyspace in
+alone. The same blindness applies in the opposite direction to the 19 MCP tool
+schemas above: they are JSON literals, so `tsc` will not flag a **missed** edit
+either — the checklist has to carry them explicitly. Note that the composite task id makes the pre-existing shared keyspace in
 `runningTasks` *less* collision-prone than it is today, not more — a
 `caretaker-cli-17` cannot look like a service uuid.
+
+## Checked and sound (so the next review need not re-check)
+
+- **No ordering anywhere depends on numeric ids.** Every sort in the affected
+  surfaces is by `createdAt`, `updatedAt`, or `name`
+  (task_tools.ts 39/404/549, server.ts 475). Lexicographic string ids break
+  nothing.
+- **Composite task ids are globally unique by construction.** The seq is the
+  final segment and contains no hyphen, so `slugA-seqA = slugB-seqB` forces
+  `seqA = seqB` and `slugA = slugB`. `worktrees/<task.id>` needs no project
+  qualifier.
 
 ## Deliberately unchanged
 
@@ -262,9 +318,9 @@ Node's test runner via `tsx`, co-located `*.test.ts`.
 - Migration: project `3` → `"3"`; task `17` in project `3` → `"3-17"`; the
   derived worktree path and container name are byte-identical to the pre-migration
   values. The pass is idempotent when run twice.
-- Slug validation: charset rejections (uppercase, leading hyphen, `_`, `..`,
+- Slug validation: charset rejections (uppercase, leading **and trailing** hyphen, `_`, `..`,
   `/`, over-length), duplicate rejection, and rejection of a changed id for an
-  existing project through the `saveConfig` path.
+  existing project through the `saveConfig` paths (web **and** VSCode sidebar — the validator is shared, but each handler must call it).
 - Task sequence: create, delete the highest, create again — the new id is not
   the deleted one. Counter absent (`nextTaskSeq` unset) seeds from existing
   tasks.
