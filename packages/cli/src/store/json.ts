@@ -86,7 +86,10 @@ async function writeJson(path: string, data: unknown): Promise<void> {
 }
 
 export async function loadConfig(): Promise<CaretakerConfig> {
-  return readJsonOrDefault(configPath(), defaultConfig);
+  const cfg = await readJsonOrDefault(configPath(), defaultConfig);
+  // Numeric project ids from older versions become their string slugs ("3").
+  for (const p of cfg.projects || []) (p as any).id = String(p.id);
+  return cfg;
 }
 
 export async function saveConfig(c: CaretakerConfig): Promise<void> {

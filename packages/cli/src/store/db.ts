@@ -96,6 +96,26 @@ export function getDb(): Store {
 }
 
 let queryQueue: Promise<any> = Promise.resolve();
+let migrationPromise: Promise<void> | null = null;
+
+/** One-time, idempotent rewrite of numeric ids to their string composites:
+ *  project 3 → "3", task 17 in project 3 → "3-17". Chosen so every derived
+ *  artifact name (worktrees/3-17, caretaker-task-3-17, repos/3) is
+ *  byte-identical to what is already on disk — nothing moves. Runs as the
+ *  first operation on the query queue, so every surface waits for it. */
+async function migrateNumericIds(): Promise<void> {
+  const store = getDb();
+  const tasks = (await store.query('SELECT * FROM tasks')) as any[];
+  const legacy = tasks.filter((t) => typeof t.id === 'number');
+  for (const t of legacy) {
+    const oldId = t.id as number;
+    const projectId = String(t.projectId);
+    const newId = `${projectId}-${oldId}`;
+    await store.query(`DELETE FROM tasks WHERE id = ${oldId}`);
+    await store.query(`INSERT INTO tasks ${JSON.stringify({ ...t, id: newId, projectId, seq: oldId })}`);
+    await store.query(`UPDATE task_messages SET taskId = '${newId}' WHERE taskId = ${oldId}`);
+  }
+}
 
 export function tryNormalizeChecklistStatus(status: any): 'pending' | 'in_progress' | 'done' | 'skipped' | null {
   const s = String(status || '').trim().toLowerCase();
@@ -121,7 +141,11 @@ function safeId(id: string): boolean {
 }
 
 export async function runQuery(sql: string): Promise<any> {
-  const op = () => getDb().query(sql);
+  if (!migrationPromise) migrationPromise = migrateNumericIds();
+  const op = async () => {
+    await migrationPromise;
+    return getDb().query(sql);
+  };
   const resultPromise = queryQueue.then(op);
   queryQueue = resultPromise.catch(() => {});
   return resultPromise;
