@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { containerName, containerRunArgs, containerExecArgs, isDockerfilePath } from './docker.js';
 
 test('containerName is deterministic', () => {
-  assert.equal(containerName(3, 42), 'caretaker-task-3-42');
+  assert.equal(containerName('3-42'), 'caretaker-task-3-42');
 });
 
 test('containerRunArgs: --entrypoint sleep keep-alive overrides the image entrypoint', () => {

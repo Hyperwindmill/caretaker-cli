@@ -79,12 +79,17 @@ export type ServiceConfig = {
 export type ScheduledTaskConfig = ServiceConfig;
 
 export type ProjectConfig = {
-  id: number;
+  /** Opaque slug (see lib/project_slug.ts). Immutable after creation; embedded in container/image names, git refs, and paths under ~/.caretaker/. */
+  id: string;
   name: string;
   description: string;
   workingDir: string;
   agentId: string;
   active: boolean;
+  /** High-water mark for task sequence numbers in this project. Tasks get
+   *  id `<projectId>-<seq>`; the counter never decreases, so a deleted
+   *  task's id is never reused. Self-heals from existing tasks' seq. */
+  nextTaskSeq?: number | null;
   /** Optional planner-role agent; falls back to the developer chain when unset. */
   plannerAgentId?: string | null;
   /** Optional reviewer-role agent; falls back to the developer chain when unset. */

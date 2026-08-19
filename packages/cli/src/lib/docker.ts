@@ -8,8 +8,8 @@ import { commandEnv } from '../harness/tools/builtin/shell-env.js';
 const exec = promisify(execFile);
 
 /** Deterministic container name for a task — the caller's naming policy. */
-export function containerName(projectId: number, taskId: number): string {
-  return `caretaker-task-${projectId}-${taskId}`;
+export function containerName(taskId: string): string {
+  return `caretaker-task-${taskId}`;
 }
 
 /** `docker run` argv. Mount is identical-path (`-v <root>:<root>`) so host and

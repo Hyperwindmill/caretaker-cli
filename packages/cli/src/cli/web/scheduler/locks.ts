@@ -12,10 +12,10 @@ export const runningTasks = new Set<string>();
  * for the current cycle to burn through its turns — the whole point of Pause
  * when an agent has gone off the rails.
  */
-export const runningTaskControllers = new Map<number, AbortController>();
+export const runningTaskControllers = new Map<string, AbortController>();
 
 /** Abort the in-flight run for a task, if one is registered. Returns whether it fired. */
-export function abortRunningTask(taskId: number): boolean {
+export function abortRunningTask(taskId: string): boolean {
   const ctrl = runningTaskControllers.get(taskId);
   if (!ctrl) return false;
   ctrl.abort();
@@ -27,4 +27,4 @@ export function abortRunningTask(taskId: number): boolean {
  * the heartbeat's pre-worktree sync and POST /api/projects/:id/sync so the
  * two can never race a clone. Derived state only; never persisted.
  */
-export const syncingProjects = new Set<number>();
+export const syncingProjects = new Set<string>();

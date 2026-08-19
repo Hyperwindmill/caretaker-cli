@@ -21,13 +21,13 @@ export const getTaskStateTool: Tool = {
   parameters: {
     type: 'object',
     properties: {
-      task_id: { type: 'number' },
+      task_id: { type: 'string' },
     },
     required: ['task_id'],
   },
   execute: async (args: any): Promise<ToolResult> => {
     const db = getDb();
-    const taskId = Number(args.task_id);
+    const taskId = String(args.task_id);
 
     const task = await getTaskById(taskId);
     if (!task) return err(`Task ${taskId} not found`);
@@ -35,7 +35,7 @@ export const getTaskStateTool: Tool = {
     const config = await loadConfig();
     const project = (config.projects || []).find((p) => p.id === task.projectId) || null;
 
-    const messages = (await db.query(`SELECT * FROM task_messages WHERE taskId = ${taskId}`)) as TaskMessage[];
+    const messages = (await db.query(`SELECT * FROM task_messages WHERE taskId = '${taskId}'`)) as TaskMessage[];
     messages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
     return {
@@ -74,7 +74,7 @@ export const updateChecklistItemTool: Tool = {
   parameters: {
     type: 'object',
     properties: {
-      task_id: { type: 'number' },
+      task_id: { type: 'string' },
       item_id: { type: 'string' },
       status: { type: 'string', enum: ['pending', 'in_progress', 'done', 'skipped'] },
     },
@@ -82,7 +82,7 @@ export const updateChecklistItemTool: Tool = {
   },
   execute: async (args: any): Promise<ToolResult> => {
     const db = getDb();
-    const taskId = Number(args.task_id);
+    const taskId = String(args.task_id);
     const itemId = String(args.item_id);
     const statusInput = args.status;
 
@@ -113,7 +113,7 @@ export const updateChecklistTool: Tool = {
   parameters: {
     type: 'object',
     properties: {
-      task_id: { type: 'number' },
+      task_id: { type: 'string' },
       checklist: {
         type: 'array',
         items: {
@@ -131,7 +131,7 @@ export const updateChecklistTool: Tool = {
   },
   execute: async (args: any): Promise<ToolResult> => {
     const db = getDb();
-    const taskId = Number(args.task_id);
+    const taskId = String(args.task_id);
     const checklistInput = args.checklist as any[];
 
     const task = await getTaskById(taskId);
@@ -168,14 +168,14 @@ export const taskUpdateDetailsTool: Tool = {
   parameters: {
     type: 'object',
     properties: {
-      task_id: { type: 'number' },
+      task_id: { type: 'string' },
       title: { type: 'string' },
       objective: { type: 'string' },
     },
     required: ['task_id'],
   },
   execute: async (args: any): Promise<ToolResult> => {
-    const taskId = Number(args.task_id);
+    const taskId = String(args.task_id);
     const hasTitle = args.title !== undefined;
     const hasObjective = args.objective !== undefined;
     if (!hasTitle && !hasObjective) return err('Nothing to update: pass title, objective, or both.');
@@ -236,14 +236,14 @@ export const addMessageTool: Tool = {
   parameters: {
     type: 'object',
     properties: {
-      task_id: { type: 'number' },
+      task_id: { type: 'string' },
       content: { type: 'string' },
     },
     required: ['task_id', 'content'],
   },
   execute: async (args: any): Promise<ToolResult> => {
     const db = getDb();
-    const taskId = Number(args.task_id);
+    const taskId = String(args.task_id);
     const content = String(args.content);
 
     await addTaskMessage({
@@ -271,14 +271,14 @@ export const completeTaskTool: Tool = {
   parameters: {
     type: 'object',
     properties: {
-      task_id: { type: 'number' },
+      task_id: { type: 'string' },
       summary: { type: 'string' },
     },
     required: ['task_id'],
   },
   execute: async (args: any): Promise<ToolResult> => {
     const db = getDb();
-    const taskId = Number(args.task_id);
+    const taskId = String(args.task_id);
     const summary = args.summary ? String(args.summary) : '';
 
     const task = await getTaskById(taskId);
@@ -321,14 +321,14 @@ export const blockTaskTool: Tool = {
   parameters: {
     type: 'object',
     properties: {
-      task_id: { type: 'number' },
+      task_id: { type: 'string' },
       reason: { type: 'string' },
     },
     required: ['task_id', 'reason'],
   },
   execute: async (args: any): Promise<ToolResult> => {
     const db = getDb();
-    const taskId = Number(args.task_id);
+    const taskId = String(args.task_id);
     const reason = String(args.reason);
 
     const task = await getTaskById(taskId);
@@ -359,14 +359,14 @@ export const yieldTaskTool: Tool = {
   parameters: {
     type: 'object',
     properties: {
-      task_id: { type: 'number' },
+      task_id: { type: 'string' },
       notes: { type: 'string' },
     },
     required: ['task_id'],
   },
   execute: async (args: any): Promise<ToolResult> => {
     const db = getDb();
-    const taskId = Number(args.task_id);
+    const taskId = String(args.task_id);
     const notes = args.notes ? String(args.notes) : '';
 
     const task = await getTaskById(taskId);
@@ -427,7 +427,7 @@ export const taskCreateTool: Tool = {
   parameters: {
     type: 'object',
     properties: {
-      project_id: { type: 'number' },
+      project_id: { type: 'string' },
       title: { type: 'string' },
       objective: { type: 'string' },
       checklist: {
@@ -449,7 +449,7 @@ export const taskCreateTool: Tool = {
   },
   execute: async (args: any): Promise<ToolResult> => {
     const db = getDb();
-    const projectId = Number(args.project_id);
+    const projectId = String(args.project_id);
     const title = String(args.title);
     const objective = String(args.objective);
     const checklistInput = args.checklist as any[];
@@ -558,14 +558,14 @@ export const taskUnblockTool: Tool = {
   parameters: {
     type: 'object',
     properties: {
-      task_id: { type: 'number' },
+      task_id: { type: 'string' },
       message: { type: 'string' },
     },
     required: ['task_id'],
   },
   execute: async (args: any): Promise<ToolResult> => {
     const db = getDb();
-    const taskId = Number(args.task_id);
+    const taskId = String(args.task_id);
     const message = args.message ? String(args.message) : '';
 
     const task = await getTaskById(taskId);
@@ -600,13 +600,13 @@ export const taskActivateTool: Tool = {
   parameters: {
     type: 'object',
     properties: {
-      task_id: { type: 'number' },
+      task_id: { type: 'string' },
     },
     required: ['task_id'],
   },
   execute: async (args: any): Promise<ToolResult> => {
     const db = getDb();
-    const taskId = Number(args.task_id);
+    const taskId = String(args.task_id);
 
     const task = await getTaskById(taskId);
     if (!task) return err(`Task ${taskId} not found`);
@@ -638,14 +638,14 @@ export const taskUnpauseTool: Tool = {
   parameters: {
     type: 'object',
     properties: {
-      task_id: { type: 'number' },
+      task_id: { type: 'string' },
       message: { type: 'string' },
     },
     required: ['task_id'],
   },
   execute: async (args: any): Promise<ToolResult> => {
     const db = getDb();
-    const taskId = Number(args.task_id);
+    const taskId = String(args.task_id);
     const message = args.message ? String(args.message) : '';
 
     const task = await getTaskById(taskId);
@@ -681,12 +681,12 @@ export const taskDiscardWorktreeTool: Tool = {
   parameters: {
     type: 'object',
     properties: {
-      task_id: { type: 'number' },
+      task_id: { type: 'string' },
     },
     required: ['task_id'],
   },
   execute: async (args: any): Promise<ToolResult> => {
-    const taskId = Number(args.task_id);
+    const taskId = String(args.task_id);
     const task = await getTaskById(taskId);
     if (!task) return err(`Task ${taskId} not found`);
     if (!task.worktreePath) return err(`Task ${taskId} has no active worktree`);
@@ -730,12 +730,12 @@ export const taskArchiveTool: Tool = {
   parameters: {
     type: 'object',
     properties: {
-      task_id: { type: 'number' },
+      task_id: { type: 'string' },
     },
     required: ['task_id'],
   },
   execute: async (args: any): Promise<ToolResult> => {
-    const taskId = Number(args.task_id);
+    const taskId = String(args.task_id);
     const task = await getTaskById(taskId);
     if (!task) return err(`Task ${taskId} not found`);
 
@@ -766,12 +766,12 @@ export const taskUnarchiveTool: Tool = {
   parameters: {
     type: 'object',
     properties: {
-      task_id: { type: 'number' },
+      task_id: { type: 'string' },
     },
     required: ['task_id'],
   },
   execute: async (args: any): Promise<ToolResult> => {
-    const taskId = Number(args.task_id);
+    const taskId = String(args.task_id);
     const task = await getTaskById(taskId);
     if (!task) return err(`Task ${taskId} not found`);
 
@@ -798,12 +798,12 @@ export const taskDeleteTool: Tool = {
   parameters: {
     type: 'object',
     properties: {
-      task_id: { type: 'number' },
+      task_id: { type: 'string' },
     },
     required: ['task_id'],
   },
   execute: async (args: any): Promise<ToolResult> => {
-    const taskId = Number(args.task_id);
+    const taskId = String(args.task_id);
     const task = await getTaskById(taskId);
     if (!task) return err(`Task ${taskId} not found`);
 
@@ -858,7 +858,7 @@ export const taskSetAgentTool: Tool = {
   parameters: {
     type: 'object',
     properties: {
-      task_id: { type: 'number' },
+      task_id: { type: 'string' },
       agent_id: { type: 'string', description: 'The agent ID to assign, or null to clear the override.' },
       role: {
         type: 'string',
@@ -869,7 +869,7 @@ export const taskSetAgentTool: Tool = {
     required: ['task_id'],
   },
   execute: async (args: any): Promise<ToolResult> => {
-    const taskId = Number(args.task_id);
+    const taskId = String(args.task_id);
     const agentId = args.agent_id != null ? String(args.agent_id) : null;
     const role = args.role === 'planner' || args.role === 'reviewer' ? args.role : 'developer';
 
@@ -908,13 +908,13 @@ export const submitPlanTool: Tool = {
   parameters: {
     type: 'object',
     properties: {
-      task_id: { type: 'number' },
+      task_id: { type: 'string' },
       plan: { type: 'string', description: 'The full implementation plan, markdown.' },
     },
     required: ['task_id', 'plan'],
   },
   execute: async (args: any): Promise<ToolResult> => {
-    const taskId = Number(args.task_id);
+    const taskId = String(args.task_id);
     const plan = String(args.plan ?? '').trim();
     if (!plan) return err('Plan must not be empty.');
 

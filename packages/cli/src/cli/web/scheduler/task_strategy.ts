@@ -24,7 +24,7 @@ import { ensureContainer, removeContainer, containerName, dockerDevAllowlist, co
 
 function buildPrompt(
   systemPrompt: string,
-  taskId: number,
+  taskId: string,
   taskTitle: string,
   maxRunSeconds: number,
   maxTurns: number,
@@ -73,7 +73,7 @@ TITLE: ${taskTitle}`;
 
 function buildPlanningPrompt(
   systemPrompt: string,
-  taskId: number,
+  taskId: string,
   taskTitle: string,
   maxRunSeconds: number,
   maxTurns: number,
@@ -216,7 +216,7 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
       workingDir = await agentDirIn(task.worktreePath, baseWorkingDir);
       mountRoot = task.worktreePath;
     } else if (await isGitRepo(baseWorkingDir)) {
-      const wt = await ensureWorktree(baseWorkingDir, task.projectId, task.id, task.title);
+      const wt = await ensureWorktree(baseWorkingDir, task.id, task.title, task.branch);
       task.branch = wt.branch;
       task.worktreePath = wt.worktreePath;
       await saveTask(task);
@@ -234,7 +234,7 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
     let dockerContainer: string | undefined;
     let dockerHasGit = true;
     if (dockerImage) {
-      const name = containerName(task.projectId, task.id);
+      const name = containerName(task.id);
       // Also mount the git common dir so a linked worktree's gitdir resolves
       // inside the container (identical-path). Only for git-worktree tasks.
       const extraMounts: string[] = [];
@@ -394,7 +394,7 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
     };
 
     // Load full history for replay
-    const historyMessages = (await runQuery(`SELECT * FROM task_messages WHERE taskId = ${task.id}`)) as TaskMessage[];
+    const historyMessages = (await runQuery(`SELECT * FROM task_messages WHERE taskId = '${task.id}'`)) as TaskMessage[];
     historyMessages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
     // Map history to loop-compatible message records
@@ -657,7 +657,7 @@ async function runReviewCycle(opts: {
 
   // Round is derived from the review-message stream, never a stored counter.
   const priorReviews = (
-    (await runQuery(`SELECT * FROM task_messages WHERE taskId = ${task.id}`)) as TaskMessage[]
+    (await runQuery(`SELECT * FROM task_messages WHERE taskId = '${task.id}'`)) as TaskMessage[]
   ).filter((m) => m.messageType === 'review').length;
   const round = priorReviews + 1;
 

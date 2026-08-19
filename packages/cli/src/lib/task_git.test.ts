@@ -72,9 +72,9 @@ test('isGitRepo true inside a repo, false outside', async () => {
 
 test('ensureWorktree -> commitWip -> finalizeDone keeps branch, removes worktree', async () => {
   const repo = await makeRepo();
-  const { branch, worktreePath, agentWorkingDir } = await ensureWorktree(repo, 1, 42, 'Do the Thing!');
+  const { branch, worktreePath, agentWorkingDir } = await ensureWorktree(repo, '1-42', 'Do the Thing!');
 
-  assert.equal(branch, 'caretaker/task-42-do-the-thing');
+  assert.equal(branch, 'caretaker/task-1-42-do-the-thing');
   assert.equal(agentWorkingDir, worktreePath); // project working dir == repo root
 
   // Agent produces work in the worktree.
@@ -95,14 +95,14 @@ test('ensureWorktree -> commitWip -> finalizeDone keeps branch, removes worktree
   await assert.rejects(() => stat(worktreePath));
   // ...but the branch still exists.
   const branches = await g(repo, ['branch', '--list', branch]);
-  assert.match(branches.stdout, /caretaker\/task-42-do-the-thing/);
+  assert.match(branches.stdout, /caretaker\/task-1-42-do-the-thing/);
 
   await rm(repo, { recursive: true, force: true });
 });
 
 test('discardWorktree commits pending work then removes the worktree', async () => {
   const repo = await makeRepo();
-  const { branch, worktreePath, agentWorkingDir } = await ensureWorktree(repo, 1, 7, 'Abandon me');
+  const { branch, worktreePath, agentWorkingDir } = await ensureWorktree(repo, '1-7', 'Abandon me');
   await writeFile(join(agentWorkingDir, 'wip.txt'), 'unsaved\n');
 
   await discardWorktree(worktreePath, 'Abandon me');
@@ -123,7 +123,7 @@ test('commitWip bypasses a failing pre-commit hook and works without configured 
   await g(repo, ['config', '--unset', 'user.email']);
   await g(repo, ['config', '--unset', 'user.name']);
 
-  const { branch, worktreePath, agentWorkingDir } = await ensureWorktree(repo, 2, 5, 'Hook hostile');
+  const { branch, worktreePath, agentWorkingDir } = await ensureWorktree(repo, '2-5', 'Hook hostile');
   await writeFile(join(agentWorkingDir, 'out.txt'), 'work\n');
 
   // Without --no-verify (hook) and without a fallback identity this commit would fail.
@@ -197,11 +197,11 @@ test('git operations refuse a remote URL carrying embedded credentials', async (
   // write it into .git/config and put it on argv.
   const dirty = 'https://user:ghp_secret@example.com/o/r.git';
   const repo = await makeRepo();
-  const { branch, worktreePath } = await ensureWorktree(repo, 9, 31, 'Dirty remote');
+  const { branch, worktreePath } = await ensureWorktree(repo, '9-31', 'Dirty remote');
 
   await assert.rejects(() => pushBranch(worktreePath, branch, { url: dirty }), /credentials/i);
   await assert.rejects(
-    () => drain(syncProjectRepo({ id: 31, workingDir: '', repositoryUrl: dirty })),
+    () => drain(syncProjectRepo({ id: '31', workingDir: '', repositoryUrl: dirty })),
     /credentials/i,
   );
 
@@ -212,14 +212,14 @@ test('git operations refuse a remote URL carrying embedded credentials', async (
 test('pushBranch pushes the task branch to the remote from the worktree', async () => {
   const repo = await makeRepo();
   const origin = await makeBareOrigin();
-  const { branch, worktreePath, agentWorkingDir } = await ensureWorktree(repo, 3, 11, 'Push me');
+  const { branch, worktreePath, agentWorkingDir } = await ensureWorktree(repo, '3-11', 'Push me');
   await writeFile(join(agentWorkingDir, 'out.txt'), 'work\n');
   await commitWip(worktreePath, 'Push me');
 
   await pushBranch(worktreePath, branch, { url: origin });
 
   const branches = await g(origin, ['branch', '--list', branch]);
-  assert.match(branches.stdout, /caretaker\/task-11-push-me/);
+  assert.match(branches.stdout, /caretaker\/task-3-11-push-me/);
 
   // Failure is a readable error, not a hang (GIT_TERMINAL_PROMPT=0).
   await assert.rejects(
@@ -248,23 +248,23 @@ async function drain(gen: AsyncGenerator<unknown>): Promise<unknown[]> {
   return out;
 }
 
-const remoteProject = (id: number, url: string, workingDir = '') => ({
+const remoteProject = (id: string, url: string, workingDir = '') => ({
   id, name: 'p', description: '', workingDir, agentId: 'a', active: true,
   repositoryUrl: url,
 });
 
 test('projectWorkingDir resolves default under dataDir only for remote-backed projects', () => {
-  assert.equal(projectWorkingDir({ id: 9, workingDir: '/x', repositoryUrl: 'https://e/r' }), '/x');
+  assert.equal(projectWorkingDir({ id: '9', workingDir: '/x', repositoryUrl: 'https://e/r' }), '/x');
   assert.equal(
-    projectWorkingDir({ id: 9, workingDir: '', repositoryUrl: 'https://e/r' }),
+    projectWorkingDir({ id: '9', workingDir: '', repositoryUrl: 'https://e/r' }),
     join(CT_HOME, 'repos', '9'),
   );
-  assert.equal(projectWorkingDir({ id: 9, workingDir: '' }), '');
+  assert.equal(projectWorkingDir({ id: '9', workingDir: '' }), '');
 });
 
 test('syncProjectRepo clones when absent, then fast-forwards on the next sync', async () => {
   const origin = await seededOrigin();
-  const project = remoteProject(91, origin);
+  const project = remoteProject('91', origin);
   const dest = join(CT_HOME, 'repos', '91');
 
   await drain(syncProjectRepo(project));
@@ -292,16 +292,16 @@ test('syncProjectRepo clones when absent, then fast-forwards on the next sync', 
 
 test('managedRepoDir returns a path only for caretaker-owned clones', () => {
   // Remote-backed, no workingDir: caretaker's own dir, safe to delete.
-  assert.equal(managedRepoDir({ id: 7, repositoryUrl: 'https://e/r' }), join(CT_HOME, 'repos', '7'));
+  assert.equal(managedRepoDir({ id: '7', repositoryUrl: 'https://e/r' }), join(CT_HOME, 'repos', '7'));
   // User-chosen dir, and non-remote project: never ours.
-  assert.equal(managedRepoDir({ id: 7, workingDir: '/home/me/code', repositoryUrl: 'https://e/r' }), null);
-  assert.equal(managedRepoDir({ id: 7, workingDir: '' }), null);
+  assert.equal(managedRepoDir({ id: '7', workingDir: '/home/me/code', repositoryUrl: 'https://e/r' }), null);
+  assert.equal(managedRepoDir({ id: '7', workingDir: '' }), null);
 });
 
 test('syncProjectRepo realigns origin to the configured URL before fetching', async () => {
   const originA = await seededOrigin();
   const dest = join(CT_HOME, 'repos', '96');
-  await drain(syncProjectRepo(remoteProject(96, originA)));
+  await drain(syncProjectRepo(remoteProject('96', originA)));
 
   // Origin B: a clone of A with one extra commit, so the switch fast-forwards.
   const originB = await makeBareOrigin();
@@ -315,7 +315,7 @@ test('syncProjectRepo realigns origin to the configured URL before fetching', as
   await g(w, ['commit', '-q', '-m', 'b']);
   await g(w, ['push', '-q', originB, 'main']);
 
-  await drain(syncProjectRepo(remoteProject(96, originB)));
+  await drain(syncProjectRepo(remoteProject('96', originB)));
   assert.equal((await g(dest, ['remote', 'get-url', 'origin'])).stdout.trim(), originB);
   assert.ok((await stat(join(dest, 'from-b.txt'))).isFile());
 
@@ -348,10 +348,10 @@ async function diverge(clone: string, origin: string, marker: string): Promise<v
 test('syncProjectRepo resets a diverged MANAGED clone, refuses a user-chosen one', async () => {
   const origin = await seededOrigin();
   const dest = join(CT_HOME, 'repos', '97');
-  await drain(syncProjectRepo(remoteProject(97, origin)));
+  await drain(syncProjectRepo(remoteProject('97', origin)));
   await diverge(dest, origin, 'stray.txt');
 
-  await drain(syncProjectRepo(remoteProject(97, origin)));
+  await drain(syncProjectRepo(remoteProject('97', origin)));
   assert.equal(
     (await g(dest, ['rev-parse', 'HEAD'])).stdout.trim(),
     (await g(dest, ['rev-parse', 'origin/main'])).stdout.trim(),
@@ -365,7 +365,7 @@ test('syncProjectRepo resets a diverged MANAGED clone, refuses a user-chosen one
   await g(userDir, ['clone', '-q', origin2, 'r']);
   const repo = join(userDir, 'r');
   await diverge(repo, origin2, 'mine.txt');
-  await assert.rejects(() => drain(syncProjectRepo(remoteProject(98, origin2, repo))), /git pull failed/);
+  await assert.rejects(() => drain(syncProjectRepo(remoteProject('98', origin2, repo))), /git pull failed/);
   assert.ok((await stat(join(repo, 'mine.txt'))).isFile());
 
   await rm(origin, { recursive: true, force: true });
@@ -380,7 +380,7 @@ test('syncProjectRepo wipes and re-clones a broken MANAGED dir, refuses a user-c
   const managedDest = join(CT_HOME, 'repos', '92');
   await mkdir(managedDest, { recursive: true });
   await writeFile(join(managedDest, 'junk.txt'), 'not a repo\n');
-  await drain(syncProjectRepo(remoteProject(92, origin)));
+  await drain(syncProjectRepo(remoteProject('92', origin)));
   assert.ok((await stat(join(managedDest, 'README.md'))).isFile());
   await assert.rejects(() => stat(join(managedDest, 'junk.txt')));
 
@@ -388,7 +388,7 @@ test('syncProjectRepo wipes and re-clones a broken MANAGED dir, refuses a user-c
   const userDir = await mkdtemp(join(tmpdir(), 'ct-user-'));
   await writeFile(join(userDir, 'precious.txt'), 'do not delete\n');
   await assert.rejects(
-    () => drain(syncProjectRepo(remoteProject(93, origin, userDir))),
+    () => drain(syncProjectRepo(remoteProject('93', origin, userDir))),
     /not a git repository/,
   );
   assert.ok((await stat(join(userDir, 'precious.txt'))).isFile());
@@ -402,16 +402,16 @@ test('syncProjectRepo sweeps stale temp clones and surfaces clone failures', asy
   const dest = join(CT_HOME, 'repos', '94');
   const stale = `${dest}.cloning-99999`;
   await mkdir(stale, { recursive: true });
-  await drain(syncProjectRepo(remoteProject(94, origin)));
+  await drain(syncProjectRepo(remoteProject('94', origin)));
   await assert.rejects(() => stat(stale));
-  assert.equal((await projectRepoStatus(remoteProject(94, origin))).state, 'cloned');
+  assert.equal((await projectRepoStatus(remoteProject('94', origin))).state, 'cloned');
 
   await assert.rejects(
-    () => drain(syncProjectRepo(remoteProject(95, join(tmpdir(), 'ct-no-remote')))),
+    () => drain(syncProjectRepo(remoteProject('95', join(tmpdir(), 'ct-no-remote')))),
     /git clone failed/,
   );
   // A failed clone leaves no half-cloned destination.
-  assert.equal((await projectRepoStatus(remoteProject(95, 'https://x'))).state, 'absent');
+  assert.equal((await projectRepoStatus(remoteProject('95', 'https://x'))).state, 'absent');
 
   await rm(origin, { recursive: true, force: true });
 });
@@ -419,7 +419,7 @@ test('syncProjectRepo sweeps stale temp clones and surfaces clone failures', asy
 test('discardWorktree pushes before removal; a failed push keeps the worktree', async () => {
   const repo = await makeRepo();
   const origin = await makeBareOrigin();
-  const { branch, worktreePath, agentWorkingDir } = await ensureWorktree(repo, 4, 21, 'Discard remote');
+  const { branch, worktreePath, agentWorkingDir } = await ensureWorktree(repo, '4-21', 'Discard remote');
   await writeFile(join(agentWorkingDir, 'wip.txt'), 'unsaved\n');
 
   // Failed push (bogus remote): worktree must survive.
@@ -436,7 +436,7 @@ test('discardWorktree pushes before removal; a failed push keeps the worktree', 
   await discardWorktree(worktreePath, 'Discard remote', { branch, url: origin });
   await assert.rejects(() => stat(worktreePath));
   const branches = await g(origin, ['branch', '--list', branch]);
-  assert.match(branches.stdout, /caretaker\/task-21-discard-remote/);
+  assert.match(branches.stdout, /caretaker\/task-4-21-discard-remote/);
 
   await rm(repo, { recursive: true, force: true });
   await rm(origin, { recursive: true, force: true });

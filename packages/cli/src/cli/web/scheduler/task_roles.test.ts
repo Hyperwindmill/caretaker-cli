@@ -37,8 +37,9 @@ const AGENTS = [agent('a-default'), agent('a-dev'), agent('a-plan'), agent('a-re
 
 function makeTask(overrides: Partial<Task> = {}): Task {
   return {
-    id: 1,
-    projectId: 1,
+    id: '1-1',
+    projectId: '1',
+    seq: 1,
     title: 't',
     objective: 'o',
     checklist: [],
@@ -54,7 +55,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 }
 
 function makeProject(overrides: Partial<ProjectConfig> = {}): ProjectConfig {
-  return { id: 1, name: 'p', description: '', workingDir: '/w', agentId: 'a-proj', active: true, ...overrides };
+  return { id: '1', name: 'p', description: '', workingDir: '/w', agentId: 'a-proj', active: true, ...overrides };
 }
 
 test('resolveMaxRunSeconds: task -> project -> provider default', () => {
@@ -113,7 +114,7 @@ test('flags: task overrides project; both unset -> true; missing project -> true
 
 test('activationStatus: planning when enabled and no plan message; active once a plan exists or when disabled', async () => {
   const t1 = await createTask({
-    projectId: 1, title: 'no plan yet', objective: 'o', checklist: [], status: 'draft',
+    projectId: '1', title: 'no plan yet', objective: 'o', checklist: [], status: 'draft',
     blockedReason: null, noProgressCount: 0, maxNoProgress: 5, lockedAt: null,
   });
   assert.equal(await activationStatus(t1, makeProject()), 'planning');
@@ -122,7 +123,7 @@ test('activationStatus: planning when enabled and no plan message; active once a
   assert.equal(await activationStatus(t1, makeProject()), 'active');
 
   const t2 = await createTask({
-    projectId: 1, title: 'planning off', objective: 'o', checklist: [], status: 'draft',
+    projectId: '1', title: 'planning off', objective: 'o', checklist: [], status: 'draft',
     blockedReason: null, noProgressCount: 0, maxNoProgress: 5, lockedAt: null, planningEnabled: false,
   });
   assert.equal(await activationStatus(t2, makeProject()), 'active');
@@ -186,9 +187,9 @@ test('filterPlannerTools without sdd still strips all four (regression)', () => 
 import { resolveDockerImage } from './task_roles.js';
 
 test('resolveDockerImage: project image trimmed, else null', () => {
-  assert.equal(resolveDockerImage({ projectId: 1 }, { dockerImage: '  node:22 ' }), 'node:22');
-  assert.equal(resolveDockerImage({ projectId: 1 }, { dockerImage: '' }), null);
-  assert.equal(resolveDockerImage({ projectId: 1 }, { dockerImage: null }), null);
-  assert.equal(resolveDockerImage({ projectId: 1 }, null), null);
-  assert.equal(resolveDockerImage({ projectId: 1 }, undefined), null);
+  assert.equal(resolveDockerImage({ projectId: '1' }, { dockerImage: '  node:22 ' }), 'node:22');
+  assert.equal(resolveDockerImage({ projectId: '1' }, { dockerImage: '' }), null);
+  assert.equal(resolveDockerImage({ projectId: '1' }, { dockerImage: null }), null);
+  assert.equal(resolveDockerImage({ projectId: '1' }, null), null);
+  assert.equal(resolveDockerImage({ projectId: '1' }, undefined), null);
 });
