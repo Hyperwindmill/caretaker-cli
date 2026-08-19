@@ -186,22 +186,19 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
     setErrorMsg(null);
   };
 
-  const deleteProject = (id: string) => {
+  const deleteProject = async (id: string) => {
     if (!confirm('Are you sure you want to delete this project? All associated tasks will be permanently removed from disk.')) return;
-    
-    const updatedProjects = projects.filter((p) => p.id !== id);
-    postMessage({
-      type: 'saveConfig',
-      config: {
-        ...config,
-        projects: updatedProjects,
-      },
-    });
 
-    // Fire API call to let server clean up tasks from db
-    fetch(`/api/projects/${id}`, { method: 'DELETE' }).catch((err) => {
-      console.error('Failed to trigger database tasks cleanup on project deletion:', err);
-    });
+    // The DELETE route is the whole delete: it removes the project from the
+    // config, its tasks/messages from the store, and the managed clone. An
+    // optimistic saveConfig here would race it — the server's referential
+    // guard rejects a config save that drops a project which still has tasks.
+    try {
+      await fetch(`/api/projects/${id}`, { method: 'DELETE' });
+    } catch (err) {
+      console.error('Failed to delete project:', err);
+    }
+    postMessage({ type: 'getSettingsData' });
   };
 
   const showForm = isCreating || editingProject !== null;
