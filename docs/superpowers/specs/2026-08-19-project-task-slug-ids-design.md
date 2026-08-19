@@ -128,6 +128,9 @@ project's id, and the immutability check has to live in both. They already
 iterate the project array to validate repository URLs; the slug checks join
 that loop.
 
+> [!NOTE]
+> **Amendment (implementation):** The spec originally called for direct immutability rejection in the `saveConfig` handlers. Because the settings forms legitimately create new projects through `saveConfig` (sending the entire updated config array), a modified ID in `saveConfig` is indistinguishable from a delete + create. Therefore, enforcement is implemented via: (a) charset and uniqueness validation on every save across all write paths, (b) the web server's `saveConfig` handler explicitly refuses to drop any project that still has existing tasks (referential guard requiring tasks to be cleaned up or deleted via `DELETE /api/projects/:id`), and (c) the UI forms render project ID as read-only once created.
+
 ## Task sequence
 
 `Task` gains a persisted `seq: number` field — the sequence is **stored, never
