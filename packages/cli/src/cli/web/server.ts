@@ -13,6 +13,7 @@ import { getDb, Task, getTaskById, saveTask, createTask, addTaskMessage, deleteT
 import { discardWorktree, syncProjectRepo, projectRepoStatus, managedRepoDir } from '../../lib/task_git.js';
 import { removeContainer } from '../../lib/docker.js';
 import { validateRepositoryUrl } from '../../lib/repo_url.js';
+import { validateProjectSlug, validateProjectIds } from '../../lib/project_slug.js';
 import { runningTasks, abortRunningTask, syncingProjects } from './scheduler/locks.js';
 import { registerTaskBridge, setTaskBridgeUrl } from './mcp_bridge.js';
 import {
@@ -308,10 +309,12 @@ export async function startServer(port: number, host: string): Promise<void> {
         return c.json({ error: repoUrlError }, 400);
       }
       const id = String(body.id || '').trim();
-      if (!id) {
-        return c.json({ error: 'Project id is required.' }, 400);
-      }
+      const slugError = validateProjectSlug(id);
+      if (slugError) return c.json({ error: slugError }, 400);
       const config = await loadConfig();
+      if ((config.projects || []).some((p) => p.id === id)) {
+        return c.json({ error: `Project id "${id}" already exists.` }, 400);
+      }
       if (!config.projects) {
         config.projects = [];
       }
@@ -1151,6 +1154,22 @@ export async function startServer(port: number, host: string): Promise<void> {
             return;
           case 'saveConfig':
             try {
+              const idError = validateProjectIds(msg.config.projects || []);
+              if (idError) { post({ type: 'error', message: idError }); return; }
+              // A project that still has tasks must be deleted through DELETE /api/projects/:id
+              // (which removes tasks, worktrees and the managed clone) — not silently dropped
+              // from a config save. Also blocks id "renames", which arrive as drop+add.
+              const prev = await loadConfig();
+              const incomingIds = new Set((msg.config.projects || []).map((p: any) => p.id));
+              for (const old of prev.projects || []) {
+                if (incomingIds.has(old.id)) continue;
+                const remaining = (await runQuery(`SELECT * FROM tasks WHERE projectId = '${old.id}'`)) as unknown[];
+                if (remaining.length > 0) {
+                  post({ type: 'error', message: `Project "${old.name}" still has ${remaining.length} task(s) — delete it from the Projects panel instead.` });
+                  return;
+                }
+              }
+
               // The settings form saves the whole config through here, so this
               // — not POST /api/projects — is the write path that actually
               // needs to enforce the repository-URL rules.
@@ -1166,7 +1185,6 @@ export async function startServer(port: number, host: string): Promise<void> {
               void loadAgentsAndSend();
               void sendSettingsData();
             } catch (err) {
-
               post({ type: 'error', message: `Failed to save config: ${err}` });
             }
             return;

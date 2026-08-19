@@ -24,6 +24,7 @@ import {
   loadMcpServers,
   saveMcpServers,
   validateRepositoryUrl,
+  validateProjectIds,
 } from '@hyperwindmill/caretaker-cli/store';
 import {
   createSource,
@@ -375,6 +376,11 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
         return;
       case 'saveConfig':
         try {
+          const idError = validateProjectIds(msg.config.projects || []);
+          if (idError) {
+            vscode.window.showErrorMessage(idError);
+            return;
+          }
           // The Projects form is hidden in this surface, but any tab that
           // round-trips the whole config comes through here — so the same
           // repository-URL rule the web server enforces applies.
