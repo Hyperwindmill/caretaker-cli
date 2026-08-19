@@ -1,5 +1,18 @@
 # caretaker-desktop
 
+## 0.23.0
+
+### Minor Changes
+
+- e7b3202: Project ids are now user-chosen slugs and task ids are `<projectSlug>-<seq>` composites; ids are never reused after deletion. Existing numeric ids migrate automatically and byte-compatibly on first use (worktrees, containers, and managed clones keep their names). `ProjectConfig.id` and `Task.id`/`Task.projectId` are now strings; `Task.seq` and `ProjectConfig.nextTaskSeq` are new fields.
+
+### Patch Changes
+
+- Updated dependencies [70ad462]
+- Updated dependencies [e7b3202]
+  - @hyperwindmill/caretaker-cli@0.23.0
+  - webview-ui@0.23.0
+
 ## 0.22.0
 
 ### Patch Changes

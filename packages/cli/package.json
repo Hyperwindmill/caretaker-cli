@@ -1,6 +1,6 @@
 {
   "name": "@hyperwindmill/caretaker-cli",
-  "version": "0.22.0",
+  "version": "0.23.0",
   "type": "module",
   "description": "Caretaker — in-process agent harness, TUI, file-based state.",
   "license": "SEE LICENSE IN LICENSE",
