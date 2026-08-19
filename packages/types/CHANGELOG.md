@@ -1,5 +1,11 @@
 # caretaker-types
 
+## 0.23.0
+
+### Minor Changes
+
+- e7b3202: Project ids are now user-chosen slugs and task ids are `<projectSlug>-<seq>` composites; ids are never reused after deletion. Existing numeric ids migrate automatically and byte-compatibly on first use (worktrees, containers, and managed clones keep their names). `ProjectConfig.id` and `Task.id`/`Task.projectId` are now strings; `Task.seq` and `ProjectConfig.nextTaskSeq` are new fields.
+
 ## 0.22.0
 
 ## 0.21.0
