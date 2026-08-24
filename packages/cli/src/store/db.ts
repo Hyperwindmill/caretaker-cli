@@ -231,3 +231,60 @@ export async function deleteTask(taskId: string): Promise<void> {
   await runQuery(`DELETE FROM task_messages WHERE taskId = '${taskId}'`);
   await runQuery(`DELETE FROM tasks WHERE id = '${taskId}'`);
 }
+
+/** Per-session memory digest: cursor + rolling summary maintained by the
+ *  memory sweep daemon. The whole collection is a regenerable cache — never
+ *  a source of truth; deleting it costs one full re-scan.
+ *  See docs/superpowers/specs/2026-08-24-memory-daemon-step1-design.md */
+export interface SessionDigest {
+  /** = sessionId (uuid of the JSONL session file). */
+  id: string;
+  agentId: string;
+  /** Cursor: last processed MessageRecord.id. '' = nothing processed yet. */
+  lastMessageId: string;
+  /** Messages processed so far (O(1) "how many new?" check). */
+  messageCount: number;
+  /** Rolling summary, standalone text. '' until the first summarize call. */
+  summary: string;
+  /** Model that produced the current summary. '' until then. */
+  model: string;
+  /** Start of the last *fully caught-up* scan. INVARIANT: written only when
+   *  the digest covers everything read at this timestamp; the sweep's mtime
+   *  gate (skip when file mtime < scannedAt) is only sound because of that. */
+  scannedAt: string;
+  updatedAt: string;
+}
+
+export async function getSessionDigest(sessionId: string): Promise<SessionDigest | null> {
+  if (!safeId(sessionId)) return null;
+  try {
+    const rows = (await runQuery(`SELECT * FROM session_digests WHERE id = '${sessionId}'`)) as SessionDigest[];
+    return rows[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function listSessionDigests(): Promise<SessionDigest[]> {
+  try {
+    return (await runQuery('SELECT * FROM session_digests')) as SessionDigest[];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveSessionDigest(d: SessionDigest): Promise<void> {
+  if (!safeId(d.id)) throw new Error(`Invalid session id: ${d.id}`);
+  // Delete + insert = upsert; summary goes through JSON.stringify, so quotes
+  // and newlines never touch the interpolated SQL string.
+  await runQuery(`DELETE FROM session_digests WHERE id = '${d.id}'`);
+  await runQuery(
+    `INSERT INTO session_digests ${JSON.stringify({ ...d, updatedAt: new Date().toISOString() })}`
+  );
+}
+
+export async function deleteSessionDigest(sessionId: string): Promise<void> {
+  if (!safeId(sessionId)) return;
+  await runQuery(`DELETE FROM session_digests WHERE id = '${sessionId}'`);
+}
+
