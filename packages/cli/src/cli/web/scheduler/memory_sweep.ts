@@ -189,81 +189,87 @@ export async function sweepMemory(
       seen.add(sessionId);
       const digest = digests.get(sessionId) ?? null;
       const path = join(root, agentId, file);
-
-      // mtime gate: scannedAt is only ever written when the digest was fully
-      // caught up (see invariant below), so mtime < scannedAt ⇒ nothing new.
+      // The whole per-session body is guarded: a digest save that throws (a
+      // hand-copied file whose name fails safeId, a store write error) must
+      // cost only that session this sweep — never the sessions after it.
       try {
-        const st = await stat(path);
-        if (digest && st.mtime.getTime() < new Date(digest.scannedAt).getTime()) continue;
-      } catch {
-        continue; // vanished between readdir and stat; cleanup pass handles the digest
-      }
-
-      // Captured BEFORE the read: an append racing the read keeps
-      // mtime ≥ scannedAt, so the session is re-read next sweep.
-      const scannedAt = new Date().toISOString();
-      let session: Awaited<ReturnType<typeof readSession>>;
-      try {
-        session = await readSession(agentId, sessionId);
-      } catch (err) {
-        console.warn(`[memory] failed to read session ${sessionId}:`, err);
-        continue;
-      }
-      result.scanned++;
-
-      let record: SessionDigest = digest ?? {
-        id: sessionId,
-        agentId,
-        lastMessageId: '',
-        messageCount: 0,
-        summary: '',
-        model: '',
-        scannedAt: '',
-        updatedAt: '',
-      };
-      const idx = locateCursor(session.messages, record.lastMessageId);
-      if (record.lastMessageId && idx === -1) {
-        // Cursor lost (rewritten/truncated file): restart from message zero.
-        record = { ...record, lastMessageId: '', messageCount: 0, summary: '', model: '' };
-      }
-      const fresh = session.messages.slice(idx + 1);
-
-      if (fresh.length < resolved.minNewMessages) {
-        // Debounce: arm the mtime gate and wait for the next append.
-        await saveSessionDigest({ ...record, agentId, scannedAt });
-        continue;
-      }
-
-      // INVARIANT: per-chunk saves keep the OLD scannedAt. The new one is
-      // only persisted when every chunk succeeded — a budget stop or model
-      // failure must leave the session mtime-gate-open for the next sweep.
-      let caughtUp = true;
-      for (const chunk of chunkMessages(fresh)) {
-        if (result.calls >= MAX_CALLS_PER_SWEEP) {
-          result.budgetSkipped++;
-          caughtUp = false;
-          break;
+        // mtime gate: scannedAt is only ever written when the digest was fully
+        // caught up (see invariant below), so mtime < scannedAt ⇒ nothing new.
+        try {
+          const st = await stat(path);
+          if (digest && st.mtime.getTime() < new Date(digest.scannedAt).getTime()) continue;
+        } catch {
+          continue; // vanished between readdir and stat; cleanup pass handles the digest
         }
-        result.calls++;
-        const summary = await summarize(record.summary, chunk.text);
-        if (summary === null) {
-          caughtUp = false;
-          break; // cursor stays; next sweep retries
+
+        // Captured BEFORE the read: an append racing the read keeps
+        // mtime ≥ scannedAt, so the session is re-read next sweep.
+        const scannedAt = new Date().toISOString();
+        let session: Awaited<ReturnType<typeof readSession>>;
+        try {
+          session = await readSession(agentId, sessionId);
+        } catch (err) {
+          console.warn(`[memory] failed to read session ${sessionId}:`, err);
+          continue;
         }
-        const last = chunk.messages[chunk.messages.length - 1]!;
-        record = {
-          ...record,
+        result.scanned++;
+
+        let record: SessionDigest = digest ?? {
+          id: sessionId,
           agentId,
-          lastMessageId: last.id,
-          messageCount: record.messageCount + chunk.messages.length,
-          summary,
-          model: resolved.model,
+          lastMessageId: '',
+          messageCount: 0,
+          summary: '',
+          model: '',
+          scannedAt: '',
+          updatedAt: '',
         };
-        await saveSessionDigest(record); // crash loses at most one chunk
-        result.summarized++;
-      }
-      if (caughtUp) {
-        await saveSessionDigest({ ...record, agentId, scannedAt });
+        const idx = locateCursor(session.messages, record.lastMessageId);
+        if (record.lastMessageId && idx === -1) {
+          // Cursor lost (rewritten/truncated file): restart from message zero.
+          record = { ...record, lastMessageId: '', messageCount: 0, summary: '', model: '' };
+        }
+        const fresh = session.messages.slice(idx + 1);
+
+        if (fresh.length < resolved.minNewMessages) {
+          // Debounce: arm the mtime gate and wait for the next append.
+          await saveSessionDigest({ ...record, agentId, scannedAt });
+          continue;
+        }
+
+        // INVARIANT: per-chunk saves keep the OLD scannedAt. The new one is
+        // only persisted when every chunk succeeded — a budget stop or model
+        // failure must leave the session mtime-gate-open for the next sweep.
+        let caughtUp = true;
+        for (const chunk of chunkMessages(fresh)) {
+          if (result.calls >= MAX_CALLS_PER_SWEEP) {
+            result.budgetSkipped++;
+            caughtUp = false;
+            break;
+          }
+          result.calls++;
+          const summary = await summarize(record.summary, chunk.text);
+          if (summary === null) {
+            caughtUp = false;
+            break; // cursor stays; next sweep retries
+          }
+          const last = chunk.messages[chunk.messages.length - 1]!;
+          record = {
+            ...record,
+            agentId,
+            lastMessageId: last.id,
+            messageCount: record.messageCount + chunk.messages.length,
+            summary,
+            model: resolved.model,
+          };
+          await saveSessionDigest(record); // crash loses at most one chunk
+          result.summarized++;
+        }
+        if (caughtUp) {
+          await saveSessionDigest({ ...record, agentId, scannedAt });
+        }
+      } catch (err) {
+        console.warn(`[memory] sweep of session ${sessionId} failed:`, err);
       }
     }
   }

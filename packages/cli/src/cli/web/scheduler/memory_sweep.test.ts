@@ -372,6 +372,35 @@ describe('memory sweep', () => {
       await sweep.sweepMemory(resolvedCfg(), fakeSummarize().fn);
       assert.equal(await db.getSessionDigest(meta.id), null);
     });
+
+    it('a session whose digest save throws (non-safeId filename) is skipped, not fatal', async () => {
+      // A hand-copied/restored file the session store itself would never
+      // create: its name fails safeId, so saveSessionDigest throws. The sweep
+      // must warn + skip it and still process every other session.
+      const { writeFile, mkdir } = await import('node:fs/promises');
+      const dir = join(testHome, 'sessions', 'ag-sweep-8');
+      await mkdir(dir, { recursive: true });
+      const meta = {
+        v: 1,
+        type: 'session_meta',
+        id: 'WeIrD_Name',
+        agentId: 'ag-sweep-8',
+        title: 't',
+        createdAt: '2026-08-24T10:00:00.000Z',
+      };
+      const lines = [
+        JSON.stringify(meta),
+        JSON.stringify({ v: 1, type: 'message', id: 'w1', role: 'user', content: 'a', createdAt: '2026-08-24T10:00:01.000Z' }),
+        JSON.stringify({ v: 1, type: 'message', id: 'w2', role: 'user', content: 'b', createdAt: '2026-08-24T10:00:02.000Z' }),
+      ];
+      await writeFile(join(dir, 'WeIrD_Name.jsonl'), lines.join('\n') + '\n');
+      const good = await makeSession('ag-sweep-8', ['x', 'y']);
+      const { fn } = fakeSummarize();
+      const res = await sweep.sweepMemory(resolvedCfg(), fn); // must not reject
+      assert.ok(res.summarized >= 1);
+      assert.ok(await db.getSessionDigest(good.id));
+      assert.equal(await db.getSessionDigest('WeIrD_Name'), null);
+    });
   });
 
   describe('runMemorySweepTick', () => {
