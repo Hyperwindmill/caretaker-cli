@@ -81,6 +81,8 @@ describe('memory sweep', () => {
       assert.equal(r.provider.name, 'local');
       assert.equal(r.sweepMinutes, sweep.DEFAULT_SWEEP_MINUTES);
       assert.equal(r.minNewMessages, sweep.DEFAULT_MIN_NEW_MESSAGES);
+      assert.deepEqual(r.agents, testAgents);
+      assert.deepEqual(r.projects, []);
     });
 
     it('resolves a claude-code agent (full provider compatibility)', () => {
@@ -182,16 +184,6 @@ describe('memory sweep', () => {
     });
   });
 
-  describe('buildSummarizePrompt', () => {
-    it('embeds previous summary and chunk, marks a missing summary', () => {
-      const p1 = sweep.buildSummarizePrompt('old facts', 'user: hi');
-      assert.ok(p1.includes('old facts'));
-      assert.ok(p1.includes('user: hi'));
-      const p2 = sweep.buildSummarizePrompt('', 'user: hi');
-      assert.ok(p2.includes('(none)'));
-    });
-  });
-
   describe('makeSummarizer', () => {
     // The summarizer goes through harness.run(), so the openai path is faked
     // at the loop's fetch seam and the claude-code path at the runner's spawn
@@ -230,16 +222,40 @@ describe('memory sweep', () => {
       provider: { name: 'local', endpoint: 'http://fake', apiKey: 'secret-key' },
       sweepMinutes: 5,
       minNewMessages: 4,
+      agents: testAgents,
+      projects: [],
     });
 
-    it('openai path: runs one turn with the summarize prompt, returns the text', async () => {
+    const ctx = (
+      over: Partial<import('./memory_extract.js').SummarizeContext> = {}
+    ): import('./memory_extract.js').SummarizeContext => ({
+      prevSummary: 'prev facts',
+      chunkText: 'user: hi',
+      dedupBlock: '',
+      hasProject: false,
+      ...over,
+    });
+
+    it('openai path: one turn with the combined prompt, returns summary + memories', async () => {
       let seenBody: any = null;
       loop.__setFetch(async (_url, init) => {
         seenBody = JSON.parse(String((init as RequestInit).body));
-        return sse(sseText('  the summary  '));
+        return sse(
+          sseText(
+            JSON.stringify({
+              summary: '  the summary  ',
+              memories: [
+                { level: 'global', kind: 'fact', importance: 'high', title: 'T', body: 'B', keywords: ['k'] },
+              ],
+            })
+          )
+        );
       });
-      const out = await sweep.makeSummarizer(resolved())('prev facts', 'user: hi');
-      assert.equal(out, 'the summary');
+      const out = await sweep.makeSummarizer(resolved())(ctx());
+      assert.ok(out);
+      assert.equal(out.summary, 'the summary');
+      assert.equal(out.memories.length, 1);
+      assert.equal(out.memories[0]!.title, 'T');
       assert.equal(seenBody.model, 'gpt-test');
       const lastMsg = seenBody.messages[seenBody.messages.length - 1];
       assert.ok(lastMsg.content.includes('prev facts'));
@@ -247,28 +263,33 @@ describe('memory sweep', () => {
       assert.ok(!seenBody.tools?.length, 'summarize runs with no tools');
     });
 
-    it('returns null on HTTP failure and on empty text', async () => {
+    it('returns null on HTTP failure, on empty text, and on non-JSON output', async () => {
       loop.__setFetch(async () => new Response('boom', { status: 500 }));
-      assert.equal(await sweep.makeSummarizer(resolved())('', 'x'), null);
+      assert.equal(await sweep.makeSummarizer(resolved())(ctx()), null);
       loop.__setFetch(async () => sse(sseText('')));
-      assert.equal(await sweep.makeSummarizer(resolved())('', 'x'), null);
+      assert.equal(await sweep.makeSummarizer(resolved())(ctx()), null);
+      loop.__setFetch(async () => sse(sseText('a plain-text summary, not JSON')));
+      assert.equal(await sweep.makeSummarizer(resolved())(ctx()), null);
     });
 
     it('hard-truncates an over-long summary', async () => {
-      loop.__setFetch(async () => sse(sseText('y'.repeat(10_000))));
-      const out = await sweep.makeSummarizer(resolved())('', 'x');
-      assert.ok(out !== null && out.length <= sweep.MAX_SUMMARY_CHARS + 1);
+      loop.__setFetch(async () =>
+        sse(sseText(JSON.stringify({ summary: 'y'.repeat(10_000), memories: [] })))
+      );
+      const out = await sweep.makeSummarizer(resolved())(ctx());
+      assert.ok(out !== null && out.summary.length <= sweep.MAX_SUMMARY_CHARS + 1);
     });
 
-    it('claude-code path: spawns a one-shot claude and returns its text', async () => {
+    it('claude-code path: spawns a one-shot claude and parses its JSON answer', async () => {
       const { EventEmitter } = await import('node:events');
       const { PassThrough } = await import('node:stream');
       const { readFile } = await import('node:fs/promises');
-      const fixturePath = join(
-        process.cwd(),
-        'src/harness/fixtures/claude_code_stream_text.jsonl'
-      );
-      const lines = (await readFile(fixturePath, 'utf8')).split('\n').filter(Boolean);
+      const fixturePath = join(process.cwd(), 'src/harness/fixtures/claude_code_stream_text.jsonl');
+      const payload = JSON.stringify({ summary: 'cc summary', memories: [] });
+      const lines = (await readFile(fixturePath, 'utf8'))
+        .split('\n')
+        .filter(Boolean)
+        .map((l) => l.replaceAll('"ok"', JSON.stringify(payload)));
       const spawnCalls: string[][] = [];
       runner.__setSpawn(((_cmd: string, args: string[]) => {
         spawnCalls.push(args);
@@ -294,9 +315,12 @@ describe('memory sweep', () => {
         provider: { name: 'cc', type: 'claude-code', endpoint: '' },
         sweepMinutes: 5,
         minNewMessages: 4,
+        agents: testAgents,
+        projects: [],
       };
-      const out = await sweep.makeSummarizer(ccResolved)('', 'user: hi');
-      assert.ok(out !== null && out.length > 0);
+      const out = await sweep.makeSummarizer(ccResolved)(ctx());
+      assert.ok(out);
+      assert.equal(out.summary, 'cc summary');
       assert.equal(spawnCalls.length, 1);
       assert.ok(spawnCalls[0]!.includes('dontAsk'), 'tool calls denied via dontAsk');
     });
@@ -316,16 +340,22 @@ describe('memory sweep', () => {
       provider: { name: 'local', endpoint: 'http://unused', apiKey: '' },
       sweepMinutes: 5,
       minNewMessages: 2,
+      agents: testAgents,
+      projects: [],
       ...over,
     });
 
-    /** Fake summarizer recording calls; returns "S<n>" per call, or null after `failAfter`. */
-    const fakeSummarize = (failAfter = Infinity) => {
-      const calls: Array<{ prev: string; chunk: string }> = [];
-      const fn: import('./memory_sweep.js').SummarizeFn = async (prev, chunk) => {
-        calls.push({ prev, chunk });
+    /** Fake summarizer recording contexts; returns {summary:'S<n>', memories}
+     *  per call, or null after `failAfter`. */
+    const fakeSummarize = (
+      failAfter = Infinity,
+      memories: import('./memory_extract.js').ExtractedMemory[] = []
+    ) => {
+      const calls: import('./memory_extract.js').SummarizeContext[] = [];
+      const fn: import('./memory_sweep.js').SummarizeFn = async (ctx) => {
+        calls.push(ctx);
         if (calls.length > failAfter) return null;
-        return `S${calls.length}`;
+        return { summary: `S${calls.length}`, memories };
       };
       return { calls, fn };
     };
@@ -381,9 +411,9 @@ describe('memory sweep', () => {
       const r2 = fakeSummarize();
       await sweep.sweepMemory(resolvedCfg(), r2.fn);
       assert.equal(r2.calls.length, 1);
-      assert.equal(r2.calls[0]!.prev, 'S1');
-      assert.ok(r2.calls[0]!.chunk.includes('user: c'));
-      assert.ok(!r2.calls[0]!.chunk.includes('user: a'));
+      assert.equal(r2.calls[0]!.prevSummary, 'S1');
+      assert.ok(r2.calls[0]!.chunkText.includes('user: c'));
+      assert.ok(!r2.calls[0]!.chunkText.includes('user: a'));
       const d = await db.getSessionDigest(meta.id);
       assert.equal(d?.messageCount, 4);
     });
@@ -410,7 +440,7 @@ describe('memory sweep', () => {
       const r2 = fakeSummarize();
       await sweep.sweepMemory(resolvedCfg(), r2.fn);
       assert.equal(r2.calls.length, 1);
-      assert.equal(r2.calls[0]!.prev, ''); // summary reset, restarted from zero
+      assert.equal(r2.calls[0]!.prevSummary, ''); // summary reset, restarted from zero
       const d2 = await db.getSessionDigest(meta.id);
       assert.equal(d2?.messageCount, 2);
     });
@@ -467,6 +497,94 @@ describe('memory sweep', () => {
       assert.ok(await db.getSessionDigest(good.id));
       assert.equal(await db.getSessionDigest('WeIrD_Name'), null);
     });
+
+    it('persists extracted memories with host-side provenance and scope', async () => {
+      const projDir = join(testHome, 'proj-mem');
+      const agents: import('../../../types.js').AgentConfig[] = [
+        { ...testAgents[0]!, id: 'ag-proj', workingDir: projDir },
+      ];
+      const projects: import('../../../types.js').ProjectConfig[] = [
+        { id: 'proj-mem', name: 'P', description: '', workingDir: projDir, agentId: '', active: true },
+      ];
+      const meta = await makeSession('ag-proj', ['we decided X', 'noted']);
+      const { calls, fn } = fakeSummarize(Infinity, [
+        { level: 'project', kind: 'fact', importance: 'high', title: 'Decided X', body: 'X.', keywords: ['x'] },
+        { level: 'global', kind: 'episode', importance: 'low', title: 'It happened', body: 'Y.', keywords: [] },
+      ]);
+      await sweep.sweepMemory(resolvedCfg({ agents, projects }), fn);
+      assert.equal(calls[0]!.hasProject, true);
+      const saved = (await db.listMemories()).filter((m) => m.sourceSessionId === meta.id);
+      assert.equal(saved.length, 2);
+      const proj = saved.find((m) => m.title === 'Decided X')!;
+      assert.equal(proj.projectId, 'proj-mem');
+      assert.equal(proj.importance, 'high');
+      const glob = saved.find((m) => m.title === 'It happened')!;
+      assert.equal(glob.projectId, '');
+      for (const m of saved) {
+        assert.equal(m.sourceAgentId, 'ag-proj');
+        assert.equal(m.model, 'gpt-test');
+        assert.ok(m.id.length > 0);
+      }
+    });
+
+    it('no project resolved: hasProject is false and a project-level entry degrades to global', async () => {
+      const meta = await makeSession('ag-nomatch', ['a', 'b']);
+      const { calls, fn } = fakeSummarize(Infinity, [
+        { level: 'project', kind: 'fact', importance: 'normal', title: 'Stray', body: 'Z.', keywords: [] },
+      ]);
+      await sweep.sweepMemory(resolvedCfg(), fn); // agents have no workingDir, projects: []
+      assert.equal(calls[calls.length - 1]!.hasProject, false);
+      const saved = (await db.listMemories()).filter((m) => m.sourceSessionId === meta.id);
+      assert.equal(saved.length, 1);
+      assert.equal(saved[0]!.projectId, '');
+    });
+
+    it('feeds existing memory titles to the call as the dedup block, newest first', async () => {
+      await db.saveMemory({
+        id: 'a1b2c3d4-0000-0000-0000-0000000000aa',
+        projectId: '',
+        kind: 'fact',
+        importance: 'normal',
+        title: 'Pre-existing fact',
+        body: 'B',
+        keywords: ['pre'],
+        sourceSessionId: 'x',
+        sourceAgentId: 'x',
+        model: 'm',
+        createdAt: '2026-08-24T09:00:00.000Z',
+      });
+      await makeSession('ag-dedup', ['a', 'b']);
+      const { calls, fn } = fakeSummarize();
+      await sweep.sweepMemory(resolvedCfg(), fn);
+      const last = calls[calls.length - 1]!;
+      assert.ok(last.dedupBlock.includes('Pre-existing fact [pre]'));
+    });
+
+    it('a memory saved for an earlier chunk appears in the next chunk’s dedup block', async () => {
+      // Two chunks: a message big enough to force a split.
+      const big = 'x'.repeat(15_000);
+      await makeSession('ag-twochunk', [big, big]);
+      const emitted: import('./memory_extract.js').ExtractedMemory = {
+        level: 'global', kind: 'fact', importance: 'normal', title: 'FirstChunkFact', body: 'B', keywords: [],
+      };
+      const calls: import('./memory_extract.js').SummarizeContext[] = [];
+      const fn: import('./memory_sweep.js').SummarizeFn = async (ctx) => {
+        calls.push(ctx);
+        return { summary: `S${calls.length}`, memories: calls.length === 1 ? [emitted] : [] };
+      };
+      await sweep.sweepMemory(resolvedCfg(), fn);
+      assert.ok(calls.length >= 2);
+      assert.ok(calls[1]!.dedupBlock.includes('FirstChunkFact'));
+    });
+
+    it('counts saved memories in the sweep result', async () => {
+      await makeSession('ag-count', ['a', 'b']);
+      const { fn } = fakeSummarize(Infinity, [
+        { level: 'global', kind: 'fact', importance: 'normal', title: 'C', body: 'B', keywords: [] },
+      ]);
+      const res = await sweep.sweepMemory(resolvedCfg(), fn);
+      assert.ok(res.memories >= 1);
+    });
   });
 
   describe('runMemorySweepTick', () => {
@@ -485,12 +603,12 @@ describe('memory sweep', () => {
     it('does nothing when memory is unconfigured', async () => {
       sweep.__memorySweepTesting.reset();
       await writeMemoryConfig(undefined);
-      const { calls, fn } = // reuse the fakeSummarize helper from the sweepMemory block:
+      const { calls, fn } =
         (() => {
           const calls: unknown[] = [];
           const fn: import('./memory_sweep.js').SummarizeFn = async () => {
             calls.push(1);
-            return 'S';
+            return { summary: 'S', memories: [] };
           };
           return { calls, fn };
         })();
@@ -504,7 +622,7 @@ describe('memory sweep', () => {
       let sweeps = 0;
       const fn: import('./memory_sweep.js').SummarizeFn = async () => {
         sweeps++;
-        return 'S';
+        return { summary: 'S', memories: [] };
       };
       const t0 = new Date('2026-08-24T12:00:00.000Z');
       await sweep.runMemorySweepTick(t0, fn);
@@ -529,7 +647,7 @@ describe('memory sweep', () => {
       const slow: import('./memory_sweep.js').SummarizeFn = async () => {
         entered++;
         await blocked;
-        return 'S';
+        return { summary: 'S', memories: [] };
       };
       const t0 = new Date('2026-08-24T13:00:00.000Z');
       const first = sweep.runMemorySweepTick(t0, slow);
@@ -543,7 +661,3 @@ describe('memory sweep', () => {
     });
   });
 });
-
-
-
-

@@ -1,16 +1,29 @@
+import { randomUUID } from 'node:crypto';
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { AgentConfig, CaretakerConfig, ProviderConfig } from '../../../types.js';
+import type { AgentConfig, CaretakerConfig, ProjectConfig, ProviderConfig } from '../../../types.js';
 import type { MessageRecord } from '../../../session/types.js';
 import { sessionsRoot, readSession, dataDir } from '../../../session/store.js';
 import { loadConfig, loadAgents } from '../../../store/json.js';
 import { run } from '../../../harness/loop.js';
 import {
   deleteSessionDigest,
+  listMemories,
   listSessionDigests,
+  saveMemory,
   saveSessionDigest,
+  type Memory,
   type SessionDigest,
 } from '../../../store/db.js';
+import {
+  buildCombinedPrompt,
+  formatDedupBlock,
+  parseCombinedResponse,
+  resolveProjectId,
+  validateMemories,
+  type CombinedResult,
+  type SummarizeContext,
+} from './memory_extract.js';
 
 export const DEFAULT_SWEEP_MINUTES = 5;
 export const DEFAULT_MIN_NEW_MESSAGES = 4;
@@ -25,6 +38,10 @@ export interface ResolvedMemoryConfig {
   provider: ProviderConfig;
   sweepMinutes: number;
   minNewMessages: number;
+  /** Full lists, for per-session project resolution (the session's agent is
+   *  a different agent than the memory agent). */
+  agents: AgentConfig[];
+  projects: ProjectConfig[];
 }
 
 /** null = subsystem off (unset config, deleted agent, or the agent's provider
@@ -45,6 +62,8 @@ export function resolveMemoryConfig(
     provider,
     sweepMinutes: m.sweepMinutes ?? DEFAULT_SWEEP_MINUTES,
     minNewMessages: m.minNewMessages ?? DEFAULT_MIN_NEW_MESSAGES,
+    agents,
+    projects: config.projects ?? [],
   };
 }
 
@@ -104,28 +123,10 @@ export function chunkMessages(
   return chunks;
 }
 
-const SUMMARIZE_INSTRUCTION =
-  'You maintain a rolling summary of a conversation between a user and an AI agent. ' +
-  'Integrate the NEW MESSAGES into the PREVIOUS SUMMARY and rewrite it as ONE standalone summary. ' +
-  'Keep durable facts, decisions, preferences, constraints, and open threads; drop pleasantries and dead ends. ' +
-  'Plain text, at most 300 words. Reply with only the summary.';
-
-/** null = failure (network, non-OK, empty/malformed response). The caller
+/** null = failure (network, non-OK, empty or non-JSON response). The caller
  *  leaves the cursor where it was; the next sweep retries. Best-effort, the
  *  same contract as titling (harness/title.ts). */
-export type SummarizeFn = (prevSummary: string, chunkText: string) => Promise<string | null>;
-
-export function buildSummarizePrompt(prevSummary: string, chunkText: string): string {
-  return [
-    SUMMARIZE_INSTRUCTION,
-    '',
-    'PREVIOUS SUMMARY:',
-    prevSummary.trim() || '(none)',
-    '',
-    'NEW MESSAGES:',
-    chunkText,
-  ].join('\n');
-}
+export type SummarizeFn = (ctx: SummarizeContext) => Promise<CombinedResult | null>;
 
 /** The summarize call launches through the harness loop with the memory
  *  agent's identity: every provider type works (claude-code spawns a one-shot
@@ -135,7 +136,7 @@ export function buildSummarizePrompt(prevSummary: string, chunkText: string): st
  *  it pure text generation; workingDir is pinned to CARETAKER_HOME so the
  *  project AGENTS.md walk stays out of the prompt. */
 export function makeSummarizer(resolved: ResolvedMemoryConfig): SummarizeFn {
-  return async (prevSummary, chunkText) => {
+  return async (ctx) => {
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), SUMMARIZE_TIMEOUT_MS);
     try {
@@ -143,15 +144,19 @@ export function makeSummarizer(resolved: ResolvedMemoryConfig): SummarizeFn {
         agent: resolved.agent,
         provider: resolved.provider,
         tools: [],
-        prompt: buildSummarizePrompt(prevSummary, chunkText),
+        prompt: buildCombinedPrompt(ctx),
         signal: ac.signal,
         workingDir: dataDir(),
         claudeCode: { permissionMode: 'dontAsk' },
       });
       if (result.stop !== 'done') return null;
-      const raw = result.text.trim();
-      if (!raw) return null;
-      return raw.length > MAX_SUMMARY_CHARS ? raw.slice(0, MAX_SUMMARY_CHARS) + '…' : raw;
+      const parsed = parseCombinedResponse(result.text);
+      if (!parsed) return null;
+      const summary =
+        parsed.summary.length > MAX_SUMMARY_CHARS
+          ? parsed.summary.slice(0, MAX_SUMMARY_CHARS) + '…'
+          : parsed.summary;
+      return { summary, memories: validateMemories(parsed.memories, ctx.hasProject) };
     } catch {
       return null;
     } finally {
@@ -163,6 +168,7 @@ export function makeSummarizer(resolved: ResolvedMemoryConfig): SummarizeFn {
 export interface SweepResult {
   scanned: number;
   summarized: number;
+  memories: number;
   calls: number;
   budgetSkipped: number;
 }
@@ -174,7 +180,7 @@ export async function sweepMemory(
   resolved: ResolvedMemoryConfig,
   summarize: SummarizeFn
 ): Promise<SweepResult> {
-  const result: SweepResult = { scanned: 0, summarized: 0, calls: 0, budgetSkipped: 0 };
+  const result: SweepResult = { scanned: 0, summarized: 0, memories: 0, calls: 0, budgetSkipped: 0 };
   const root = sessionsRoot();
   let agentIds: string[] = [];
   try {
@@ -245,6 +251,14 @@ export async function sweepMemory(
           continue;
         }
 
+        // Scope + dedup context, once per session. `dedup` is mutated as new
+        // memories are saved so the NEXT chunk of this session sees them too;
+        // across sessions the fresh listMemories() covers it.
+        const projectId = resolveProjectId(agentId, resolved.agents, resolved.projects);
+        const dedup: Array<{ title: string; keywords: string[] }> = (await listMemories())
+          .filter((m) => m.projectId === '' || m.projectId === projectId)
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
         // INVARIANT: per-chunk saves keep the OLD scannedAt. The new one is
         // only persisted when every chunk succeeded — a budget stop or model
         // failure must leave the session mtime-gate-open for the next sweep.
@@ -256,10 +270,37 @@ export async function sweepMemory(
             break;
           }
           result.calls++;
-          const summary = await summarize(record.summary, chunk.text);
-          if (summary === null) {
+          const res = await summarize({
+            prevSummary: record.summary,
+            chunkText: chunk.text,
+            dedupBlock: formatDedupBlock(dedup),
+            hasProject: projectId !== '',
+          });
+          if (res === null) {
             caughtUp = false;
             break; // cursor stays; next sweep retries
+          }
+          // Memories BEFORE the digest record: a crash between the two
+          // re-extracts this chunk next sweep, but the titles just saved are
+          // then in the dedup block, so the model omits them — duplicates
+          // with a dedup guard beat silent loss.
+          for (const em of res.memories) {
+            const memory: Memory = {
+              id: randomUUID(),
+              projectId: em.level === 'project' && projectId ? projectId : '',
+              kind: em.kind,
+              importance: em.importance,
+              title: em.title,
+              body: em.body,
+              keywords: em.keywords,
+              sourceSessionId: sessionId,
+              sourceAgentId: agentId,
+              model: resolved.agent.model,
+              createdAt: new Date().toISOString(),
+            };
+            await saveMemory(memory);
+            result.memories++;
+            dedup.unshift({ title: memory.title, keywords: memory.keywords });
           }
           const last = chunk.messages[chunk.messages.length - 1]!;
           record = {
@@ -267,7 +308,7 @@ export async function sweepMemory(
             agentId,
             lastMessageId: last.id,
             messageCount: record.messageCount + chunk.messages.length,
-            summary,
+            summary: res.summary,
             model: resolved.agent.model,
           };
           await saveSessionDigest(record); // crash loses at most one chunk
@@ -320,7 +361,7 @@ export async function runMemorySweepTick(
     const res = await sweepMemory(resolved, summarizeOverride ?? makeSummarizer(resolved));
     if (res.calls > 0 || res.budgetSkipped > 0) {
       console.log(
-        `[memory] sweep: scanned=${res.scanned} calls=${res.calls} summarized=${res.summarized} budget-skipped=${res.budgetSkipped}`
+        `[memory] sweep: scanned=${res.scanned} calls=${res.calls} summarized=${res.summarized} memories=${res.memories} budget-skipped=${res.budgetSkipped}`
       );
     }
   } catch (err) {
@@ -337,7 +378,3 @@ export const __memorySweepTesting = {
     warnedUnusable = false;
   },
 };
-
-
-
-
