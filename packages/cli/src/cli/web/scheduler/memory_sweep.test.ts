@@ -62,4 +62,88 @@ describe('memory sweep', () => {
       assert.equal(r?.minNewMessages, 1);
     });
   });
+
+  const msg = (
+    id: string,
+    role: 'user' | 'assistant' | 'tool',
+    content: string,
+    parts?: import('../../../session/types.js').AssistantPart[]
+  ): import('../../../session/types.js').MessageRecord => ({
+    v: 1,
+    type: 'message',
+    id,
+    role,
+    content,
+    ...(parts ? { parts } : {}),
+    createdAt: '2026-08-24T10:00:00.000Z',
+  });
+
+  describe('formatMessage', () => {
+    it('labels user and assistant messages by role', () => {
+      assert.equal(sweep.formatMessage(msg('m1', 'user', 'hello')), 'user: hello');
+      assert.equal(sweep.formatMessage(msg('m2', 'assistant', 'hi')), 'assistant: hi');
+    });
+
+    it('drops thinking parts, keeps text, names tool calls', () => {
+      const out = sweep.formatMessage(
+        msg('m3', 'assistant', 'ignored when parts exist', [
+          { type: 'thinking', text: 'secret chain of thought' },
+          { type: 'text', text: 'visible answer' },
+          { type: 'tool_use', id: 't1', name: 'read_file', args: { path: 'x' } },
+        ])
+      );
+      assert.ok(!out.includes('secret chain of thought'));
+      assert.ok(out.includes('visible answer'));
+      assert.ok(out.includes('read_file'));
+    });
+
+    it('hard-truncates tool results', () => {
+      const out = sweep.formatMessage(msg('m4', 'tool', 'x'.repeat(10_000)));
+      assert.ok(out.length < 600);
+    });
+  });
+
+  describe('locateCursor', () => {
+    const messages = [msg('a', 'user', '1'), msg('b', 'assistant', '2'), msg('c', 'user', '3')];
+    it('finds the cursor index', () => {
+      assert.equal(sweep.locateCursor(messages, 'b'), 1);
+    });
+    it('returns -1 for empty or unknown ids', () => {
+      assert.equal(sweep.locateCursor(messages, ''), -1);
+      assert.equal(sweep.locateCursor(messages, 'zzz'), -1);
+    });
+  });
+
+  describe('chunkMessages', () => {
+    it('keeps small conversations in one chunk, in order', () => {
+      const chunks = sweep.chunkMessages([msg('a', 'user', 'one'), msg('b', 'assistant', 'two')]);
+      assert.equal(chunks.length, 1);
+      assert.deepEqual(chunks[0]!.messages.map((m) => m.id), ['a', 'b']);
+      assert.ok(chunks[0]!.text.includes('user: one'));
+      assert.ok(chunks[0]!.text.includes('assistant: two'));
+    });
+
+    it('splits when the char budget is exceeded, preserving message order', () => {
+      const big = 'x'.repeat(9_000);
+      const chunks = sweep.chunkMessages([
+        msg('a', 'user', big),
+        msg('b', 'user', big),
+        msg('c', 'user', big),
+      ]);
+      assert.ok(chunks.length >= 2);
+      assert.deepEqual(chunks.flatMap((c) => c.messages.map((m) => m.id)), ['a', 'b', 'c']);
+    });
+
+    it('an oversized single message becomes its own truncated chunk', () => {
+      const chunks = sweep.chunkMessages([msg('a', 'user', 'x'.repeat(50_000))]);
+      assert.equal(chunks.length, 1);
+      assert.equal(chunks[0]!.messages.length, 1);
+      assert.ok(chunks[0]!.text.length <= sweep.MAX_CHUNK_CHARS + 1);
+    });
+
+    it('returns [] for no messages', () => {
+      assert.deepEqual(sweep.chunkMessages([]), []);
+    });
+  });
 });
+
