@@ -1,5 +1,6 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -145,5 +146,95 @@ describe('memory sweep', () => {
       assert.deepEqual(sweep.chunkMessages([]), []);
     });
   });
+
+  describe('buildSummarizePrompt', () => {
+    it('embeds previous summary and chunk, marks a missing summary', () => {
+      const p1 = sweep.buildSummarizePrompt('old facts', 'user: hi');
+      assert.ok(p1.includes('old facts'));
+      assert.ok(p1.includes('user: hi'));
+      const p2 = sweep.buildSummarizePrompt('', 'user: hi');
+      assert.ok(p2.includes('(none)'));
+    });
+  });
+
+  describe('makeSummarizer', () => {
+    const withServer = async (
+      handler: (body: any) => { status: number; payload: unknown },
+      fn: (endpoint: string) => Promise<void>
+    ) => {
+      const server = createServer((req, res) => {
+        let raw = '';
+        req.on('data', (c) => (raw += c));
+        req.on('end', () => {
+          const out = handler(JSON.parse(raw));
+          res.writeHead(out.status, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(out.payload));
+        });
+      });
+      await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+      const addr = server.address() as { port: number };
+      try {
+        await fn(`http://127.0.0.1:${addr.port}`);
+      } finally {
+        server.close();
+      }
+    };
+
+    const resolved = (endpoint: string): import('./memory_sweep.js').ResolvedMemoryConfig => ({
+      provider: { name: 'local', endpoint, apiKey: 'secret-key' },
+      model: 'gpt-test',
+      sweepMinutes: 5,
+      minNewMessages: 4,
+    });
+
+    it('POSTs model + prompt and returns the trimmed content', async () => {
+      let seen: any = null;
+      await withServer(
+        (body) => {
+          seen = body;
+          return { status: 200, payload: { choices: [{ message: { content: '  the summary  ' } }] } };
+        },
+        async (endpoint) => {
+          const out = await sweep.makeSummarizer(resolved(endpoint))('prev', 'user: hi');
+          assert.equal(out, 'the summary');
+          assert.equal(seen.model, 'gpt-test');
+          assert.equal(seen.stream, false);
+          assert.ok(seen.messages[0].content.includes('prev'));
+          assert.ok(seen.messages[0].content.includes('user: hi'));
+        }
+      );
+    });
+
+    it('returns null on non-OK and on malformed payloads', async () => {
+      await withServer(
+        () => ({ status: 500, payload: { error: 'boom' } }),
+        async (endpoint) => {
+          assert.equal(await sweep.makeSummarizer(resolved(endpoint))('', 'x'), null);
+        }
+      );
+      await withServer(
+        () => ({ status: 200, payload: { unexpected: true } }),
+        async (endpoint) => {
+          assert.equal(await sweep.makeSummarizer(resolved(endpoint))('', 'x'), null);
+        }
+      );
+    });
+
+    it('returns null when the endpoint is unreachable', async () => {
+      const out = await sweep.makeSummarizer(resolved('http://127.0.0.1:1'))('', 'x');
+      assert.equal(out, null);
+    });
+
+    it('hard-truncates an over-long summary', async () => {
+      await withServer(
+        () => ({ status: 200, payload: { choices: [{ message: { content: 'y'.repeat(10_000) } }] } }),
+        async (endpoint) => {
+          const out = await sweep.makeSummarizer(resolved(endpoint))('', 'x');
+          assert.ok(out !== null && out.length <= sweep.MAX_SUMMARY_CHARS + 1);
+        }
+      );
+    });
+  });
 });
+
 
