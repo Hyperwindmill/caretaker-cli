@@ -101,16 +101,22 @@ MCP servers are pooled by `mcp/client.ts` (both stdio and HTTP/SSE); their tools
   - **Review gate via a `reviewing` state** (`scheduler/task_review.ts` + `runReviewCycle` in `scheduler/task_strategy.ts`): git worktree tasks don't finalize directly. When the agent calls `task_complete`, a git task goes to `reviewing` (non-git → `done`, no review — the review is git-diff based and needs a branch). The gate is **toggleable** (`reviewEnabled` tri-state on the task inheriting from the project, default on) and read at decision time: `task_complete` with the gate off goes straight to `done` (the worktree is finalized by the heartbeat's post-run git step, never inside `task_complete` — the agent is still running inside it), and a task already `reviewing` when the gate is turned off is finalized on the next tick without running the review. The heartbeat selection includes `reviewing`, and such a task runs one independent review pass (`runReviewCycle` → `runDoneReview`, **reviewer-role agent identity** with `mcp__task__*` stripped) over the branch **as its own tick**, not inline in the agent loop. The verdict comes from a sentinel line parsed by `parseReviewVerdict` (fail-safe: anything but an explicit `PASS` → changes). `CHANGES_REQUESTED` reopens the task (`active`, worktree kept) and stores the review as a replayed `review` message the agent reads next cycle; `PASS` (or hitting `MAX_REVIEW_ROUNDS` = 3) finalizes — sets `done`, removes the worktree, keeps the branch. Round count is derived from the `review` message stream, not a stored counter. A Pause landing mid-review is respected (the cycle re-reads the status before transitioning) and a crash mid-review leaves the task `reviewing` so the next tick retries. The UI renders `reviewing` as active (purple, Pause not Activate).
 - **Memory sweep** (`scheduler/memory_sweep.ts`): step 1 of the memory
   subsystem (spec: `docs/superpowers/specs/2026-08-24-memory-daemon-step1-design.md`).
-  Gated on `memory` in `caretaker.json` (`MemoryConfig`: `provider` — a
-  provider *name*, claude-code rejected since fresh calls need an HTTP
-  endpoint — `model`, `sweepMinutes` default 5, `minNewMessages` default 4;
-  unset = off, zero cost). At most one sweep per `sweepMinutes` (in-process
+  Gated on `memory` in `caretaker.json` (`MemoryConfig`: `agentId` — the
+  *agent* whose identity runs the summarize calls — plus `sweepMinutes`
+  default 5, `minNewMessages` default 4; unset = off, zero cost; deleted
+  agent or missing provider = warn-once, sweeps off). At most one sweep per
+  `sweepMinutes` (in-process
   interval + overlap gates), the sweep walks `sessions/<agentId>/*.jsonl`
   from disk — sessions written by any surface are picked up — and maintains
   one `SessionDigest` per session in the folder DB: a cursor
   (`lastMessageId`/`messageCount`) plus a rolling summary produced by a
-  one-shot call on the memory model (`title.ts` pattern, thinking dropped,
-  tool results truncated). New messages go to the model in chunks under a
+  one-shot `harness.run()` with the memory agent's identity (`tools: []`,
+  claude-code confined via `dontAsk` with no allowlist and no session
+  persisted, `workingDir` pinned to `CARETAKER_HOME` to keep project
+  AGENTS.md out of the prompt; thinking dropped, tool results truncated —
+  always a fresh conversation, never the agent's live sessions; every
+  provider type works, the loop dispatches). New messages go to the model in
+  chunks under a
   char budget with the cursor persisted per chunk (crash loses at most one
   chunk); at most `MAX_CALLS_PER_SWEEP` (10) model calls per sweep, the rest
   waits. `scannedAt` is written **only when a digest is fully caught up**,

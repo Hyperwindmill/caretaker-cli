@@ -1,10 +1,9 @@
-import { describe, it, before, after } from 'node:test';
+import { describe, it, before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { CaretakerConfig } from '../../../types.js';
+import type { AgentConfig, CaretakerConfig } from '../../../types.js';
 
 let testHome: string;
 
@@ -22,6 +21,36 @@ describe('memory sweep', () => {
     delete process.env.CARETAKER_HOME;
   });
 
+  const testAgents: AgentConfig[] = [
+    {
+      id: 'ag-mem',
+      name: 'Memory',
+      systemPrompt: 'Summarize plainly.',
+      provider: 'local',
+      model: 'gpt-test',
+      allowedTools: [],
+      maxTurns: 5,
+    },
+    {
+      id: 'ag-cc',
+      name: 'ClaudeMem',
+      systemPrompt: '',
+      provider: 'cc',
+      model: 'sonnet',
+      allowedTools: [],
+      maxTurns: 5,
+    },
+    {
+      id: 'ag-orphan',
+      name: 'Orphan',
+      systemPrompt: '',
+      provider: 'gone',
+      model: 'm',
+      allowedTools: [],
+      maxTurns: 5,
+    },
+  ];
+
   const baseConfig = (memory?: CaretakerConfig['memory']): CaretakerConfig => ({
     port: 3000,
     providers: [
@@ -32,32 +61,38 @@ describe('memory sweep', () => {
   });
 
   describe('resolveMemoryConfig', () => {
-    it('returns null when memory is unset or incomplete', () => {
-      assert.equal(sweep.resolveMemoryConfig(baseConfig()), null);
-      assert.equal(sweep.resolveMemoryConfig(baseConfig({ provider: '', model: 'm' })), null);
-      assert.equal(sweep.resolveMemoryConfig(baseConfig({ provider: 'local', model: '' })), null);
+    it('returns null when memory is unset or has no agentId', () => {
+      assert.equal(sweep.resolveMemoryConfig(baseConfig(), testAgents), null);
+      assert.equal(sweep.resolveMemoryConfig(baseConfig({ agentId: '' }), testAgents), null);
     });
 
-    it('returns null for an unknown provider name', () => {
-      assert.equal(sweep.resolveMemoryConfig(baseConfig({ provider: 'nope', model: 'm' })), null);
+    it('returns null for an unknown agent id (deleted agent)', () => {
+      assert.equal(sweep.resolveMemoryConfig(baseConfig({ agentId: 'nope' }), testAgents), null);
     });
 
-    it('rejects claude-code providers', () => {
-      assert.equal(sweep.resolveMemoryConfig(baseConfig({ provider: 'cc', model: 'm' })), null);
+    it("returns null when the agent's provider no longer exists", () => {
+      assert.equal(sweep.resolveMemoryConfig(baseConfig({ agentId: 'ag-orphan' }), testAgents), null);
     });
 
-    it('resolves with defaults applied', () => {
-      const r = sweep.resolveMemoryConfig(baseConfig({ provider: 'local', model: 'gpt-test' }));
+    it('resolves an agent with defaults applied', () => {
+      const r = sweep.resolveMemoryConfig(baseConfig({ agentId: 'ag-mem' }), testAgents);
       assert.ok(r);
+      assert.equal(r.agent.id, 'ag-mem');
       assert.equal(r.provider.name, 'local');
-      assert.equal(r.model, 'gpt-test');
       assert.equal(r.sweepMinutes, sweep.DEFAULT_SWEEP_MINUTES);
       assert.equal(r.minNewMessages, sweep.DEFAULT_MIN_NEW_MESSAGES);
     });
 
+    it('resolves a claude-code agent (full provider compatibility)', () => {
+      const r = sweep.resolveMemoryConfig(baseConfig({ agentId: 'ag-cc' }), testAgents);
+      assert.ok(r);
+      assert.equal(r.provider.type, 'claude-code');
+    });
+
     it('honours explicit overrides', () => {
       const r = sweep.resolveMemoryConfig(
-        baseConfig({ provider: 'local', model: 'gpt-test', sweepMinutes: 30, minNewMessages: 1 })
+        baseConfig({ agentId: 'ag-mem', sweepMinutes: 30, minNewMessages: 1 }),
+        testAgents
       );
       assert.equal(r?.sweepMinutes, 30);
       assert.equal(r?.minNewMessages, 1);
@@ -158,81 +193,112 @@ describe('memory sweep', () => {
   });
 
   describe('makeSummarizer', () => {
-    const withServer = async (
-      handler: (body: any) => { status: number; payload: unknown },
-      fn: (endpoint: string) => Promise<void>
-    ) => {
-      const server = createServer((req, res) => {
-        let raw = '';
-        req.on('data', (c) => (raw += c));
-        req.on('end', () => {
-          const out = handler(JSON.parse(raw));
-          res.writeHead(out.status, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(out.payload));
-        });
-      });
-      await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
-      const addr = server.address() as { port: number };
-      try {
-        await fn(`http://127.0.0.1:${addr.port}`);
-      } finally {
-        server.close();
-      }
-    };
+    // The summarizer goes through harness.run(), so the openai path is faked
+    // at the loop's fetch seam and the claude-code path at the runner's spawn
+    // seam — the same seams loop.test.ts / claude_code_runner.test.ts use.
+    let loop: typeof import('../../../harness/loop.js');
+    let runner: typeof import('../../../harness/claude_code_runner.js');
 
-    const resolved = (endpoint: string): import('./memory_sweep.js').ResolvedMemoryConfig => ({
-      provider: { name: 'local', endpoint, apiKey: 'secret-key' },
-      model: 'gpt-test',
+    before(async () => {
+      loop = await import('../../../harness/loop.js');
+      runner = await import('../../../harness/claude_code_runner.js');
+    });
+
+    afterEach(() => {
+      loop.__resetFetch();
+      runner.__resetSpawn();
+    });
+
+    const sse = (lines: string[]): Response => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          const enc = new TextEncoder();
+          for (const l of lines) controller.enqueue(enc.encode(l));
+          controller.close();
+        },
+      });
+      return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+    };
+    const sseText = (text: string) => [
+      `data: ${JSON.stringify({ choices: [{ delta: { content: text }, finish_reason: null }] })}\n\n`,
+      'data: {"choices":[{"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1}}\n\n',
+      'data: [DONE]\n\n',
+    ];
+
+    const resolved = (): import('./memory_sweep.js').ResolvedMemoryConfig => ({
+      agent: testAgents[0]!,
+      provider: { name: 'local', endpoint: 'http://fake', apiKey: 'secret-key' },
       sweepMinutes: 5,
       minNewMessages: 4,
     });
 
-    it('POSTs model + prompt and returns the trimmed content', async () => {
-      let seen: any = null;
-      await withServer(
-        (body) => {
-          seen = body;
-          return { status: 200, payload: { choices: [{ message: { content: '  the summary  ' } }] } };
-        },
-        async (endpoint) => {
-          const out = await sweep.makeSummarizer(resolved(endpoint))('prev', 'user: hi');
-          assert.equal(out, 'the summary');
-          assert.equal(seen.model, 'gpt-test');
-          assert.equal(seen.stream, false);
-          assert.ok(seen.messages[0].content.includes('prev'));
-          assert.ok(seen.messages[0].content.includes('user: hi'));
-        }
-      );
+    it('openai path: runs one turn with the summarize prompt, returns the text', async () => {
+      let seenBody: any = null;
+      loop.__setFetch(async (_url, init) => {
+        seenBody = JSON.parse(String((init as RequestInit).body));
+        return sse(sseText('  the summary  '));
+      });
+      const out = await sweep.makeSummarizer(resolved())('prev facts', 'user: hi');
+      assert.equal(out, 'the summary');
+      assert.equal(seenBody.model, 'gpt-test');
+      const lastMsg = seenBody.messages[seenBody.messages.length - 1];
+      assert.ok(lastMsg.content.includes('prev facts'));
+      assert.ok(lastMsg.content.includes('user: hi'));
+      assert.ok(!seenBody.tools?.length, 'summarize runs with no tools');
     });
 
-    it('returns null on non-OK and on malformed payloads', async () => {
-      await withServer(
-        () => ({ status: 500, payload: { error: 'boom' } }),
-        async (endpoint) => {
-          assert.equal(await sweep.makeSummarizer(resolved(endpoint))('', 'x'), null);
-        }
-      );
-      await withServer(
-        () => ({ status: 200, payload: { unexpected: true } }),
-        async (endpoint) => {
-          assert.equal(await sweep.makeSummarizer(resolved(endpoint))('', 'x'), null);
-        }
-      );
-    });
-
-    it('returns null when the endpoint is unreachable', async () => {
-      const out = await sweep.makeSummarizer(resolved('http://127.0.0.1:1'))('', 'x');
-      assert.equal(out, null);
+    it('returns null on HTTP failure and on empty text', async () => {
+      loop.__setFetch(async () => new Response('boom', { status: 500 }));
+      assert.equal(await sweep.makeSummarizer(resolved())('', 'x'), null);
+      loop.__setFetch(async () => sse(sseText('')));
+      assert.equal(await sweep.makeSummarizer(resolved())('', 'x'), null);
     });
 
     it('hard-truncates an over-long summary', async () => {
-      await withServer(
-        () => ({ status: 200, payload: { choices: [{ message: { content: 'y'.repeat(10_000) } }] } }),
-        async (endpoint) => {
-          const out = await sweep.makeSummarizer(resolved(endpoint))('', 'x');
-          assert.ok(out !== null && out.length <= sweep.MAX_SUMMARY_CHARS + 1);
-        }
+      loop.__setFetch(async () => sse(sseText('y'.repeat(10_000))));
+      const out = await sweep.makeSummarizer(resolved())('', 'x');
+      assert.ok(out !== null && out.length <= sweep.MAX_SUMMARY_CHARS + 1);
+    });
+
+    it('claude-code path: spawns a one-shot claude and returns its text', async () => {
+      const { EventEmitter } = await import('node:events');
+      const { PassThrough } = await import('node:stream');
+      const { readFile } = await import('node:fs/promises');
+      const fixturePath = join(
+        process.cwd(),
+        'src/harness/fixtures/claude_code_stream_text.jsonl'
       );
+      const lines = (await readFile(fixturePath, 'utf8')).split('\n').filter(Boolean);
+      const spawnCalls: string[][] = [];
+      runner.__setSpawn(((_cmd: string, args: string[]) => {
+        spawnCalls.push(args);
+        const child: any = new EventEmitter();
+        child.stdout = new PassThrough();
+        child.stderr = new PassThrough();
+        child.stdin = new PassThrough();
+        child.kill = () => {
+          child.emit('close', null);
+          return true;
+        };
+        child.stdin.on('finish', () => {
+          setImmediate(() => {
+            for (const l of lines) child.stdout.write(l + '\n');
+            child.stdout.end();
+            child.emit('close', 0);
+          });
+        });
+        return child;
+      }) as any);
+      const ccResolved: import('./memory_sweep.js').ResolvedMemoryConfig = {
+        agent: testAgents[1]!,
+        provider: { name: 'cc', type: 'claude-code', endpoint: '' },
+        sweepMinutes: 5,
+        minNewMessages: 4,
+      };
+      const out = await sweep.makeSummarizer(ccResolved)('', 'user: hi');
+      assert.ok(out !== null && out.length > 0);
+      assert.equal(spawnCalls.length, 1);
+      assert.ok(spawnCalls[0]!.includes('dontAsk'), 'tool calls denied via dontAsk');
     });
   });
 
@@ -246,8 +312,8 @@ describe('memory sweep', () => {
     });
 
     const resolvedCfg = (over: Partial<import('./memory_sweep.js').ResolvedMemoryConfig> = {}) => ({
+      agent: testAgents[0]!,
       provider: { name: 'local', endpoint: 'http://unused', apiKey: '' },
-      model: 'gpt-test',
       sweepMinutes: 5,
       minNewMessages: 2,
       ...over,
@@ -412,6 +478,7 @@ describe('memory sweep', () => {
 
     const writeMemoryConfig = async (memory: unknown) => {
       const config = await json.loadConfig();
+      await json.saveAgents(testAgents);
       await json.saveConfig({ ...config, providers: [{ name: 'local', endpoint: 'http://unused' }], memory } as any);
     };
 
@@ -433,7 +500,7 @@ describe('memory sweep', () => {
 
     it('interval gate: two ticks inside sweepMinutes run one sweep', async () => {
       sweep.__memorySweepTesting.reset();
-      await writeMemoryConfig({ provider: 'local', model: 'gpt-test', minNewMessages: 1 });
+      await writeMemoryConfig({ agentId: 'ag-mem', minNewMessages: 1 });
       let sweeps = 0;
       const fn: import('./memory_sweep.js').SummarizeFn = async () => {
         sweeps++;
@@ -451,7 +518,7 @@ describe('memory sweep', () => {
 
     it('overlap gate: a tick during an in-flight sweep returns immediately', async () => {
       sweep.__memorySweepTesting.reset();
-      await writeMemoryConfig({ provider: 'local', model: 'gpt-test', minNewMessages: 1 });
+      await writeMemoryConfig({ agentId: 'ag-mem', minNewMessages: 1 });
       // a fresh session so the sweep has work to do and stays in flight
       const store = await import('../../../session/store.js');
       const meta = await store.createSession({ agentId: 'ag-tick-1', title: 't' });

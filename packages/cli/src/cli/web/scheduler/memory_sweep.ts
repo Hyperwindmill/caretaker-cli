@@ -1,9 +1,10 @@
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { CaretakerConfig, ProviderConfig } from '../../../types.js';
+import type { AgentConfig, CaretakerConfig, ProviderConfig } from '../../../types.js';
 import type { MessageRecord } from '../../../session/types.js';
-import { sessionsRoot, readSession } from '../../../session/store.js';
-import { loadConfig } from '../../../store/json.js';
+import { sessionsRoot, readSession, dataDir } from '../../../session/store.js';
+import { loadConfig, loadAgents } from '../../../store/json.js';
+import { run } from '../../../harness/loop.js';
 import {
   deleteSessionDigest,
   listSessionDigests,
@@ -17,24 +18,31 @@ export const MAX_CALLS_PER_SWEEP = 10;
 export const MAX_CHUNK_CHARS = 20_000;
 export const MAX_TOOL_RESULT_CHARS = 500;
 export const MAX_SUMMARY_CHARS = 4_000;
+export const SUMMARIZE_TIMEOUT_MS = 120_000;
 
 export interface ResolvedMemoryConfig {
+  agent: AgentConfig;
   provider: ProviderConfig;
-  model: string;
   sweepMinutes: number;
   minNewMessages: number;
 }
 
-/** null = subsystem off (unset/incomplete config, unknown provider, or a
- *  claude-code provider — no HTTP endpoint for fresh calls). */
-export function resolveMemoryConfig(config: CaretakerConfig): ResolvedMemoryConfig | null {
+/** null = subsystem off (unset config, deleted agent, or the agent's provider
+ *  no longer exists). Any provider type works — the summarize call launches
+ *  through the harness loop, which already dispatches claude-code. */
+export function resolveMemoryConfig(
+  config: CaretakerConfig,
+  agents: AgentConfig[]
+): ResolvedMemoryConfig | null {
   const m = config.memory;
-  if (!m?.provider || !m.model) return null;
-  const provider = (config.providers || []).find((p) => p.name === m.provider);
-  if (!provider || provider.type === 'claude-code') return null;
+  if (!m?.agentId) return null;
+  const agent = agents.find((a) => a.id === m.agentId);
+  if (!agent) return null;
+  const provider = (config.providers || []).find((p) => p.name === agent.provider);
+  if (!provider) return null;
   return {
+    agent,
     provider,
-    model: m.model,
     sweepMinutes: m.sweepMinutes ?? DEFAULT_SWEEP_MINUTES,
     minNewMessages: m.minNewMessages ?? DEFAULT_MIN_NEW_MESSAGES,
   };
@@ -119,29 +127,29 @@ export function buildSummarizePrompt(prevSummary: string, chunkText: string): st
   ].join('\n');
 }
 
+/** The summarize call launches through the harness loop with the memory
+ *  agent's identity: every provider type works (claude-code spawns a one-shot
+ *  `claude -p`, no session persisted), and the agent's systemPrompt shapes
+ *  the summaries. Always a fresh conversation — never the agent's sessions.
+ *  `tools: []` plus `dontAsk` (auto-denies every claude-side tool call) keep
+ *  it pure text generation; workingDir is pinned to CARETAKER_HOME so the
+ *  project AGENTS.md walk stays out of the prompt. */
 export function makeSummarizer(resolved: ResolvedMemoryConfig): SummarizeFn {
   return async (prevSummary, chunkText) => {
-    const baseUrl = resolved.provider.endpoint.replace(/\/+$/, '');
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (resolved.provider.apiKey) headers.Authorization = `Bearer ${resolved.provider.apiKey}`;
     const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), 60_000);
+    const timer = setTimeout(() => ac.abort(), SUMMARIZE_TIMEOUT_MS);
     try {
-      const res = await fetch(`${baseUrl}/v1/chat/completions`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model: resolved.model,
-          stream: false,
-          messages: [{ role: 'user', content: buildSummarizePrompt(prevSummary, chunkText) }],
-        }),
+      const result = await run({
+        agent: resolved.agent,
+        provider: resolved.provider,
+        tools: [],
+        prompt: buildSummarizePrompt(prevSummary, chunkText),
         signal: ac.signal,
+        workingDir: dataDir(),
+        claudeCode: { permissionMode: 'dontAsk' },
       });
-      if (!res.ok) return null;
-      const json = (await res.json().catch(() => null)) as {
-        choices?: Array<{ message?: { content?: string } }>;
-      } | null;
-      const raw = json?.choices?.[0]?.message?.content?.trim();
+      if (result.stop !== 'done') return null;
+      const raw = result.text.trim();
       if (!raw) return null;
       return raw.length > MAX_SUMMARY_CHARS ? raw.slice(0, MAX_SUMMARY_CHARS) + '…' : raw;
     } catch {
@@ -260,7 +268,7 @@ export async function sweepMemory(
             lastMessageId: last.id,
             messageCount: record.messageCount + chunk.messages.length,
             summary,
-            model: resolved.model,
+            model: resolved.agent.model,
           };
           await saveSessionDigest(record); // crash loses at most one chunk
           result.summarized++;
@@ -293,12 +301,12 @@ export async function runMemorySweepTick(
 ): Promise<void> {
   const config = await loadConfig();
   if (!config.memory) return; // subsystem off — zero cost
-  const resolved = resolveMemoryConfig(config);
+  const resolved = resolveMemoryConfig(config, await loadAgents());
   if (!resolved) {
     if (!warnedUnusable) {
       warnedUnusable = true;
       console.warn(
-        '[memory] memory config is set but unusable (unknown provider, claude-code provider, or missing model) — sweeps disabled until fixed'
+        "[memory] memory config is set but unusable (deleted agent, or the agent's provider no longer exists) — sweeps disabled until fixed"
       );
     }
     return;

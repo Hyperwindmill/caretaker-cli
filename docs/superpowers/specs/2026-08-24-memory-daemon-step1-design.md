@@ -2,6 +2,16 @@
 
 Date: 2026-08-24
 Status: approved design
+Revisions (2026-08-24, post-implementation):
+- `MemoryConfig` references an **agent** (`agentId`), not a provider/model
+  pair: the summarize call launches through `harness.run()` with the memory
+  agent's identity, so every provider type works — claude-code included
+  (one-shot `claude -p`, tools denied via `dontAsk`, no session persisted) —
+  and the agent's systemPrompt shapes the summaries. The claude-code
+  rejection below is superseded.
+- The implementation adds a `scannedAt` field + mtime gate (skip unchanged
+  session files without reading them) and a per-session failure guard; see
+  the plan and CLAUDE.md.
 Prior work: `2026-08-23-memory-subsystem-design.md` on the `idea/memory` branch.
 This step **revises** that spec's trigger model: extraction there was post-turn
 fire-and-forget (push); here the write path becomes a periodic pull — a daemon
