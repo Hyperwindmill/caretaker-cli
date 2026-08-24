@@ -92,3 +92,60 @@ export function chunkMessages(
   return chunks;
 }
 
+const SUMMARIZE_INSTRUCTION =
+  'You maintain a rolling summary of a conversation between a user and an AI agent. ' +
+  'Integrate the NEW MESSAGES into the PREVIOUS SUMMARY and rewrite it as ONE standalone summary. ' +
+  'Keep durable facts, decisions, preferences, constraints, and open threads; drop pleasantries and dead ends. ' +
+  'Plain text, at most 300 words. Reply with only the summary.';
+
+/** null = failure (network, non-OK, empty/malformed response). The caller
+ *  leaves the cursor where it was; the next sweep retries. Best-effort, the
+ *  same contract as titling (harness/title.ts). */
+export type SummarizeFn = (prevSummary: string, chunkText: string) => Promise<string | null>;
+
+export function buildSummarizePrompt(prevSummary: string, chunkText: string): string {
+  return [
+    SUMMARIZE_INSTRUCTION,
+    '',
+    'PREVIOUS SUMMARY:',
+    prevSummary.trim() || '(none)',
+    '',
+    'NEW MESSAGES:',
+    chunkText,
+  ].join('\n');
+}
+
+export function makeSummarizer(resolved: ResolvedMemoryConfig): SummarizeFn {
+  return async (prevSummary, chunkText) => {
+    const baseUrl = resolved.provider.endpoint.replace(/\/+$/, '');
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (resolved.provider.apiKey) headers.Authorization = `Bearer ${resolved.provider.apiKey}`;
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 60_000);
+    try {
+      const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: resolved.model,
+          stream: false,
+          messages: [{ role: 'user', content: buildSummarizePrompt(prevSummary, chunkText) }],
+        }),
+        signal: ac.signal,
+      });
+      if (!res.ok) return null;
+      const json = (await res.json().catch(() => null)) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      } | null;
+      const raw = json?.choices?.[0]?.message?.content?.trim();
+      if (!raw) return null;
+      return raw.length > MAX_SUMMARY_CHARS ? raw.slice(0, MAX_SUMMARY_CHARS) + '…' : raw;
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+}
+
+
