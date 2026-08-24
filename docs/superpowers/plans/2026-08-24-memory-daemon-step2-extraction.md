@@ -37,7 +37,7 @@
   - `listMemories(): Promise<Memory[]>` — all records, `[]` on error
   - `deleteMemory(id: string): Promise<void>`
 
-- [ ] **Step 1: Create the changeset file** (satisfies the pre-commit hook for this and every later commit)
+- [x] **Step 1: Create the changeset file** (satisfies the pre-commit hook for this and every later commit)
 
 `.changeset/memory-daemon-step2.md`:
 
@@ -49,7 +49,7 @@
 Memory subsystem step 2: the memory sweep's per-chunk call now also extracts durable memories (project/global scope, fact/episode kind, tone-derived importance) into a new `memories` folder-DB collection. Write path only; same model-call count as before.
 ```
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 `packages/cli/src/store/db_memory.test.ts` (pattern copied from `db_digest.test.ts` — file-scope env):
 
@@ -119,12 +119,12 @@ describe('memory store', () => {
 });
 ```
 
-- [ ] **Step 3: Run the test to verify it fails**
+- [x] **Step 3: Run the test to verify it fails**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/store/db_memory.test.ts`
 Expected: FAIL — `db.saveMemory is not a function`.
 
-- [ ] **Step 4: Implement the record + accessors**
+- [x] **Step 4: Implement the record + accessors**
 
 Append to `packages/cli/src/store/db.ts` (after `deleteSessionDigest`):
 
@@ -180,12 +180,12 @@ export async function deleteMemory(id: string): Promise<void> {
 }
 ```
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [x] **Step 5: Run the test to verify it passes**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/store/db_memory.test.ts`
 Expected: PASS (4 tests).
 
-- [ ] **Step 6: Typecheck and commit**
+- [x] **Step 6: Typecheck and commit**
 
 ```bash
 pnpm -F @hyperwindmill/caretaker-cli typecheck
@@ -214,7 +214,7 @@ git commit -m "feat(store): memories collection (durable extracted memories)"
   - `resolveProjectId(sessionAgentId: string, agents: AgentConfig[], projects: ProjectConfig[]): string`
   - Constants: `MAX_DEDUP_CHARS = 4000`, `MAX_MEMORIES_PER_CALL = 5`, `MAX_MEMORY_TITLE_CHARS = 200`, `MAX_MEMORY_BODY_CHARS = 2000`, `MAX_MEMORY_KEYWORDS = 10`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `packages/cli/src/cli/web/scheduler/memory_extract.test.ts`:
 
@@ -398,12 +398,12 @@ describe('resolveProjectId', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/cli/web/scheduler/memory_extract.test.ts`
 Expected: FAIL — cannot find module `./memory_extract.js`.
 
-- [ ] **Step 3: Implement the module**
+- [x] **Step 3: Implement the module**
 
 `packages/cli/src/cli/web/scheduler/memory_extract.ts`:
 
@@ -562,12 +562,12 @@ export function resolveProjectId(
 }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/cli/web/scheduler/memory_extract.test.ts`
 Expected: PASS. Note: the ProjectConfig literal in the test must satisfy the real type — if tsc later complains about missing optional fields, fix the test literal, not the type.
 
-- [ ] **Step 5: Typecheck and commit**
+- [x] **Step 5: Typecheck and commit**
 
 ```bash
 pnpm -F @hyperwindmill/caretaker-cli typecheck
@@ -593,7 +593,7 @@ git commit -m "feat(memory): extraction helpers — combined prompt, defensive p
   - `SweepResult` gains `memories: number`
   - `buildSummarizePrompt` is DELETED from `memory_sweep.ts` (replaced by `buildCombinedPrompt` in `memory_extract.ts`)
 
-- [ ] **Step 1: Update the existing tests to the new shapes and add the new behaviour tests**
+- [x] **Step 1: Update the existing tests to the new shapes and add the new behaviour tests**
 
 In `packages/cli/src/cli/web/scheduler/memory_sweep.test.ts`:
 
@@ -841,12 +841,12 @@ Then mechanically adapt every existing assertion that used the old shapes:
     });
 ```
 
-- [ ] **Step 2: Run the sweep tests to verify the new ones fail**
+- [x] **Step 2: Run the sweep tests to verify the new ones fail**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/cli/web/scheduler/memory_sweep.test.ts`
 Expected: FAIL — type/shape errors and failing new tests (the module still has the old `SummarizeFn`).
 
-- [ ] **Step 3: Rewire `memory_sweep.ts`**
+- [x] **Step 3: Rewire `memory_sweep.ts`**
 
 **3a.** Imports — add:
 
@@ -965,12 +965,12 @@ then the existing `record = { …, summary: res.summary, … }; await saveSessio
         `[memory] sweep: scanned=${res.scanned} calls=${res.calls} summarized=${res.summarized} memories=${res.memories} budget-skipped=${res.budgetSkipped}`
 ```
 
-- [ ] **Step 4: Run both scheduler test files to verify they pass**
+- [x] **Step 4: Run both scheduler test files to verify they pass**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/cli/web/scheduler/memory_sweep.test.ts packages/cli/src/cli/web/scheduler/memory_extract.test.ts`
 Expected: PASS, all tests.
 
-- [ ] **Step 5: Typecheck and run the full CLI suite** (the SummarizeFn change must not have leaked anywhere else — `git grep -n 'buildSummarizePrompt\|SummarizeFn' packages/` should only hit `memory_sweep*` and `memory_extract*`)
+- [x] **Step 5: Typecheck and run the full CLI suite** (the SummarizeFn change must not have leaked anywhere else — `git grep -n 'buildSummarizePrompt\|SummarizeFn' packages/` should only hit `memory_sweep*` and `memory_extract*`)
 
 ```bash
 pnpm -F @hyperwindmill/caretaker-cli typecheck
@@ -979,7 +979,7 @@ pnpm -F @hyperwindmill/caretaker-cli test
 
 Expected: typecheck clean; all tests pass (596+ before this branch).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/cli/src/cli/web/scheduler/memory_sweep.ts packages/cli/src/cli/web/scheduler/memory_sweep.test.ts .changeset/memory-daemon-step2.md
@@ -995,18 +995,18 @@ git commit -m "feat(memory): combined sweep call extracts durable memories (proj
 
 **Interfaces:** none — docs only.
 
-- [ ] **Step 1: Update the layer-5 memory-sweep bullet**
+- [x] **Step 1: Update the layer-5 memory-sweep bullet**
 
 In the `- **Memory sweep** (…)` bullet, after the sentence about chunks/cursor (“New messages go to the model in chunks under a char budget with the cursor persisted per chunk (crash loses at most one chunk)”), weave in the extraction — keep the existing prose style, content to convey:
 
 - The per-chunk call is now combined: `{summary, memories[]}` JSON — same call count; unparsable JSON fails the chunk (cursor stays, retry; deliberately no raw-text fallback, it would poison the digest).
 - Extracted memories are persisted to the durable `memories` collection (NOT a regenerable cache, unlike the digests) with host-side scope: the model picks only `project | global`; projectId is resolved by prefix-matching the session agent's `workingDir` against `projects[].workingDir` (no match → global-only). Classification is `kind: fact|episode` + `importance: low|normal|high` derived from conversation tone. Dedup via existing titles+keywords in the prompt; append-only (no supersede — that is future consolidation); memories are saved before the digest record on purpose.
 
-- [ ] **Step 2: Update the State-on-disk folder-DB item**
+- [x] **Step 2: Update the State-on-disk folder-DB item**
 
 In item 3 (the `@morphql/store` folder DB list), after **SessionDigests**, add **Memories** (durable extracted memories: project/global scope via `projectId` empty = global, `kind`/`importance`, keywords, provenance `sourceSessionId`/`sourceAgentId`; written by the memory sweep's combined call, append-only until consolidation exists). Also update the SessionDigests parenthetical if it still says the sweep only maintains summaries.
 
-- [ ] **Step 3: Final verification gates**
+- [x] **Step 3: Final verification gates**
 
 ```bash
 pnpm -F @hyperwindmill/caretaker-cli typecheck
@@ -1016,7 +1016,7 @@ pnpm -F webview-ui test
 
 Expected: all green (webview untouched but cheap to confirm).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add CLAUDE.md .changeset/memory-daemon-step2.md
