@@ -9,6 +9,7 @@ import { PluginsTab } from './PluginsTab.js';
 import { McpTab } from './McpTab.js';
 import { ServicesTab } from './ServicesTab.js';
 import { VoiceTab } from './VoiceTab.js';
+import { MemoryTab } from './MemoryTab.js';
 import { BackIcon } from './icons.js';
 
 interface SettingsPanelProps {
@@ -35,7 +36,7 @@ interface SettingsPanelProps {
 }
 
 
-type TabId = 'providers' | 'projects' | 'agents' | 'plugins' | 'mcp' | 'services' | 'voice';
+type TabId = 'providers' | 'projects' | 'agents' | 'plugins' | 'mcp' | 'services' | 'voice' | 'memory';
 
 export function SettingsPanel({
   layout = 'compact',
@@ -143,6 +144,15 @@ export function SettingsPanel({
             ttsCatalogResult={ttsCatalogResult}
           />
         );
+
+      case 'memory':
+        return (
+          <MemoryTab
+            config={config}
+            agents={agents}
+            onSave={(updatedConfig) => postMessage({ type: 'saveConfig', config: updatedConfig })}
+          />
+        );
     }
   };
 
@@ -205,6 +215,16 @@ export function SettingsPanel({
             onClick={() => setActiveTab('voice')}
           >
             Voice
+          </button>
+        )}
+        {/* The memory sweep runs only in the web server's scheduler, so its
+            settings hide in the VSCode sidebar — same gate as Services. */}
+        {layout === 'sidebar' && (
+          <button
+            className={`settings-panel__tab-btn ${activeTab === 'memory' ? 'settings-panel__tab-btn--active' : ''}`}
+            onClick={() => setActiveTab('memory')}
+          >
+            Memory
           </button>
         )}
       </nav>
