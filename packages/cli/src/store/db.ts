@@ -288,3 +288,54 @@ export async function deleteSessionDigest(sessionId: string): Promise<void> {
   await runQuery(`DELETE FROM session_digests WHERE id = '${sessionId}'`);
 }
 
+/** One durable memory extracted by the sweep's combined call. Unlike the
+ *  digests this is NOT a regenerable cache — it is the first durable store
+ *  of the memory subsystem. Append-only at write time; merge/supersede/decay
+ *  are the future consolidation's job.
+ *  See docs/superpowers/specs/2026-08-24-memory-daemon-step2-extraction-design.md */
+export interface Memory {
+  /** crypto.randomUUID() — passes safeId. */
+  id: string;
+  /** '' = global (user/machine level). Resolved host-side, never by the model. */
+  projectId: string;
+  /** Semantic/episodic split: timeless knowledge vs a dated event. */
+  kind: 'fact' | 'episode';
+  /** Initial strength, derived from the tone of the conversation at write
+   *  time (the tone is unrecoverable later). Ordinal on purpose — models
+   *  calibrate numeric scales poorly. */
+  importance: 'low' | 'normal' | 'high';
+  title: string;
+  /** Markdown, self-contained. */
+  body: string;
+  /** Associative base for the future read path, emitted at write time. */
+  keywords: string[];
+  // ─── provenance — host-side facts, never model output ─────────────────
+  sourceSessionId: string;
+  /** The session's agent directory — NOT a scope; mined by a future
+   *  personality step. */
+  sourceAgentId: string;
+  /** Extraction model. */
+  model: string;
+  createdAt: string;
+}
+
+export async function saveMemory(m: Memory): Promise<void> {
+  if (!safeId(m.id)) throw new Error(`Invalid memory id: ${m.id}`);
+  // Insert-only: memories are append-only; there is deliberately no upsert.
+  await runQuery(`INSERT INTO memories ${JSON.stringify(m)}`);
+}
+
+export async function listMemories(): Promise<Memory[]> {
+  try {
+    return (await runQuery('SELECT * FROM memories')) as Memory[];
+  } catch {
+    return [];
+  }
+}
+
+export async function deleteMemory(id: string): Promise<void> {
+  if (!safeId(id)) return;
+  await runQuery(`DELETE FROM memories WHERE id = '${id}'`);
+}
+
+
