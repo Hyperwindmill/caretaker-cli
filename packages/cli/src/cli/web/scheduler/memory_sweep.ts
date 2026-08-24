@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { CaretakerConfig, ProviderConfig } from '../../../types.js';
 import type { MessageRecord } from '../../../session/types.js';
 import { sessionsRoot, readSession } from '../../../session/store.js';
+import { loadConfig } from '../../../store/json.js';
 import {
   deleteSessionDigest,
   listSessionDigests,
@@ -273,6 +274,56 @@ export async function sweepMemory(
   }
   return result;
 }
+
+let lastSweepStartedAt = 0;
+let sweepInFlight = false;
+let warnedUnusable = false;
+
+/** The scheduler-facing entry: called every 15 s tick, does work at most once
+ *  per sweepMinutes, never overlapping. `summarizeOverride` is test-only. */
+export async function runMemorySweepTick(
+  now: Date,
+  summarizeOverride?: SummarizeFn
+): Promise<void> {
+  const config = await loadConfig();
+  if (!config.memory) return; // subsystem off — zero cost
+  const resolved = resolveMemoryConfig(config);
+  if (!resolved) {
+    if (!warnedUnusable) {
+      warnedUnusable = true;
+      console.warn(
+        '[memory] memory config is set but unusable (unknown provider, claude-code provider, or missing model) — sweeps disabled until fixed'
+      );
+    }
+    return;
+  }
+  warnedUnusable = false;
+  if (sweepInFlight) return;
+  if (now.getTime() - lastSweepStartedAt < resolved.sweepMinutes * 60_000) return;
+  lastSweepStartedAt = now.getTime();
+  sweepInFlight = true;
+  try {
+    const res = await sweepMemory(resolved, summarizeOverride ?? makeSummarizer(resolved));
+    if (res.calls > 0 || res.budgetSkipped > 0) {
+      console.log(
+        `[memory] sweep: scanned=${res.scanned} calls=${res.calls} summarized=${res.summarized} budget-skipped=${res.budgetSkipped}`
+      );
+    }
+  } catch (err) {
+    console.error('[memory] sweep failed:', err);
+  } finally {
+    sweepInFlight = false;
+  }
+}
+
+export const __memorySweepTesting = {
+  reset(): void {
+    lastSweepStartedAt = 0;
+    sweepInFlight = false;
+    warnedUnusable = false;
+  },
+};
+
 
 
 
