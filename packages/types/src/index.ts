@@ -175,12 +175,12 @@ export type VoiceConfig = {
  *  (web-server scheduler only). Unset ⇒ subsystem off, zero cost.
  *  See docs/superpowers/specs/2026-08-24-memory-daemon-step1-design.md */
 export type MemoryConfig = {
-  /** Provider name (ProviderConfig.name), like AgentConfig.provider.
-   *  claude-code providers are rejected at runtime: the daemon makes fresh
-   *  HTTP calls and they have no endpoint (same constraint as titling). */
-  provider: string;
-  /** Model id for the summarize calls. */
-  model: string;
+  /** Agent whose identity (systemPrompt + provider + model) runs the
+   *  summarize calls — every provider type works, claude-code included,
+   *  because the sweep launches through the harness loop. Calls are always
+   *  fresh one-shot conversations, never the agent's live sessions. A lean
+   *  dedicated agent (no plugins, short systemPrompt) keeps calls cheap. */
+  agentId: string;
   /** Minimum minutes between sweeps. Default 5. */
   sweepMinutes?: number;
   /** Per-session debounce: summarize only when at least this many new
