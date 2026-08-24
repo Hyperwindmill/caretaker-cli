@@ -235,6 +235,145 @@ describe('memory sweep', () => {
       );
     });
   });
+
+  describe('sweepMemory', () => {
+    let store: typeof import('../../../session/store.js');
+    let db: typeof import('../../../store/db.js');
+
+    before(async () => {
+      store = await import('../../../session/store.js');
+      db = await import('../../../store/db.js');
+    });
+
+    const resolvedCfg = (over: Partial<import('./memory_sweep.js').ResolvedMemoryConfig> = {}) => ({
+      provider: { name: 'local', endpoint: 'http://unused', apiKey: '' },
+      model: 'gpt-test',
+      sweepMinutes: 5,
+      minNewMessages: 2,
+      ...over,
+    });
+
+    /** Fake summarizer recording calls; returns "S<n>" per call, or null after `failAfter`. */
+    const fakeSummarize = (failAfter = Infinity) => {
+      const calls: Array<{ prev: string; chunk: string }> = [];
+      const fn: import('./memory_sweep.js').SummarizeFn = async (prev, chunk) => {
+        calls.push({ prev, chunk });
+        if (calls.length > failAfter) return null;
+        return `S${calls.length}`;
+      };
+      return { calls, fn };
+    };
+
+    const makeSession = async (agentId: string, texts: string[]) => {
+      const meta = await store.createSession({ agentId, title: 't' });
+      for (const t of texts) {
+        await store.appendMessage(meta, store.userMessage(t));
+      }
+      return meta;
+    };
+
+    it('summarizes a new session and persists cursor + summary', async () => {
+      const meta = await makeSession('ag-sweep-1', ['first', 'second', 'third']);
+      const { calls, fn } = fakeSummarize();
+      const res = await sweep.sweepMemory(resolvedCfg(), fn);
+      assert.ok(res.scanned >= 1);
+      assert.equal(calls.length >= 1, true);
+      const d = await db.getSessionDigest(meta.id);
+      assert.ok(d);
+      assert.equal(d.summary, `S${calls.length}`);
+      assert.equal(d.agentId, 'ag-sweep-1');
+      assert.equal(d.messageCount, 3);
+      const session = await store.readSession('ag-sweep-1', meta.id);
+      assert.equal(d.lastMessageId, session.messages[session.messages.length - 1]!.id);
+      assert.notEqual(d.scannedAt, '');
+    });
+
+    it('is incremental: an unchanged session is not re-summarized (mtime gate)', async () => {
+      const { calls, fn } = fakeSummarize();
+      await sweep.sweepMemory(resolvedCfg(), fn);
+      assert.equal(calls.length, 0);
+    });
+
+    it('below the debounce threshold: no call, but scannedAt is refreshed', async () => {
+      const meta = await makeSession('ag-sweep-2', ['only-one']);
+      const { calls, fn } = fakeSummarize();
+      await sweep.sweepMemory(resolvedCfg({ minNewMessages: 5 }), fn);
+      assert.equal(calls.length, 0);
+      const d = await db.getSessionDigest(meta.id);
+      assert.ok(d);
+      assert.equal(d.summary, '');
+      assert.equal(d.lastMessageId, '');
+    });
+
+    it('feeds the previous summary to the next round and advances the cursor', async () => {
+      const meta = await makeSession('ag-sweep-3', ['a', 'b']);
+      const r1 = fakeSummarize();
+      await sweep.sweepMemory(resolvedCfg(), r1.fn);
+      assert.equal(r1.calls.length, 1);
+      await store.appendMessage(meta, store.userMessage('c'));
+      await store.appendMessage(meta, store.userMessage('d'));
+      const r2 = fakeSummarize();
+      await sweep.sweepMemory(resolvedCfg(), r2.fn);
+      assert.equal(r2.calls.length, 1);
+      assert.equal(r2.calls[0]!.prev, 'S1');
+      assert.ok(r2.calls[0]!.chunk.includes('user: c'));
+      assert.ok(!r2.calls[0]!.chunk.includes('user: a'));
+      const d = await db.getSessionDigest(meta.id);
+      assert.equal(d?.messageCount, 4);
+    });
+
+    it('model failure leaves the cursor and scannedAt so the next sweep retries', async () => {
+      const meta = await makeSession('ag-sweep-4', ['a', 'b', 'c']);
+      const fail = fakeSummarize(0); // every call fails
+      await sweep.sweepMemory(resolvedCfg(), fail.fn);
+      const d1 = await db.getSessionDigest(meta.id);
+      assert.ok(!d1 || d1.lastMessageId === '');
+      const ok = fakeSummarize();
+      const res2 = await sweep.sweepMemory(resolvedCfg(), ok.fn);
+      assert.equal(ok.calls.length, 1); // retried despite no new appends
+      assert.ok(res2.summarized >= 1);
+    });
+
+    it('lost cursor (id not found) resets and reprocesses from zero', async () => {
+      const meta = await makeSession('ag-sweep-5', ['a', 'b']);
+      const r1 = fakeSummarize();
+      await sweep.sweepMemory(resolvedCfg(), r1.fn);
+      const d1 = await db.getSessionDigest(meta.id);
+      assert.ok(d1);
+      await db.saveSessionDigest({ ...d1, lastMessageId: 'gone-gone', scannedAt: '1970-01-01T00:00:00.000Z' });
+      const r2 = fakeSummarize();
+      await sweep.sweepMemory(resolvedCfg(), r2.fn);
+      assert.equal(r2.calls.length, 1);
+      assert.equal(r2.calls[0]!.prev, ''); // summary reset, restarted from zero
+      const d2 = await db.getSessionDigest(meta.id);
+      assert.equal(d2?.messageCount, 2);
+    });
+
+    it('respects the per-sweep call budget and reports the skip', async () => {
+      // 12 fresh 2-message sessions with budget 10 ⇒ 10 calls, ≥1 budget-skips.
+      for (let i = 0; i < 12; i++) await makeSession('ag-sweep-6', ['x', 'y']);
+      const { calls, fn } = fakeSummarize();
+      const res = await sweep.sweepMemory(resolvedCfg(), fn);
+      assert.equal(calls.length, sweep.MAX_CALLS_PER_SWEEP);
+      assert.ok(res.budgetSkipped >= 1);
+    });
+
+    it('budget-skipped sessions are caught up by the following sweep', async () => {
+      const { calls, fn } = fakeSummarize();
+      await sweep.sweepMemory(resolvedCfg(), fn);
+      assert.ok(calls.length >= 1); // the leftovers from the previous test
+    });
+
+    it('deletes digests whose session file is gone', async () => {
+      const meta = await makeSession('ag-sweep-7', ['a', 'b']);
+      await sweep.sweepMemory(resolvedCfg(), fakeSummarize().fn);
+      assert.ok(await db.getSessionDigest(meta.id));
+      await store.deleteSession('ag-sweep-7', meta.id);
+      await sweep.sweepMemory(resolvedCfg(), fakeSummarize().fn);
+      assert.equal(await db.getSessionDigest(meta.id), null);
+    });
+  });
 });
+
 
 
