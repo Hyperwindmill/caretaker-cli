@@ -42,7 +42,7 @@
   - `saveSessionDigest(d: SessionDigest): Promise<void>` (stamps `updatedAt` itself)
   - `deleteSessionDigest(sessionId: string): Promise<void>`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `packages/cli/src/store/db_digest.test.ts`:
 
@@ -131,12 +131,12 @@ describe('session digest store', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/store/db_digest.test.ts`
 Expected: FAIL — `db.saveSessionDigest is not a function` (module loads, accessors missing).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Append to `packages/cli/src/store/db.ts` (after the existing task accessors):
 
@@ -200,12 +200,12 @@ export async function deleteSessionDigest(sessionId: string): Promise<void> {
 
 Note: session ids are `randomUUID()` (lowercase hex + dashes) so they pass the existing `safeId` regex `^[a-z0-9][a-z0-9-]*$`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/store/db_digest.test.ts`
 Expected: PASS (5 tests), benchmark line printed.
 
-- [ ] **Step 5: Typecheck and commit**
+- [x] **Step 5: Typecheck and commit**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli typecheck`
 Expected: clean.
@@ -234,7 +234,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   - `resolveMemoryConfig(config: CaretakerConfig): ResolvedMemoryConfig | null`
   - Constants: `DEFAULT_SWEEP_MINUTES = 5`, `DEFAULT_MIN_NEW_MESSAGES = 4`, `MAX_CALLS_PER_SWEEP = 10`, `MAX_CHUNK_CHARS = 20_000`, `MAX_TOOL_RESULT_CHARS = 500`, `MAX_SUMMARY_CHARS = 4_000`
 
-- [ ] **Step 1: Add the type (no test — types package has no runtime)**
+- [x] **Step 1: Add the type (no test — types package has no runtime)**
 
 In `packages/types/src/index.ts`, after `VoiceConfig`:
 
@@ -272,7 +272,7 @@ export type CaretakerConfig = {
 };
 ```
 
-- [ ] **Step 2: Write the failing test for resolution**
+- [x] **Step 2: Write the failing test for resolution**
 
 Create `packages/cli/src/cli/web/scheduler/memory_sweep.test.ts`:
 
@@ -344,12 +344,12 @@ describe('memory sweep', () => {
 });
 ```
 
-- [ ] **Step 3: Run test to verify it fails**
+- [x] **Step 3: Run test to verify it fails**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/cli/web/scheduler/memory_sweep.test.ts`
 Expected: FAIL — cannot find module `./memory_sweep.js`.
 
-- [ ] **Step 4: Write minimal implementation**
+- [x] **Step 4: Write minimal implementation**
 
 Create `packages/cli/src/cli/web/scheduler/memory_sweep.ts`:
 
@@ -392,12 +392,12 @@ export function resolveMemoryConfig(config: CaretakerConfig): ResolvedMemoryConf
 }
 ```
 
-- [ ] **Step 5: Run test to verify it passes**
+- [x] **Step 5: Run test to verify it passes**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/cli/web/scheduler/memory_sweep.test.ts`
 Expected: PASS (5 tests).
 
-- [ ] **Step 6: Typecheck (both packages) and commit**
+- [x] **Step 6: Typecheck (both packages) and commit**
 
 Run: `pnpm -F caretaker-types build && pnpm -F @hyperwindmill/caretaker-cli typecheck`
 Expected: clean.
@@ -424,7 +424,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   - `locateCursor(messages: MessageRecord[], lastMessageId: string): number` — index of the cursor message, `-1` when `lastMessageId` is `''` or not found.
   - `chunkMessages(messages: MessageRecord[]): Array<{ messages: MessageRecord[]; text: string }>` — consecutive chunks under `MAX_CHUNK_CHARS`; one oversized message becomes its own chunk, hard-truncated (the cursor must always be able to advance past it).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append inside the top-level `describe` of `memory_sweep.test.ts`:
 
@@ -513,12 +513,12 @@ Append inside the top-level `describe` of `memory_sweep.test.ts`:
   });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/cli/web/scheduler/memory_sweep.test.ts`
 Expected: FAIL — `sweep.formatMessage is not a function`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Append to `memory_sweep.ts` (add `MessageRecord` to the imports):
 
@@ -582,12 +582,12 @@ export function chunkMessages(
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/cli/web/scheduler/memory_sweep.test.ts`
 Expected: PASS (all tests so far).
 
-- [ ] **Step 5: Typecheck and commit**
+- [x] **Step 5: Typecheck and commit**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli typecheck`
 
@@ -612,7 +612,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   - `buildSummarizePrompt(prevSummary: string, chunkText: string): string`
   - `makeSummarizer(resolved: ResolvedMemoryConfig): SummarizeFn` — real fetch against `<endpoint>/v1/chat/completions`, `title.ts` pattern, 60 s timeout, output hard-truncated to `MAX_SUMMARY_CHARS`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 The fetch test runs a throwaway `node:http` server as the fake OpenAI endpoint. Append inside the top-level `describe`:
 
@@ -711,12 +711,12 @@ The fetch test runs a throwaway `node:http` server as the fake OpenAI endpoint. 
 
 Note: add `import { createServer } from 'node:http';` to the static imports at the top of the test file.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/cli/web/scheduler/memory_sweep.test.ts`
 Expected: FAIL — `sweep.buildSummarizePrompt is not a function`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Append to `memory_sweep.ts`:
 
@@ -778,12 +778,12 @@ export function makeSummarizer(resolved: ResolvedMemoryConfig): SummarizeFn {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/cli/web/scheduler/memory_sweep.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Typecheck and commit**
+- [x] **Step 5: Typecheck and commit**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli typecheck`
 
@@ -819,7 +819,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 8. Delete digests whose session file no longer exists (regenerable-cache hygiene).
 9. Per-session read failures: warn and continue — one corrupt file never kills the sweep.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append inside the top-level `describe`. These build real session files via the session store (same `CARETAKER_HOME`):
 
@@ -965,12 +965,12 @@ Append inside the top-level `describe`. These build real session files via the s
 
 Note for the executor: these tests are order-dependent within their `describe` (node:test runs them in declaration order — that is guaranteed). The budget pair intentionally spans two sweeps.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/cli/web/scheduler/memory_sweep.test.ts`
 Expected: FAIL — `sweep.sweepMemory is not a function`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Append to `memory_sweep.ts` (add the new imports at the top of the file):
 
@@ -1109,17 +1109,17 @@ export async function sweepMemory(
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/cli/web/scheduler/memory_sweep.test.ts`
 Expected: PASS (all tests in the file).
 
-- [ ] **Step 5: Run the full CLI suite (regressions) + typecheck**
+- [x] **Step 5: Run the full CLI suite (regressions) + typecheck**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli test && pnpm -F @hyperwindmill/caretaker-cli typecheck`
 Expected: all green.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/cli/src/cli/web/scheduler/memory_sweep.ts packages/cli/src/cli/web/scheduler/memory_sweep.test.ts
@@ -1141,7 +1141,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Consumes: `loadConfig` from `../../../store/json.js`, Task 2's `resolveMemoryConfig`, Task 4's `makeSummarizer`, Task 5's `sweepMemory`.
 - Produces: `runMemorySweepTick(now: Date, summarizeOverride?: SummarizeFn): Promise<void>` and `__memorySweepTesting.reset()`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append inside the top-level `describe` (needs `writeFile`/`readFile` — reuse `node:fs/promises` imports; `configPath` comes from `../../../store/json.js`):
 
@@ -1220,12 +1220,12 @@ Append inside the top-level `describe` (needs `writeFile`/`readFile` — reuse `
   });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/cli/web/scheduler/memory_sweep.test.ts`
 Expected: FAIL — `sweep.runMemorySweepTick is not a function`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Append to `memory_sweep.ts` (plus `import { loadConfig } from '../../../store/json.js';` at the top):
 
@@ -1295,17 +1295,17 @@ and, inside `runSchedulerTick()` right after the task-heartbeat block:
     });
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/cli/web/scheduler/memory_sweep.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Full suite + typecheck**
+- [x] **Step 5: Full suite + typecheck**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli test && pnpm -F @hyperwindmill/caretaker-cli typecheck`
 Expected: all green.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/cli/src/cli/web/scheduler/memory_sweep.ts packages/cli/src/cli/web/scheduler/memory_sweep.test.ts packages/cli/src/cli/web/scheduler.ts
@@ -1322,7 +1322,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Modify: `CLAUDE.md` (scheduler section + State on disk)
 - Create: `.changeset/memory-daemon-step1.md`
 
-- [ ] **Step 1: Update CLAUDE.md**
+- [x] **Step 1: Update CLAUDE.md**
 
 In section “### 5. Scheduler”, change “runs **three** loops” to “runs **four** loops” and append a fourth bullet after the autonomous-task one:
 
@@ -1351,7 +1351,7 @@ In section “### 5. Scheduler”, change “runs **three** loops” to “runs 
 
 In “### State on disk”, point 3, mention the new collection: after the Tasks/TaskMessages description add “, and **SessionDigests** (per-session memory cursor + rolling summary maintained by the scheduler's memory sweep — a regenerable cache, see layer 5)”.
 
-- [ ] **Step 2: Create the changeset**
+- [x] **Step 2: Create the changeset**
 
 `.changeset/memory-daemon-step1.md`:
 
@@ -1363,12 +1363,12 @@ In “### State on disk”, point 3, mention the new collection: after the Tasks
 Memory subsystem step 1: a scheduler memory-sweep loop maintaining a per-session cursor and rolling summary (`session_digests` collection), configured via the new `memory` key (`MemoryConfig` in caretaker-types). Off unless configured.
 ```
 
-- [ ] **Step 3: Full workspace check**
+- [x] **Step 3: Full workspace check**
 
 Run: `pnpm build && pnpm test`
 Expected: all packages build, all tests pass.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add CLAUDE.md .changeset/memory-daemon-step1.md
