@@ -266,6 +266,16 @@ export async function updateClaudeSessionId(
   await appendFile(path, serialize(record), { mode: 0o600 });
 }
 
+export async function updateAcpSessionId(
+  meta: Pick<SessionMetaRecord, 'agentId' | 'id'>,
+  acpSessionId: string,
+): Promise<void> {
+  const current = await readSession(meta.agentId, meta.id);
+  const record: SessionMetaRecord = { ...current.meta, acpSessionId };
+  const path = sessionPath(meta.agentId, meta.id);
+  await appendFile(path, serialize(record), { mode: 0o600 });
+}
+
 export async function deleteSession(agentId: string, sessionId: string): Promise<void> {
   const path = sessionPath(agentId, sessionId);
   await rm(path, { force: true });
