@@ -32,6 +32,9 @@ export interface SessionMetaRecord {
   /** Claude Code CLI session id for claude-code runner agents; the next
    *  turn resumes it via `claude -p --resume <id>`. */
   claudeSessionId?: string;
+  /** ACP session id for acp runner agents; reused across turns and offered
+   *  to session/load when the agent supports it. */
+  acpSessionId?: string;
 }
 
 export type Role = 'user' | 'assistant' | 'tool';

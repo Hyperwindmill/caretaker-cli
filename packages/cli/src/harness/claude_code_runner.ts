@@ -162,7 +162,7 @@ async function buildMcpConfigFile(
   return { configPath, cleanup: () => rm(dir, { recursive: true, force: true }) };
 }
 
-function foldHistory(history: MessageRecord[] | undefined, prompt: string): string {
+export function foldHistory(history: MessageRecord[] | undefined, prompt: string): string {
   if (!history?.length) return prompt;
   const lines = history.filter((m) => m.role !== 'tool').map((m) => `[${m.role}] ${m.content}`);
   return `<conversation-history>\n${lines.join('\n')}\n</conversation-history>\n\n${prompt}`;
