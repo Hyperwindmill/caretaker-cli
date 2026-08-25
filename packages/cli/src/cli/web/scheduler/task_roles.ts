@@ -8,10 +8,10 @@ import type { Tool } from '../../../harness/tools/types.js';
 export type TaskRole = 'planner' | 'developer' | 'reviewer';
 
 // Per-invocation wall-clock budget defaults, in seconds. A run is aborted when
-// it exceeds the resolved budget — for every provider. claude-code gets a larger
-// default because the CLI has no --max-turns equivalent (native runs are also
-// turn-bounded by agent.maxTurns), so without a generous backstop a claude-code
-// run would stall the heartbeat (and, for reviews, the review gate).
+// it exceeds the resolved budget — for every provider. External runners
+// (claude-code, acp) get a larger default because they manage their own loop
+// (native runs are also turn-bounded by agent.maxTurns), so without a generous
+// backstop an external runner run would stall the heartbeat (and, for reviews, the review gate).
 export const DEFAULT_RUN_SECONDS = 120;
 export const CLAUDE_CODE_DEFAULT_RUN_SECONDS = 15 * 60;
 
@@ -19,11 +19,11 @@ export const CLAUDE_CODE_DEFAULT_RUN_SECONDS = 15 * 60;
 export function resolveMaxRunSeconds(
   task: Pick<Task, 'maxRunSeconds'>,
   project: Pick<ProjectConfig, 'maxRunSeconds'> | null | undefined,
-  isClaudeCode: boolean,
+  isExternalRunner: boolean,
 ): number {
   const configured = task.maxRunSeconds ?? project?.maxRunSeconds;
   if (typeof configured === 'number' && configured > 0) return configured;
-  return isClaudeCode ? CLAUDE_CODE_DEFAULT_RUN_SECONDS : DEFAULT_RUN_SECONDS;
+  return isExternalRunner ? CLAUDE_CODE_DEFAULT_RUN_SECONDS : DEFAULT_RUN_SECONDS;
 }
 
 /**

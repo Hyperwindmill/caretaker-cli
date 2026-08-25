@@ -9,6 +9,7 @@ import type { AgentConfig, ProviderConfig, ProjectConfig } from '../../../types.
 import type { Tool } from '../../../harness/tools/types.js';
 import type { RunOptions } from '../../../harness/index.js';
 import { claudeCodeTaskExtras } from '../../../harness/claude_code_runner.js';
+import { acpTaskExtras } from '../../../harness/acp_policy.js';
 import { issueBridgeToken, revokeBridgeToken, getTaskBridgeUrl } from '../mcp_bridge.js';
 import {
   resolveRoleAgent,
@@ -346,9 +347,10 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
     // Max turns: standard sonnet settings or maxTurns
     const maxTurns = agent.maxTurns || 30;
     const isClaudeCode = provider.type === 'claude-code';
+    const isAcp = provider.type === 'acp';
     // Per-invocation wall-clock budget (task → project → provider default),
     // enforced below via the abort timer for every provider.
-    const maxRunSeconds = resolveMaxRunSeconds(task, project, isClaudeCode);
+    const maxRunSeconds = resolveMaxRunSeconds(task, project, isClaudeCode || isAcp);
 
     // 5. Construct prompt
     const prompt = planning
@@ -360,6 +362,9 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
     let effectivePrompt = prompt;
     if (dockerContainer && !planning) {
       let env = `\n\n**Execution environment:** your shell commands run inside a Docker container (image \`${dockerImage}\`) mounted at \`${workingDir}\`. File reads/writes are confined to this directory.`;
+      if (isAcp) {
+        env += ` Shell commands MUST go through the \`run_command\` tool — direct shell/execute tool calls are denied in this run.`;
+      }
       if (!dockerHasGit) {
         env += ` Note: \`git\` is NOT available in this container — do not run git commands (commits are handled automatically for you).`;
       }
@@ -417,6 +422,7 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
     // still call task_get_state/task_submit_plan/etc despite --strict-mcp-config.
     let bridgeToken: string | undefined;
     let claudeCode: RunOptions['claudeCode'];
+    let acp: RunOptions['acp'];
     // Same handle Pause aborts; the wall-clock budget (resolved above) also
     // aborts it. Enforced for every provider — native runs stay additionally
     // turn-bounded by maxTurns.
@@ -451,6 +457,21 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
         console.warn('[tasks] claude-code agent without task bridge URL — task tools unavailable this run');
       }
     }
+    if (isAcp) {
+      const bridgeUrl = getTaskBridgeUrl();
+      const exec =
+        dockerContainer && !planning ? { container: dockerContainer, workdir: workingDir } : undefined;
+      bridgeToken = bridgeUrl ? issueBridgeToken(effectiveAgent.id, { exec }) : undefined;
+      acp = acpTaskExtras({
+        planning,
+        sdd,
+        bridge: bridgeUrl && bridgeToken ? { url: bridgeUrl, token: bridgeToken } : undefined,
+        docker: exec,
+      });
+      if (!bridgeUrl) {
+        console.warn('[tasks] acp agent without task bridge URL — task tools unavailable this run');
+      }
+    }
 
     try {
       await harness.run(
@@ -465,6 +486,7 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
           // the recall block gets the project scope explicitly.
           memoryProjectId: task.projectId,
           claudeCode,
+          acp,
           dockerContainer,
           signal,
         },
@@ -633,7 +655,7 @@ async function runReviewCycle(opts: {
   dockerHasGit?: boolean;
 }): Promise<void> {
   const { task, project, agent, provider, tools, workingDir, signal, dockerContainer, dockerHasGit } = opts;
-  const maxRunSeconds = resolveMaxRunSeconds(task, project, provider.type === 'claude-code');
+  const maxRunSeconds = resolveMaxRunSeconds(task, project, provider.type === 'claude-code' || provider.type === 'acp');
   if (!task.worktreePath) return; // reviewing implies a worktree; nothing to review otherwise
 
   // Review gate disabled (task or project level): finalize directly, no review.
