@@ -27,10 +27,12 @@ New pure module `harness/memory_recall.ts`.
   project. Project resolution reuses step 2's helper (path-aware prefix match
   of the agent's `workingDir` against `config.projects[].workingDir`) — read
   and write resolve scope symmetrically.
-- **Match is inverted — no query tokenization.** For each stored keyword
-  (lowercased, trimmed, length ≥ 3): does the lowercased user message
-  `.includes(keyword)`? Multi-word keywords ("memory sweep") work for free;
-  no stopwords, no stemming. O(memories × keywords) — negligible at this
+- **Match is inverted — no query tokenization.** *(Revised post-field-test:
+  whole-keyword substring matching made multi-word keywords stricter, not
+  looser — "reaper linux" never fired on "reaper". Keywords are now split
+  into component words, deduped per memory, each word length ≥ 3 matched by
+  containment: any word fires, the full phrase scores higher because every
+  word matches — graded for free.)* No stopwords, no stemming. O(memories × keywords) — negligible at this
   scale, and the storage/lookup shape stays trivially portable to sqlite
   later (explicitly non-blocking).
 - **Score** (constants at the top of the module, tunable):

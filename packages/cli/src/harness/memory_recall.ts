@@ -17,20 +17,25 @@ const IMPORTANCE_WEIGHT: Record<Memory['importance'], number> = {
   high: 2,
 };
 
-/** Inverted lexical match — no query tokenization: a stored keyword matches
- *  when the lowercased prompt contains it (multi-word keywords work free).
- *  score = matched × importanceWeight × (1 + log2(1 + recallCount)):
+/** Inverted lexical match — no query tokenization: keywords are split into
+ *  their component words (deduped per memory), and each word contained in
+ *  the lowercased prompt counts as a match. A multi-word keyword therefore
+ *  fires on any of its words ("reaper linux" ← "reaper") and scores higher
+ *  when the full phrase is present (every word matches) — graded for free,
+ *  no phrase-special-casing. Generic components over-firing is mitigated by
+ *  the scoring plus the top-K cut.
+ *  score = matchedWords × importanceWeight × (1 + log2(1 + recallCount)):
  *  acquired strength weighs in — much-recalled memories surface more easily.
  *  Ties: lastRecalledAt desc, then createdAt desc. Top-K, score > 0 only. */
 export function matchMemories(prompt: string, memories: Memory[]): Memory[] {
   const text = prompt.toLowerCase();
   const scored: Array<{ m: Memory; score: number }> = [];
   for (const m of memories) {
+    const words = new Set(
+      m.keywords.flatMap((k) => k.toLowerCase().split(/\s+/)).filter((w) => w.length >= MIN_KEYWORD_LENGTH)
+    );
     let matched = 0;
-    for (const k of m.keywords) {
-      const kw = k.trim().toLowerCase();
-      if (kw.length >= MIN_KEYWORD_LENGTH && text.includes(kw)) matched++;
-    }
+    for (const w of words) if (text.includes(w)) matched++;
     if (matched === 0) continue;
     const score =
       matched * IMPORTANCE_WEIGHT[m.importance] * (1 + Math.log2(1 + (m.recallCount ?? 0)));
