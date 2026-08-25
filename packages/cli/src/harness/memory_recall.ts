@@ -62,12 +62,21 @@ export function formatMemoriesBlock(matches: Memory[]): string {
 /** One-stop per-turn recall: gate on MemoryConfig (present = read path on,
  *  same gate as the sweep), resolve the project from the run's workingDir,
  *  match global + project memories, format. Never throws — recall must
- *  never break a chat turn. */
-export async function buildMemoriesBlock(prompt: string, workingDir: string): Promise<string> {
+ *  never break a chat turn.
+ *  `explicitProjectId` overrides dir resolution: task cycles run in a
+ *  worktree (or managed repo dir) that never prefix-matches the project's
+ *  workingDir, but the caller knows the project from the task record —
+ *  still host-side, never the model's choice. */
+export async function buildMemoriesBlock(
+  prompt: string,
+  workingDir: string,
+  explicitProjectId?: string
+): Promise<string> {
   try {
     const config = await loadConfig();
     if (!config.memory) return '';
-    const projectId = resolveProjectIdForDir(workingDir, config.projects ?? []);
+    const projectId =
+      explicitProjectId ?? resolveProjectIdForDir(workingDir, config.projects ?? []);
     const candidates = (await listMemories()).filter(
       (m) => m.projectId === '' || m.projectId === projectId
     );

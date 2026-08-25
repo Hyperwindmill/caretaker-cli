@@ -353,7 +353,7 @@ export async function runClaudeCode(opts: RunOptions, cb: RunCallbacks = {}): Pr
   );
   const memoriesBlock = opts.skipMemoryRecall
     ? ''
-    : await buildMemoriesBlock(opts.prompt, workingDir);
+    : await buildMemoriesBlock(opts.prompt, workingDir, opts.memoryProjectId);
   const appendSystemPrompt = [
     sys,
     ctxEntries.length ? formatContextBlock(ctxEntries) : '',

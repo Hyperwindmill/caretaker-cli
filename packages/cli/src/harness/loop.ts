@@ -102,6 +102,11 @@ export interface RunOptions {
    *  own summarize runs: injecting recalled memories into the call that
    *  extracts memories would pollute its carefully-shaped prompt. */
   skipMemoryRecall?: boolean;
+  /** Explicit project scope for the recall block. Set by autonomous task
+   *  runs, whose workingDir is a worktree (or managed repo dir) that never
+   *  prefix-matches the project's workingDir — the task record already
+   *  knows the project. Host-side, never the model's choice. */
+  memoryProjectId?: string;
 }
 
 export interface RunResult {
@@ -177,7 +182,7 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
   // host-side against the user prompt, zero model calls. '' when memory is
   // unconfigured or nothing matches.
   if (!opts.skipMemoryRecall) {
-    const memoriesBlock = await buildMemoriesBlock(prompt, toolCtx.workingDir);
+    const memoriesBlock = await buildMemoriesBlock(prompt, toolCtx.workingDir, opts.memoryProjectId);
     if (memoriesBlock) {
       effectiveSystemPrompt = `${effectiveSystemPrompt}\n\n${memoriesBlock}`.trim();
     }
