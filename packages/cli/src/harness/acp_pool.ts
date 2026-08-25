@@ -127,17 +127,26 @@ async function createHandle(provider: ProviderConfig): Promise<AcpAgentHandle> {
       return b.onPermission(ctx.params);
     });
   const { conn, kill } = connector(provider, app);
-  const init = await conn.agent.request('initialize', {
-    protocolVersion: PROTOCOL_VERSION,
-    clientCapabilities: {
-      // v1 deliberately advertises neither fs nor terminal (see spec):
-      // agent-side fs writes the same bind-mounted files; shell confinement
-      // under docker is deny-execute + the bridge run_command tool.
-      fs: { readTextFile: false, writeTextFile: false },
-      terminal: false,
-    },
-    clientInfo: { name: 'caretaker', version: '1' },
-  });
+  let init: InitializeResponse;
+  try {
+    init = await conn.agent.request('initialize', {
+      protocolVersion: PROTOCOL_VERSION,
+      clientCapabilities: {
+        // v1 deliberately advertises neither fs nor terminal (see spec):
+        // agent-side fs writes the same bind-mounted files; shell confinement
+        // under docker is deny-execute + the bridge run_command tool.
+        fs: { readTextFile: false, writeTextFile: false },
+        terminal: false,
+      },
+      clientInfo: { name: 'caretaker', version: '1' },
+    });
+  } catch (err) {
+    // A child that fails the handshake (not an ACP binary, crash at boot,
+    // protocol mismatch) must not be leaked as a zombie process.
+    kill();
+    conn.close();
+    throw err;
+  }
   return { conn, init, binding, kill, lastUsed: Date.now() };
 }
 
