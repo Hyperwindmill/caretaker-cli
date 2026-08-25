@@ -91,6 +91,12 @@ export interface Tool {
   /** Resolves the tool. Throws are caught by the loop and surfaced as
    *  "Error: <msg>" tool results. */
   execute: (args: unknown, ctx: ToolContext) => Promise<ToolResult>;
+  /** Harness infrastructure, not an agent capability: excluded from the
+   *  tool pickers because resolveAgentTools auto-includes it behind its own
+   *  gate (e.g. memory_read behind MemoryConfig) — offering a checkbox the
+   *  runtime overrides would be the UI/runtime mismatch the pickers exist
+   *  to prevent. */
+  hidden?: boolean;
   /** Marks tools whose action mutates the system or has side effects
    *  (file write, command exec, network mutation). The harness may surface
    *  a confirm prompt for these in a future iteration; today purely

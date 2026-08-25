@@ -8,6 +8,12 @@
 //     (`list_commands`/`invoke_command`) access tools are added even if
 //     the user did not list them in allowedTools — they are useless
 //     without an active plugin and noisy if shown without one.
+//   - Memory-gated builtin: when `MemoryConfig` is present in caretaker.json,
+//     `mcp__memory__memory_read` is added. Same gate as the `<memories>`
+//     prelude block — the tool is the other half of that harness channel,
+//     not an agent capability. It is hidden from the pickers (Tool.hidden),
+//     so there is no user-chosen off state to contradict; the user-visible
+//     switch is MemoryConfig itself.
 //   - MCP tools: when the agent references MCP servers, their tools/list
 //     output is fetched via the adapter and appended (names already
 //     namespaced as `mcp__<id>__<toolName>`).
@@ -26,10 +32,12 @@ import type { AgentConfig } from '../../types.js';
 import type { ToolRegistry } from './registry.js';
 import type { Tool } from './types.js';
 import { mcpToolsForServers } from '../../mcp/adapter.js';
+import { loadConfig } from '../../store/json.js';
 
 const SKILL_TOOL_NAMES = ['list_skills', 'read_skill'] as const;
 const COMMAND_TOOL_NAMES = ['list_commands', 'invoke_command'] as const;
 const ALWAYS_ON_TOOL_NAMES = ['get_agent_context'] as const;
+const MEMORY_TOOL_NAMES = ['mcp__memory__memory_read'] as const;
 
 function autoInclude(tools: Tool[], registry: ToolRegistry, names: readonly string[]): void {
   const have = new Set(tools.map((t) => t.name));
@@ -65,6 +73,12 @@ export async function resolveAgentTools(
   if ((agent.plugins ?? []).length > 0) {
     autoInclude(tools, registry, SKILL_TOOL_NAMES);
     autoInclude(tools, registry, COMMAND_TOOL_NAMES);
+  }
+
+  try {
+    if ((await loadConfig()).memory) autoInclude(tools, registry, MEMORY_TOOL_NAMES);
+  } catch {
+    // Unreadable config → no memory tier this run; never fail tool resolution.
   }
 
   const mcpIds = agent.mcpServers ?? [];

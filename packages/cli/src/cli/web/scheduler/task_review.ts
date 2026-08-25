@@ -50,6 +50,9 @@ export async function runDoneReview(opts: {
   objective: string;
   branch: string;
   workingDir: string;
+  /** The task's project — explicit memory-recall scope (the worktree the
+   *  review runs in never prefix-matches the project's workingDir). */
+  projectId?: string;
   round: number;
   signal?: AbortSignal;
   /** Wall-clock budget (seconds) for the review run. Defaults to the claude-code default. */
@@ -101,6 +104,7 @@ export async function runDoneReview(opts: {
         prompt,
         history: [],
         workingDir: opts.workingDir,
+        memoryProjectId: opts.projectId,
         signal,
         dockerContainer: opts.dockerContainer,
         ...(claudeCode ? { claudeCode } : {}),
