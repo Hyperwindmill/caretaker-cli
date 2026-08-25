@@ -53,6 +53,10 @@ export function AgentsTab({
 
   const providerType = config.providers.find(p => p.name === provider)?.type ?? 'openai';
   const isClaudeCode = providerType === 'claude-code';
+  const isAcp = providerType === 'acp';
+  // External runners (claude-code, acp) own their tools/loop: the native
+  // pickers and model listing don't apply and are hidden (UI/runtime parity).
+  const isExternalRunner = isClaudeCode || isAcp;
 
   // When model fetch returns, stop loading
   useEffect(() => {
@@ -172,7 +176,9 @@ export function AgentsTab({
       setErrorMsg('Provider is required.');
       return;
     }
-    if (!trimmedModel) {
+    if (!trimmedModel && !isAcp) {
+      // For ACP agents the model is chosen by the agent server itself; the
+      // field is only an optional label (shown in task threads).
       setErrorMsg('Model is required.');
       return;
     }
@@ -194,17 +200,17 @@ export function AgentsTab({
       return;
     }
 
-    // Assemble allowedTools, confirmTools and plugins. Claude Code agents ignore these at
-    // runtime (they use the CLI's own tool/permission system) — for an existing agent being
-    // edited, preserve its previously stored values verbatim instead of wiping them from the
-    // (hidden) picker state; a brand-new claude-code agent just gets empty arrays.
-    const allowedToolsList = isClaudeCode
+    // Assemble allowedTools, confirmTools and plugins. External-runner agents (claude-code,
+    // acp) ignore these at runtime (they use the agent's own tool/permission system) — for an
+    // existing agent being edited, preserve its previously stored values verbatim instead of
+    // wiping them from the (hidden) picker state; a brand-new one just gets empty arrays.
+    const allowedToolsList = isExternalRunner
       ? editingAgent?.allowedTools ?? []
       : Object.keys(selectedTools).filter(t => selectedTools[t]);
-    const confirmToolsList = isClaudeCode
+    const confirmToolsList = isExternalRunner
       ? editingAgent?.confirmTools ?? []
       : Object.keys(confirmTools).filter(t => selectedTools[t] && confirmTools[t]);
-    const pluginsList = isClaudeCode
+    const pluginsList = isExternalRunner
       ? editingAgent?.plugins ?? []
       : Object.keys(selectedPlugins).filter(p => selectedPlugins[p]);
 
@@ -305,7 +311,7 @@ export function AgentsTab({
               </select>
             </div>
 
-            {!isClaudeCode && (
+            {!isExternalRunner && (
               <div className="form-group">
                 <label htmlFor="agent-turns">Max Turns</label>
                 <input
@@ -323,7 +329,7 @@ export function AgentsTab({
           <div className="form-group">
             <label htmlFor="agent-model">Model</label>
             <div className="input-with-action">
-              {!isClaudeCode && modelsResult?.ok ? (
+              {!isExternalRunner && modelsResult?.ok ? (
                 <select
                   id="agent-model"
                   value={model}
@@ -338,12 +344,12 @@ export function AgentsTab({
                 <input
                   id="agent-model"
                   type="text"
-                  placeholder={isClaudeCode ? 'sonnet | opus | haiku (or full model id)' : 'e.g. claude-3-5-sonnet-latest'}
+                  placeholder={isClaudeCode ? 'sonnet | opus | haiku (or full model id)' : isAcp ? 'optional — label shown in task threads' : 'e.g. claude-3-5-sonnet-latest'}
                   value={model}
                   onChange={(e) => setModel(e.target.value)}
                 />
               )}
-              {!isClaudeCode && (
+              {!isExternalRunner && (
                 <button
                   type="button"
                   className="btn btn--secondary btn--xs"
@@ -402,6 +408,15 @@ export function AgentsTab({
               </p>
             </div>
             </>
+          ) : isAcp ? (
+            /* ACP agents own their tools and permissions; the native pickers don't apply. */
+            <div className="form-group">
+              <p style={{ fontSize: '11px', color: 'var(--vscode-descriptionForeground)', lineHeight: '1.4', margin: '4px 0 0' }}>
+                ACP agents use the agent's own tools and permission model. When the agent asks for
+                permission, caretaker shows a confirmation card in interactive chats; unattended runs
+                (scheduler, tasks) are auto-approved with the task policy applied.
+              </p>
+            </div>
           ) : (
             <>
               {/* Tools Selection */}
