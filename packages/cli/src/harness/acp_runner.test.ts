@@ -169,3 +169,25 @@ test('loop.run dispatches acp providers to runAcp', async () => {
   assert.equal(res.stop, 'done');
 });
 
+
+test('adapter hook notices route to thinking, not the reply text (claude-agent-acp#1042 heuristic)', async () => {
+  useFakeAgent(async (ctx) => {
+    await ctx.client.notify(
+      'session/update',
+      textUpdate('**Notice:** UserPromptSubmit says: MEMORY REMINDER blah'),
+    );
+    await ctx.client.notify('session/update', textUpdate('real reply'));
+    // A mid-prose bold label must NOT be demoted: only whole-chunk matches count.
+    await ctx.client.notify('session/update', textUpdate(' — **Notice:** inline is fine'));
+    return { stopReason: 'end_turn' };
+  });
+  const thinking: string[] = [];
+  const chunks: string[] = [];
+  const res = await runAcp(
+    { agent: agentCfg, provider, tools: [], prompt: 'x' },
+    { onThinking: (t) => thinking.push(t), onChunk: (c) => chunks.push(c) },
+  );
+  assert.equal(res.text, 'real reply — **Notice:** inline is fine');
+  assert.deepEqual(thinking, ['**Notice:** UserPromptSubmit says: MEMORY REMINDER blah']);
+  assert.deepEqual(chunks, ['real reply', ' — **Notice:** inline is fine']);
+});
