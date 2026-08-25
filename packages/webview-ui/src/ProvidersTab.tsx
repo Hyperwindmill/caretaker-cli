@@ -15,10 +15,11 @@ export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps)
 
   // Form states
   const [name, setName] = useState('');
-  const [type, setType] = useState<'openai' | 'claude-code'>('openai');
+  const [type, setType] = useState<'openai' | 'claude-code' | 'acp'>('openai');
   const [endpoint, setEndpoint] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [command, setCommand] = useState('');
+  const [args, setArgs] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const startEdit = (provider: ProviderConfig) => {
@@ -29,6 +30,7 @@ export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps)
     setEndpoint(provider.endpoint);
     setApiKey(provider.apiKey || '');
     setCommand(provider.command || '');
+    setArgs((provider.args ?? []).join(' '));
     setErrorMsg(null);
   };
 
@@ -40,6 +42,7 @@ export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps)
     setEndpoint('');
     setApiKey('');
     setCommand('');
+    setArgs('');
     setErrorMsg(null);
   };
 
@@ -55,12 +58,18 @@ export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps)
     const trimmedApiKey = apiKey.trim();
     const trimmedCommand = command.trim();
     const isClaudeCode = type === 'claude-code';
+    const isAcp = type === 'acp';
 
     if (!trimmedName) {
       setErrorMsg('Name is required.');
       return;
     }
-    if (!isClaudeCode) {
+    if (isAcp) {
+      if (!trimmedCommand) {
+        setErrorMsg('Command is required for ACP agents (e.g. npx or binary path).');
+        return;
+      }
+    } else if (!isClaudeCode) {
       if (!trimmedEndpoint) {
         setErrorMsg('Endpoint is required.');
         return;
@@ -86,18 +95,33 @@ export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps)
 
     // Modify caretaker.json
     const updatedProviders = [...config.providers];
-    const newProv: ProviderConfig = isClaudeCode
-      ? {
-          name: trimmedName,
-          type,
-          endpoint: '',
-          ...(trimmedCommand ? { command: trimmedCommand } : {}),
-        }
-      : {
-          name: trimmedName,
-          endpoint: trimmedEndpoint,
-          ...(trimmedApiKey ? { apiKey: trimmedApiKey } : {}),
-        };
+    let newProv: ProviderConfig;
+    if (isAcp) {
+      const p: ProviderConfig = {
+        name: trimmedName,
+        type: 'acp',
+        endpoint: '',
+        command: trimmedCommand,
+      };
+      const argList = args.trim() ? args.trim().split(/\s+/) : [];
+      if (argList.length) p.args = argList;
+      if (editingProvider?.env) p.env = editingProvider.env;
+      if (editingProvider?.selfLoadedContextFiles) p.selfLoadedContextFiles = editingProvider.selfLoadedContextFiles;
+      newProv = p;
+    } else if (isClaudeCode) {
+      newProv = {
+        name: trimmedName,
+        type: 'claude-code',
+        endpoint: '',
+        ...(trimmedCommand ? { command: trimmedCommand } : {}),
+      };
+    } else {
+      newProv = {
+        name: trimmedName,
+        endpoint: trimmedEndpoint,
+        ...(trimmedApiKey ? { apiKey: trimmedApiKey } : {}),
+      };
+    }
 
     if (isCreating) {
       updatedProviders.push(newProv);
@@ -164,11 +188,12 @@ export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps)
             <select
               id="provider-type"
               value={type}
-              onChange={(e) => setType(e.target.value as 'openai' | 'claude-code')}
+              onChange={(e) => setType(e.target.value as 'openai' | 'claude-code' | 'acp')}
               disabled={editingProvider !== null} // Changing an existing provider's type could break agents that reference it
             >
               <option value="openai">OpenAI-compatible endpoint</option>
               <option value="claude-code">Claude Code (local CLI)</option>
+              <option value="acp">ACP agent (external CLI)</option>
             </select>
           </div>
           <div className="form-group">
@@ -176,13 +201,39 @@ export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps)
             <input
               id="provider-name"
               type="text"
-              placeholder="e.g. Ollama, OpenRouter"
+              placeholder="e.g. Ollama, OpenRouter, ACP"
               value={name}
               onChange={(e) => setName(e.target.value)}
               disabled={editingProvider !== null} // Don't allow changing name of existing to prevent cascading breakages
             />
           </div>
-          {type === 'claude-code' ? (
+          {type === 'acp' ? (
+            <>
+              <div className="form-group">
+                <label htmlFor="provider-command">Command</label>
+                <input
+                  id="provider-command"
+                  type="text"
+                  placeholder="npx"
+                  value={command}
+                  onChange={(e) => setCommand(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="provider-args">Arguments</label>
+                <input
+                  id="provider-args"
+                  type="text"
+                  placeholder="@agentclientprotocol/claude-agent-acp"
+                  value={args}
+                  onChange={(e) => setArgs(e.target.value)}
+                />
+                <p style={{ fontSize: '11px', color: 'var(--vscode-descriptionForeground)', lineHeight: '1.4', margin: '4px 0 0' }}>
+                  Space-separated. Env vars can be added by editing caretaker.json.
+                </p>
+              </div>
+            </>
+          ) : type === 'claude-code' ? (
             <div className="form-group">
               <label htmlFor="provider-command">Command (Optional)</label>
               <input
@@ -240,7 +291,11 @@ export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps)
                 <div className="settings-card__body">
                   <div className="settings-card__title">{prov.name}</div>
                   <div className="settings-card__subtitle">
-                    {prov.type === 'claude-code' ? `Claude Code (local CLI)${prov.command ? ` — ${prov.command}` : ''}` : prov.endpoint}
+                    {prov.type === 'acp'
+                      ? `ACP — ${prov.command ?? ''} ${(prov.args ?? []).join(' ')}`.trim()
+                      : prov.type === 'claude-code'
+                        ? `Claude Code (local CLI)${prov.command ? ` — ${prov.command}` : ''}`
+                        : prov.endpoint}
                   </div>
                   {prov.apiKey && <div className="settings-card__badge">Key Configured</div>}
                 </div>
