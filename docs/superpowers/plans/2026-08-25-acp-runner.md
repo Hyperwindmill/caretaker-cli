@@ -38,7 +38,7 @@
 **Interfaces:**
 - Produces: `ProviderConfig.type` now includes `'acp'`; new optional fields `args: string[]`, `env: Record<string,string>`, `selfLoadedContextFiles: string[]`.
 
-- [ ] **Step 1: Extend ProviderConfig**
+- [x] **Step 1: Extend ProviderConfig**
 
 In `packages/types/src/index.ts` replace the ProviderConfig block with:
 
@@ -66,17 +66,17 @@ export type ProviderConfig = {
 };
 ```
 
-- [ ] **Step 2: Add the SDK dependency**
+- [x] **Step 2: Add the SDK dependency**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli add @agentclientprotocol/sdk`
 Expected: `@agentclientprotocol/sdk` ^1.4.0 in `packages/cli/package.json` dependencies.
 
-- [ ] **Step 3: Typecheck + build types package**
+- [x] **Step 3: Typecheck + build types package**
 
 Run: `pnpm -F caretaker-types build && pnpm -F @hyperwindmill/caretaker-cli typecheck`
 Expected: PASS (the new fields are optional; no consumer breaks).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add packages/types/src/index.ts packages/cli/package.json pnpm-lock.yaml
@@ -100,7 +100,7 @@ git commit -m "feat(acp): provider type 'acp' + @agentclientprotocol/sdk depende
   - `buildPermissionResponse(options: PermissionOption[], decision: ConfirmDecision | 'deny'): RequestPermissionResponse` (ConfirmDecision = `'once'|'always'|'reject'` from `./tools/index.js`)
   - `acpTaskExtras(p: { planning: boolean; sdd: boolean; bridge?: { url: string; token: string }; docker?: { container: string; workdir: string } }): AcpRunExtras`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `packages/cli/src/harness/acp_policy.test.ts`:
 
@@ -176,12 +176,12 @@ test('acpTaskExtras shapes the run extras per role', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/harness/acp_policy.test.ts`
 Expected: FAIL (module not found).
 
-- [ ] **Step 3: Implement `acp_policy.ts`**
+- [x] **Step 3: Implement `acp_policy.ts`**
 
 ```ts
 // Permission policy for ACP runs: one pure function replaces the per-runner
@@ -282,12 +282,12 @@ export function acpTaskExtras(p: {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/harness/acp_policy.test.ts`
 Expected: PASS. Also run `pnpm -F @hyperwindmill/caretaker-cli typecheck`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/cli/src/harness/acp_policy.ts packages/cli/src/harness/acp_policy.test.ts
@@ -312,7 +312,7 @@ git commit -m "feat(acp): permission policy (interactive/unattended/planner/deny
   - `__setConnector(fn) / __resetConnector()` test hooks
   - `__shutdownAcpPool(): void` — kills everything (tests / process exit)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `packages/cli/src/harness/acp_pool.test.ts`:
 
@@ -390,12 +390,12 @@ test('missing command errors with a readable message', async () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/harness/acp_pool.test.ts`
 Expected: FAIL (module not found).
 
-- [ ] **Step 3: Implement `acp_pool.ts`**
+- [x] **Step 3: Implement `acp_pool.ts`**
 
 ```ts
 // ACP agent process pool. Unlike claude -p (one process per turn + --resume),
@@ -588,12 +588,12 @@ export function __shutdownAcpPool(): void {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/harness/acp_pool.test.ts`
 Expected: PASS. Note: if `ClientApp.connect(AgentApp)`'s in-process overload behaves differently than documented, adapt the test connector (e.g. create a pair of in-memory streams) — the production code must not change for the test's sake. Also run typecheck.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/cli/src/harness/acp_pool.ts packages/cli/src/harness/acp_pool.test.ts
@@ -615,7 +615,7 @@ git commit -m "feat(acp): long-lived agent process pool with idle reaper and tes
 
 Note on ordering: this task also adds `acpSessionId` to `SessionMetaRecord` and `updateAcpSessionId` to the store (2 small edits), because the runner needs them; Task 5 then only wires dispatch + title.
 
-- [ ] **Step 1: Store support**
+- [x] **Step 1: Store support**
 
 In `packages/cli/src/session/types.ts` after `claudeSessionId?: string;` (line ~34) add:
 
@@ -640,11 +640,11 @@ export async function updateAcpSessionId(
 
 (Copy the exact persistence call used by `updateClaudeSessionId` — read lines 259-266 first and mirror them; the helper name for the final write may differ.)
 
-- [ ] **Step 2: Export foldHistory**
+- [x] **Step 2: Export foldHistory**
 
 In `claude_code_runner.ts:165` change `function foldHistory(` to `export function foldHistory(`.
 
-- [ ] **Step 3: Write the failing test**
+- [x] **Step 3: Write the failing test**
 
 `packages/cli/src/harness/acp_runner.test.ts` (CARETAKER_HOME at file scope, fake agent in-process via the Task 3 connector hook):
 
@@ -815,12 +815,12 @@ test('sessionId runs persist acpSessionId and reuse the pooled child; second tur
 
 (Check `createSession`'s real signature in `session/store.ts` before using it — mirror what `claude_code_runner.test.ts` does.)
 
-- [ ] **Step 4: Run test to verify it fails**
+- [x] **Step 4: Run test to verify it fails**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/harness/acp_runner.test.ts`
 Expected: FAIL (module not found).
 
-- [ ] **Step 5: Implement `acp_runner.ts`**
+- [x] **Step 5: Implement `acp_runner.ts`**
 
 ```ts
 // ACP runner: implements the same run() contract as loop.ts by driving an
@@ -1127,12 +1127,12 @@ export async function runAcp(opts: RunOptions, cb: RunCallbacks = {}): Promise<R
 }
 ```
 
-- [ ] **Step 6: Run test to verify it passes**
+- [x] **Step 6: Run test to verify it passes**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/harness/acp_runner.test.ts`
 Expected: PASS. Note the pool key mismatch trap: `runAcp` must not double-create children in the sessionId test (assert `prompts.length === 2` catches it). Also run typecheck and the claude_code_runner suite (`… exec tsx --test packages/cli/src/harness/claude_code_runner.test.ts`) to prove the `export` change is inert.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/cli/src/harness/acp_runner.ts packages/cli/src/harness/acp_runner.test.ts \
@@ -1152,7 +1152,7 @@ git commit -m "feat(acp): runner — fabricated context blocks, permission gate,
 **Interfaces:**
 - Produces: `RunOptions.acp?: AcpRunExtras`; `run()` dispatches `provider.type === 'acp'` → `runAcp`.
 
-- [ ] **Step 1: RunOptions field**
+- [x] **Step 1: RunOptions field**
 
 In `loop.ts` after the `claudeCode?` field (line 95) add:
 
@@ -1162,7 +1162,7 @@ In `loop.ts` after the `claudeCode?` field (line 95) add:
   acp?: import('./acp_policy.js').AcpRunExtras;
 ```
 
-- [ ] **Step 2: Dispatch**
+- [x] **Step 2: Dispatch**
 
 In `run()` right after the claude-code dispatch block (line 124-129) add:
 
@@ -1175,7 +1175,7 @@ In `run()` right after the claude-code dispatch block (line 124-129) add:
   }
 ```
 
-- [ ] **Step 3: Title skip**
+- [x] **Step 3: Title skip**
 
 In `title.ts:27` change the condition to:
 
@@ -1183,7 +1183,7 @@ In `title.ts:27` change the condition to:
   if (input.provider.type === 'claude-code' || input.provider.type === 'acp') return null; // no HTTP endpoint; keep fallback title
 ```
 
-- [ ] **Step 4: Dispatch test**
+- [x] **Step 4: Dispatch test**
 
 Append to `acp_runner.test.ts`:
 
@@ -1197,12 +1197,12 @@ test('loop.run dispatches acp providers to runAcp', async () => {
 });
 ```
 
-- [ ] **Step 5: Run tests + typecheck**
+- [x] **Step 5: Run tests + typecheck**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/harness/acp_runner.test.ts && pnpm -F @hyperwindmill/caretaker-cli typecheck`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/cli/src/harness/loop.ts packages/cli/src/harness/title.ts packages/cli/src/harness/acp_runner.test.ts
@@ -1225,7 +1225,7 @@ git commit -m "feat(acp): dispatch acp providers from run(); skip AI titling lik
   - `buildBuiltinMcpServer(info?, opts?: { callerAgent?: AgentConfig; tools?: Tool[] })` — `tools` overrides the served list (default `builtinMcpTools()`).
   - `issueBridgeToken(agentId?: string, opts?: { exec?: { container: string; workdir: string }; execOnly?: boolean }): string`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `packages/cli/src/mcp/run_command_tool.test.ts` — test the tool via a stubbed exec. Make the exec function injectable:
 
@@ -1276,12 +1276,12 @@ test('non-zero exit reports code and output', async () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/mcp/run_command_tool.test.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement `run_command_tool.ts`**
+- [x] **Step 3: Implement `run_command_tool.ts`**
 
 ```ts
 // Per-task shell tool for ACP runs under Docker confinement: the ACP policy
@@ -1349,7 +1349,7 @@ export function makeRunCommandTool(bind: { container: string; workdir: string })
 
 (If the `Tool.execute` return type in `harness/tools/types.ts` is richer than `{ content: string }`, match it — read `ToolResult` first.)
 
-- [ ] **Step 4: builtin_server tools override**
+- [x] **Step 4: builtin_server tools override**
 
 In `builtin_server.ts` change the signature and both handlers:
 
@@ -1363,7 +1363,7 @@ export function buildBuiltinMcpServer(
 
 …and replace both `builtinMcpTools()` call sites inside the handlers with `served()`.
 
-- [ ] **Step 5: mcp_bridge token payload**
+- [x] **Step 5: mcp_bridge token payload**
 
 In `mcp_bridge.ts`:
 
@@ -1398,12 +1398,12 @@ export function issueBridgeToken(
 
 (adjust the existing `const agentId = activeTokens.get(token) ?? ''` line to read `tokenInfo.agentId`; import `makeRunCommandTool` and `builtinMcpTools`.)
 
-- [ ] **Step 6: Run tests + typecheck**
+- [x] **Step 6: Run tests + typecheck**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/mcp/run_command_tool.test.ts && pnpm -F @hyperwindmill/caretaker-cli typecheck && pnpm -F @hyperwindmill/caretaker-cli test`
 Expected: PASS (full suite catches any bridge/builtin_server regression).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/cli/src/mcp/run_command_tool.ts packages/cli/src/mcp/run_command_tool.test.ts \
@@ -1422,7 +1422,7 @@ git commit -m "feat(acp): bridge-injected run_command tool bound to the task con
 - Modify: `packages/cli/src/cli/web/scheduler/memory_sweep.ts:150` (deny-all)
 - Test: extend `packages/cli/src/cli/web/scheduler/task_roles.test.ts` if it exists (check first); the strategy/review arms are exercised by typecheck + existing suites (they are thin wiring around already-tested functions).
 
-- [ ] **Step 1: task_roles budget**
+- [x] **Step 1: task_roles budget**
 
 Rename the parameter to reflect the class (claude-code AND acp are external runners):
 
@@ -1439,7 +1439,7 @@ export function resolveMaxRunSeconds(
 
 (Keep the constant names — renaming them would touch many call sites for zero behavior. Update the doc comment above the function to say "external runners (claude-code, acp)".)
 
-- [ ] **Step 2: task_strategy ACP arm**
+- [x] **Step 2: task_strategy ACP arm**
 
 At line ~348:
 
@@ -1486,7 +1486,7 @@ Extend the docker prompt hint (line ~361) so ACP agents know the shell path:
 
 Line ~636 (the second `resolveMaxRunSeconds` call): change the third argument to `provider.type === 'claude-code' || provider.type === 'acp'`.
 
-- [ ] **Step 3: task_review ACP arm**
+- [x] **Step 3: task_review ACP arm**
 
 In `runDoneReview` (after the `claudeCode` const, line ~81) add:
 
@@ -1522,7 +1522,7 @@ Pass `...(acp ? { acp } : {})` in the `harness.run` options, and in the existing
 
 Import `getTaskBridgeUrl`/`issueBridgeToken`/`revokeBridgeToken` from `'../mcp_bridge.js'` (check the existing relative path used by task_strategy.ts and mirror it).
 
-- [ ] **Step 4: memory_sweep deny-all**
+- [x] **Step 4: memory_sweep deny-all**
 
 In `makeSummarizer` (line ~150) add next to the claudeCode extra:
 
@@ -1531,12 +1531,12 @@ In `makeSummarizer` (line ~150) add next to the claudeCode extra:
         acp: { mode: 'deny-all' },
 ```
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli typecheck && pnpm -F @hyperwindmill/caretaker-cli test`
 Expected: PASS (the resolveMaxRunSeconds param rename is source-compatible: positional boolean).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/cli/src/cli/web/scheduler/task_roles.ts packages/cli/src/cli/web/scheduler/task_strategy.ts \
@@ -1553,7 +1553,7 @@ git commit -m "feat(acp): task/review/sweep arms — planner policy, docker run_
 - Modify: `packages/cli/src/tui/providers.tsx`
 - Test: `pnpm -F webview-ui test && pnpm -F webview-ui build`, `pnpm -F @hyperwindmill/caretaker-cli typecheck`
 
-- [ ] **Step 1: ProvidersTab**
+- [x] **Step 1: ProvidersTab**
 
 Extend the form state and rendering (current shape at `ProvidersTab.tsx:18-31,56-94,160-245`):
 
@@ -1575,16 +1575,16 @@ Extend the form state and rendering (current shape at `ProvidersTab.tsx:18-31,56
 
 - List row label (line ~243): `prov.type === 'acp' ? \`ACP — ${prov.command ?? ''} ${(prov.args ?? []).join(' ')}\`.trim() : …` alongside the existing claude-code branch.
 
-- [ ] **Step 2: TUI providers.tsx**
+- [x] **Step 2: TUI providers.tsx**
 
 Mirror the same additions in the Ink form (`tui/providers.tsx:187-250`): add `'acp'` to `ProviderType` and the type-step choices; for acp the step sequence is `type → name → command → args` (new `args` FormStep, same TextInput pattern as `command`, space-split on save); detail view (line ~110-117) shows `type: acp`, `command`, `args`. Empty command on save for acp: keep the user on the command step (same pattern the form uses for required fields — check how `name` emptiness is handled and mirror it).
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run: `pnpm -F webview-ui test && pnpm -F webview-ui build && pnpm -F @hyperwindmill/caretaker-cli typecheck && pnpm -F caretaker-vscode build`
 Expected: PASS.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add packages/webview-ui/src/ProvidersTab.tsx packages/cli/src/tui/providers.tsx
@@ -1601,19 +1601,19 @@ git commit -m "feat(acp): provider settings UI (webview + TUI) for ACP agents"
 - Modify: `docs/superpowers/specs/2026-08-25-acp-runner-design.md` (record the two v1 deviations)
 - Create: `.changeset/acp-runner.md`
 
-- [ ] **Step 1: Spec deviations**
+- [x] **Step 1: Spec deviations**
 
 In the spec's "Docker confinement" section append a short "v1 deviation" note: the `terminal` capability is not advertised in v1 even without Docker (agent-side host shell is the status quo; the capability is additive later), and the fs capabilities are not advertised (agent-side fs writes the same bind-mounted files). Both were decided at planning time to cut dead surface. Also note in the provider-config section that `runnerHints` was flattened: `selfLoadedContextFiles` sits directly on `ProviderConfig`.
 
-- [ ] **Step 2: CLAUDE.md layer 2**
+- [x] **Step 2: CLAUDE.md layer 2**
 
 Add a paragraph after the claude-code provider paragraph, covering: `type: 'acp'` providers (spawn command/args/env, official servers for Claude/Codex/Antigravity), the single dispatch point in `loop.ts`, long-lived per-session child + pool + idle reaper, fabricated context blocks (stable first turn / volatile per turn, `selfLoadedContextFiles`), the permission policy modes and how planner/SDD/docker map onto them, the run_command bridge tool (exec-only token for reviews), `acpSessionId` + `session/load`, external-runner budget class, no AI titling. Keep it as dense as the claude-code paragraph — same style.
 
-- [ ] **Step 3: README**
+- [x] **Step 3: README**
 
 User-facing: how to configure an ACP provider (three worked examples: `npx @agentclientprotocol/claude-agent-acp`, `npx @agentclientprotocol/codex-acp`, downloaded `agy_acp_server`), auth expectation (log in with the agent's own CLI first), the Docker caveat (an adapter that does not forward execute permission requests is unfit for Docker tasks until verified), and that caretaker plugins/tool pickers do not apply to ACP agents (same as claude-code).
 
-- [ ] **Step 4: Changeset**
+- [x] **Step 4: Changeset**
 
 `.changeset/acp-runner.md`:
 
@@ -1631,12 +1631,12 @@ New provider type `acp`: drive any Agent Client Protocol agent (claude-agent-acp
 
 (Check `.changeset/config.json` fixed-group package names before writing — copy the exact names from an existing changeset.)
 
-- [ ] **Step 5: Full verification**
+- [x] **Step 5: Full verification**
 
 Run: `pnpm build && pnpm test`
 Expected: every package builds and every suite passes.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add CLAUDE.md README.md docs/superpowers/specs/2026-08-25-acp-runner-design.md .changeset/acp-runner.md
