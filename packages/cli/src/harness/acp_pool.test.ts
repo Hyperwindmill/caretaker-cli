@@ -69,3 +69,12 @@ test('missing command errors with a readable message', async () => {
     /provider "x".*command/i,
   );
 });
+
+test('a failed initialize kills the child instead of leaking it', async () => {
+  const failing = agent({ name: 'fake' }).onRequest('initialize', () => {
+    throw new Error('not an ACP agent');
+  });
+  const fake = useFakeAgent(failing);
+  await assert.rejects(() => acquireAcpAgent(provider, null));
+  assert.equal(fake.killedCount(), 1);
+});
