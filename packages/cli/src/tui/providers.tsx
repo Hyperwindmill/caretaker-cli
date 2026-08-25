@@ -185,7 +185,7 @@ export default function Providers({ onBack }: { onBack: () => void }) {
 }
 
 type FormStep = 'type' | 'name' | 'endpoint' | 'apiKey' | 'command';
-type ProviderType = 'openai' | 'claude-code';
+type ProviderType = 'openai' | 'claude-code' | 'acp';
 
 function ProviderForm({
   existingNames,

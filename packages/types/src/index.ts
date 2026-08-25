@@ -1,12 +1,23 @@
 export type ProviderConfig = {
   name: string;
   /** Runner kind. Absent = 'openai' (OpenAI-compatible HTTP endpoint). */
-  type?: 'openai' | 'claude-code';
-  /** OpenAI-compatible base URL. Unused when type === 'claude-code'. */
+  type?: 'openai' | 'claude-code' | 'acp';
+  /** OpenAI-compatible base URL. Unused when type === 'claude-code' | 'acp'. */
   endpoint: string;
   apiKey?: string;
-  /** claude-code only: path to the Claude Code CLI binary. Default: 'claude' from PATH. */
+  /** claude-code: path to the Claude Code CLI binary (default: 'claude' from PATH).
+   *  acp: the ACP agent server executable (required — e.g. 'npx' or an absolute
+   *  binary path). */
   command?: string;
+  /** acp only: arguments for the spawned ACP agent server,
+   *  e.g. ['@agentclientprotocol/claude-agent-acp']. */
+  args?: string[];
+  /** acp only: extra environment variables for the spawned agent process. */
+  env?: Record<string, string>;
+  /** acp only: context files the agent already self-loads (skipped from the
+   *  fabricated context block), e.g. ['CLAUDE.md'] for claude-agent-acp,
+   *  ['AGENTS.md'] for codex-acp. */
+  selfLoadedContextFiles?: string[];
 };
 
 /** One entry in the **Services** settings collection (persisted under the
