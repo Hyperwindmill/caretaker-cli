@@ -1,8 +1,10 @@
 import * as harness from '../../../harness/index.js';
+import type { RunOptions } from '../../../harness/index.js';
 import type { AgentConfig, ProviderConfig } from '../../../types.js';
 import type { Tool } from '../../../harness/tools/types.js';
 import { CLAUDE_CODE_DEFAULT_RUN_SECONDS } from './task_roles.js';
 import { dockerDevAllowlist } from '../../../lib/docker.js';
+import { getTaskBridgeUrl, issueBridgeToken, revokeBridgeToken } from '../mcp_bridge.js';
 
 export const MAX_REVIEW_ROUNDS = 3;
 
@@ -79,6 +81,29 @@ export async function runDoneReview(opts: {
         }
       : { permissionMode: 'bypassPermissions' as const }
     : undefined;
+
+  const isAcp = opts.provider.type === 'acp';
+  let acp: RunOptions['acp'];
+  let reviewBridgeToken: string | undefined;
+  if (isAcp) {
+    const exec = opts.dockerContainer
+      ? { container: opts.dockerContainer, workdir: opts.workingDir }
+      : undefined;
+    let extraMcpServers: NonNullable<RunOptions['acp']>['extraMcpServers'];
+    if (exec) {
+      // The reviewer needs shell in the container but must NOT see the task
+      // state tools: an exec-only bridge token serves run_command alone.
+      const bridgeUrl = getTaskBridgeUrl();
+      reviewBridgeToken = bridgeUrl ? issueBridgeToken(opts.agent.id, { exec, execOnly: true }) : undefined;
+      if (bridgeUrl && reviewBridgeToken) {
+        extraMcpServers = {
+          task: { type: 'http', url: bridgeUrl, headers: { Authorization: `Bearer ${reviewBridgeToken}` } },
+        };
+      }
+    }
+    acp = { mode: 'unattended', docker: exec, extraMcpServers };
+  }
+
   // Wall-clock backstop for the review pass, enforced for every provider (the
   // Claude Code CLI has no --max-turns equivalent). Combined with any external
   // signal (a Pause landing mid-review) so either can abort the run.
@@ -108,6 +133,7 @@ export async function runDoneReview(opts: {
         signal,
         dockerContainer: opts.dockerContainer,
         ...(claudeCode ? { claudeCode } : {}),
+        ...(acp ? { acp } : {}),
       },
       {
         confirmTool: async () => 'once', // unattended
@@ -116,5 +142,6 @@ export async function runDoneReview(opts: {
     return { verdict: parseReviewVerdict(result.text), text: result.text };
   } finally {
     clearTimeout(runTimer);
+    if (reviewBridgeToken) revokeBridgeToken(reviewBridgeToken);
   }
 }
