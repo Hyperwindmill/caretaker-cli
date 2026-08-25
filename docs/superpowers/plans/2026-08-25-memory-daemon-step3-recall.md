@@ -33,7 +33,7 @@
 - Consumes: existing `Memory`, `safeId`, `runQuery` in `db.ts`.
 - Produces: `Memory.recallCount?: number`, `Memory.lastRecalledAt?: string`, `bumpMemoryRecall(id: string): Promise<void>` — used by Task 4's tool and Task 3's scoring.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append inside the existing `describe('memory store', …)` in `packages/cli/src/store/db_memory.test.ts` (after the delete test):
 
@@ -60,12 +60,12 @@ Append inside the existing `describe('memory store', …)` in `packages/cli/src/
 
 Note: the earlier `save + list round-trips verbatim` test uses `assert.deepEqual(all[0], mem())` and runs BEFORE the bump tests (node test runner preserves order within a describe) — no change needed there.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/store/db_memory.test.ts`
 Expected: FAIL — `db.bumpMemoryRecall is not a function`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `packages/cli/src/store/db.ts`, add to the `Memory` interface (after `keywords: string[];`, before the provenance banner):
 
@@ -100,12 +100,12 @@ export async function bumpMemoryRecall(id: string): Promise<void> {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/store/db_memory.test.ts`
 Expected: PASS (all tests in the file).
 
-- [ ] **Step 5: Create the changeset**
+- [x] **Step 5: Create the changeset**
 
 Create `.changeset/memory-daemon-step3.md`:
 
@@ -117,7 +117,7 @@ Create `.changeset/memory-daemon-step3.md`:
 Memory subsystem step 3: the read path. A host-side lexical keyword match on the user message injects a `<memories>` block (top-K titles) into the prelude on every surface, and a new `mcp__memory__memory_read` builtin returns memory bodies on demand — each read increments the memory's recall accounting (`recallCount`/`lastRecalledAt`), the acquired-strength signal for future consolidation.
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/cli/src/store/db.ts packages/cli/src/store/db_memory.test.ts .changeset/memory-daemon-step3.md
@@ -137,7 +137,7 @@ git commit -m "feat(memory): recall accounting fields + bumpMemoryRecall accesso
 - Consumes: `ProjectConfig` from `packages/cli/src/types.ts`.
 - Produces: `resolveProjectIdForDir(dir: string, projects: ProjectConfig[]): string` — '' = no project. Used by Task 3 and by `memory_extract.resolveProjectId`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `packages/cli/src/lib/project_resolve.test.ts` (pure — no CARETAKER_HOME needed):
 
@@ -175,12 +175,12 @@ describe('resolveProjectIdForDir', () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/lib/project_resolve.test.ts`
 Expected: FAIL — cannot find module `./project_resolve.js`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Create `packages/cli/src/lib/project_resolve.ts` (body extracted verbatim from `memory_extract.resolveProjectId`, minus the agent lookup):
 
@@ -229,12 +229,12 @@ export function resolveProjectId(
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass (new + existing regression)**
+- [x] **Step 4: Run tests to verify they pass (new + existing regression)**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/lib/project_resolve.test.ts packages/cli/src/cli/web/scheduler/memory_extract.test.ts`
 Expected: PASS — the existing `memory_extract` resolveProjectId tests now exercise the delegation.
 
-- [ ] **Step 5: Commit** (tweak one word in the changeset description first, then stage it — hook requirement)
+- [x] **Step 5: Commit** (tweak one word in the changeset description first, then stage it — hook requirement)
 
 ```bash
 git add packages/cli/src/lib/project_resolve.ts packages/cli/src/lib/project_resolve.test.ts packages/cli/src/cli/web/scheduler/memory_extract.ts .changeset/memory-daemon-step3.md
@@ -257,7 +257,7 @@ git commit -m "refactor(memory): extract resolveProjectIdForDir to lib, shared w
   - `formatMemoriesBlock(matches: Memory[]): string` — `''` when empty
   - `buildMemoriesBlock(prompt: string, workingDir: string): Promise<string>` — `''` when memory unconfigured / no match / any error
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `packages/cli/src/harness/memory_recall.test.ts`. CARETAKER_HOME at file scope (db pattern) because `buildMemoriesBlock` touches the store; the pure tests don't care:
 
@@ -387,12 +387,12 @@ describe('memory recall', () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/harness/memory_recall.test.ts`
 Expected: FAIL — cannot find module `./memory_recall.js`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Create `packages/cli/src/harness/memory_recall.ts`:
 
@@ -477,12 +477,12 @@ export async function buildMemoriesBlock(prompt: string, workingDir: string): Pr
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/harness/memory_recall.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit** (tweak + stage the changeset for the hook)
+- [x] **Step 5: Commit** (tweak + stage the changeset for the hook)
 
 ```bash
 git add packages/cli/src/harness/memory_recall.ts packages/cli/src/harness/memory_recall.test.ts .changeset/memory-daemon-step3.md
@@ -503,7 +503,7 @@ git commit -m "feat(memory): lexical recall matcher and <memories> prelude block
 - Consumes: `listMemories`, `bumpMemoryRecall` from Task 1; `Tool`/`ToolResult` from `harness/tools/types.js`.
 - Produces: `memoryReadTool: Tool` named `mcp__memory__memory_read`; args `{ ids: string[] }`; result JSON `{ memories: [{id,title,body,kind,importance,projectId,createdAt}], missing: string[] }`. Exported `MEMORY_PREFIX = 'mcp__memory__'` from `builtin_server.ts`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `packages/cli/src/harness/tools/builtin/memory_tools.test.ts`:
 
@@ -584,12 +584,12 @@ describe('memory_read tool', () => {
 
 Note: check `harness/tools/instance.ts` — if `registerBuiltins` is not invoked at import of `instance.js`, look at how existing tests assert registration and mirror that; if none do, drop only the first assertion of the last test and keep the `builtinMcpTools()` one (it uses the same registry instance the MCP producers use).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/harness/tools/builtin/memory_tools.test.ts`
 Expected: FAIL — cannot find module `./memory_tools.js`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Create `packages/cli/src/harness/tools/builtin/memory_tools.ts`:
 
@@ -678,12 +678,12 @@ const SERVED_PREFIXES = [TASK_PREFIX, EMAIL_PREFIX, MEMORY_PREFIX];
 
 and update the header comment: "Two namespaces today — `task` (…) and `email` (…)" → "Three namespaces today — `task` (drive the autonomous task state machine), `email` (send mail through a configured account), and `memory` (read stored memories, bumping recall accounting)".
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test packages/cli/src/harness/tools/builtin/memory_tools.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit** (tweak + stage the changeset for the hook)
+- [x] **Step 5: Commit** (tweak + stage the changeset for the hook)
 
 ```bash
 git add packages/cli/src/harness/tools/builtin/memory_tools.ts packages/cli/src/harness/tools/builtin/memory_tools.test.ts packages/cli/src/harness/tools/builtin/index.ts packages/cli/src/mcp/builtin_server.ts .changeset/memory-daemon-step3.md
@@ -703,7 +703,7 @@ git commit -m "feat(memory): mcp__memory__memory_read builtin, served over both 
 - Consumes: `buildMemoriesBlock(prompt, workingDir)` from Task 3.
 - Produces: `RunOptions.skipMemoryRecall?: boolean` — set ONLY by the memory sweep.
 
-- [ ] **Step 1: Add the flag to RunOptions**
+- [x] **Step 1: Add the flag to RunOptions**
 
 In `packages/cli/src/harness/loop.ts`, after `voiceConversation?: boolean;`:
 
@@ -714,7 +714,7 @@ In `packages/cli/src/harness/loop.ts`, after `voiceConversation?: boolean;`:
   skipMemoryRecall?: boolean;
 ```
 
-- [ ] **Step 2: Inject in the native loop**
+- [x] **Step 2: Inject in the native loop**
 
 In `packages/cli/src/harness/loop.ts`, add the import `import { buildMemoriesBlock } from './memory_recall.js';` next to the prelude import, and after the runtime-info append (line ~169, `effectiveSystemPrompt = \`${effectiveSystemPrompt}\n\n${runtimeBlock}\`.trim();`) and BEFORE the voice block:
 
@@ -730,7 +730,7 @@ In `packages/cli/src/harness/loop.ts`, add the import `import { buildMemoriesBlo
   }
 ```
 
-- [ ] **Step 3: Inject in the claude-code runner**
+- [x] **Step 3: Inject in the claude-code runner**
 
 In `packages/cli/src/harness/claude_code_runner.ts`, add the import `import { buildMemoriesBlock } from './memory_recall.js';`, then extend the `appendSystemPrompt` assembly (~line 353) — the memories block sits between context files and the voice block, mirroring the native order:
 
@@ -748,7 +748,7 @@ In `packages/cli/src/harness/claude_code_runner.ts`, add the import `import { bu
     .join('\n\n');
 ```
 
-- [ ] **Step 4: Opt the sweep out**
+- [x] **Step 4: Opt the sweep out**
 
 In `packages/cli/src/cli/web/scheduler/memory_sweep.ts`, in `makeSummarizer`'s `run({...})` call, add one property after `claudeCode: { permissionMode: 'dontAsk' },`:
 
@@ -756,12 +756,12 @@ In `packages/cli/src/cli/web/scheduler/memory_sweep.ts`, in `makeSummarizer`'s `
         skipMemoryRecall: true,
 ```
 
-- [ ] **Step 5: Typecheck + full test suite**
+- [x] **Step 5: Typecheck + full test suite**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli typecheck && pnpm -F @hyperwindmill/caretaker-cli test`
 Expected: typecheck clean; all tests pass (the sweep tests exercise `makeSummarizer` and would catch a broken run call; `pnpm test` runs via tsx and does NOT typecheck — that is why typecheck runs explicitly).
 
-- [ ] **Step 6: Commit** (tweak + stage the changeset for the hook)
+- [x] **Step 6: Commit** (tweak + stage the changeset for the hook)
 
 ```bash
 git add packages/cli/src/harness/loop.ts packages/cli/src/harness/claude_code_runner.ts packages/cli/src/cli/web/scheduler/memory_sweep.ts .changeset/memory-daemon-step3.md
@@ -776,7 +776,7 @@ git commit -m "feat(memory): per-turn <memories> recall block in both runners, s
 - Modify: `CLAUDE.md` (layers 2, 3, 5; State-on-disk folder-DB section)
 - Modify: `docs/superpowers/plans/2026-08-25-memory-daemon-step3-recall.md` (mark steps done)
 
-- [ ] **Step 1: Update CLAUDE.md**
+- [x] **Step 1: Update CLAUDE.md**
 
 Four surgical edits, current-behaviour phrasing (no history):
 
@@ -785,12 +785,12 @@ Four surgical edits, current-behaviour phrasing (no history):
 3. **Layer 5 memory-sweep bullet** — extend with one or two sentences: step 3 read path (spec link `docs/superpowers/specs/2026-08-25-memory-daemon-step3-recall-design.md`); recall works on every surface (folder DB, no scheduler needed), unlike the sweep.
 4. **State on disk, Memories collection** — add the recall-accounting fields: `recallCount`/`lastRecalledAt` bumped only by `memory_read` (acquired strength for future consolidation).
 
-- [ ] **Step 2: Final verification**
+- [x] **Step 2: Final verification**
 
 Run: `pnpm -F @hyperwindmill/caretaker-cli typecheck && pnpm -F @hyperwindmill/caretaker-cli test && pnpm -F @hyperwindmill/caretaker-cli lint`
 Expected: all clean/pass (lint has no CI gate — fix only new-file complaints).
 
-- [ ] **Step 3: Commit** (tweak + stage the changeset for the hook)
+- [x] **Step 3: Commit** (tweak + stage the changeset for the hook)
 
 ```bash
 git add CLAUDE.md docs/superpowers/plans/2026-08-25-memory-daemon-step3-recall.md .changeset/memory-daemon-step3.md
