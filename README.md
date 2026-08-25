@@ -51,6 +51,28 @@ Windows users whose Claude Code was installed via npm should set the provider `c
 
 _Claude and Claude Code are trademarks of Anthropic, PBC. This project is an independent open-source tool and is not affiliated with, endorsed, or sponsored by Anthropic._
 
+### ACP agents as providers
+
+You can also use agents that speak the [Agent Client Protocol](https://agentclientprotocol.com) (ACP v1, JSON-RPC over stdio) by configuring a provider with `type: 'acp'`. Instead of an HTTP endpoint, caretaker spawns the agent server executable and communicates with it using the standardized protocol.
+
+#### Worked examples
+
+1. **Claude Agent ACP** (official Agent SDK wrapper for Claude Code):
+   - **Command**: `npx`
+   - **Arguments**: `@agentclientprotocol/claude-agent-acp`
+2. **Codex ACP** (OpenAI Codex ACP server):
+   - **Command**: `npx`
+   - **Arguments**: `@agentclientprotocol/codex-acp`
+3. **Google Antigravity** (official Google ACP server binary):
+   - **Command**: `/path/to/agy_acp_server.par` (or `agy_acp_server.exe` on Windows)
+   - **Arguments**: (none)
+
+#### Authentication & Tools
+
+- **Authentication**: Log in with the agent's own CLI first (e.g. `claude login`, ChatGPT login, Google account). Caretaker does not manage agent credentials directly; if an agent server reports that authentication is required, log in via the agent's native tool before running turns.
+- **Tools and Capabilities**: Like `claude-code`, ACP agents own their own tools and execution loop. Caretaker's tool pickers and plugin skill injection do not apply to ACP agents.
+- **Docker Confinement**: For autonomous tasks configured with a Docker container, caretaker auto-denies direct `execute` tool requests and exposes a container-bound `run_command` tool over the task bridge. *Note:* this confinement relies on the ACP agent forwarding permission requests to the client. Adapters that do not forward `execute` permission requests are unfit for Docker-confined tasks until verified.
+
 ### Agent identities, not "an agent"
 
 Caretaker is built around having _several_ agents that mean different things to you — a code agent rooted in one repo with a focused toolset, a writing agent in your notes folder with no shell, a research agent with read-only tools and web fetch.

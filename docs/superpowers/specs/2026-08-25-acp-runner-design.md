@@ -57,11 +57,7 @@ New `ProviderConfig` variant:
 - `command: string` — spawn executable (`npx`, `/path/agy_acp_server.par`, …)
 - `args: string[]`
 - `env?: Record<string, string>`
-- `runnerHints?` — per-preset known quirks; v1 carries only
-  `selfLoadedContextFiles: string[]` (context files the agent already loads
-  itself and the prelude must therefore skip: claude → `CLAUDE.md`,
-  codex → `AGENTS.md`). Same logic as today's CLAUDE.md exclusion in
-  claude_code_runner.
+- `selfLoadedContextFiles: string[]` (flattened directly on `ProviderConfig` rather than nested under `runnerHints`): context files the agent already loads itself and the prelude must therefore skip (claude → `CLAUDE.md`, codex → `AGENTS.md`). Same logic as today's CLAUDE.md exclusion in claude_code_runner.
 - `endpoint`/`apiKey` stay empty as for claude-code. Auth belongs to the
   underlying agent (login done outside caretaker: `claude login`, ChatGPT
   login, Google account). v1 does not implement the ACP `authenticate` flow;
@@ -144,6 +140,8 @@ adapter forwards execute permission decisions to the client.
 `claude-agent-acp` does (the SDK's `canUseTool` is forwarded); Codex and
 Antigravity must be verified. An adapter that does not ask is unfit for
 Docker tasks until it does, and is documented as such.
+
+**v1 deviations decided at planning time:** (a) the `terminal` client capability is NOT advertised in v1 even without Docker — agent-side host shell is the status quo and equivalent; with Docker the capability is absent by design. The capability is additive later if an adapter needs it. (b) `fs/read_text_file` / `fs/write_text_file` capabilities are NOT advertised in v1 — agent-side fs writes the same bind-mounted files. Both deviations were decided at planning time to eliminate dead surface.
 
 ### Task bridge / MCP servers
 
