@@ -92,6 +92,22 @@ function diffUsage(prev: Usage | undefined, cur: Usage): AssistantUsage {
   return usage;
 }
 
+/** Heuristic for claude-agent-acp harness notices (hook output, warnings):
+ *  the adapter folds SDK "informational" messages into plain
+ *  agent_message_chunk text as `**Notice:** …` / `**Warning:** …` /
+ *  `**Error:** …`, indistinguishable from model prose on the wire — see
+ *  https://github.com/agentclientprotocol/claude-agent-acp/issues/1042
+ *  (asks for a _meta marker; drop this heuristic when it lands). A notice
+ *  arrives as ONE complete chunk, so only a whole-chunk prefix match counts —
+ *  model deltas that merely contain a bold label mid-stream stay untouched.
+ *  Matches route to the thinking channel: visible but collapsed, out of the
+ *  persisted reply text and out of TTS. 'info'-level messages carry no
+ *  prefix at all and cannot be detected. */
+const ADAPTER_NOTICE_RE = /^\*\*(Notice|Warning|Error):\*\* /;
+export function isAdapterNotice(text: string): boolean {
+  return ADAPTER_NOTICE_RE.test(text);
+}
+
 function extractToolResultText(content: unknown): string {
   if (!Array.isArray(content)) return '';
   return content
@@ -163,6 +179,12 @@ export async function runAcp(opts: RunOptions, cb: RunCallbacks = {}): Promise<R
     switch (u.sessionUpdate) {
       case 'agent_message_chunk':
         if (u.content.type === 'text') {
+          if (isAdapterNotice(u.content.text)) {
+            // Adapter harness notice (see isAdapterNotice / issue #1042):
+            // demote to thinking instead of polluting the reply.
+            await safeEmit(() => cb.onThinking?.((u.content as any).text));
+            break;
+          }
           pushText(u.content.text);
           await safeEmit(() => cb.onChunk?.((u.content as any).text));
         }
