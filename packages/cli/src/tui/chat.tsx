@@ -3,6 +3,7 @@ import { Box, Text, useInput } from 'ink';
 import SelectInput from 'ink-select-input';
 import TextInput from 'ink-text-input';
 import { run, type ConfirmDecision } from '../harness/loop.js';
+import { ConfirmGateState } from '../harness/confirm_gate.js';
 import { tools as toolRegistry } from '../harness/tools/instance.js';
 import { resolveAgentTools } from '../harness/tools/index.js';
 import { expandTemplate, parseSlashInvocation, resolveCommand } from '../commands/loader.js';
@@ -42,10 +43,10 @@ export default function ChatScreen({
   const abortRef = useRef<AbortController | null>(null);
   const titleAbortRef = useRef<AbortController | null>(null);
   const titlePendingRef = useRef(false);
-  // Tools that still require confirmation in this session. Mutated when the
-  // user picks "always", so subsequent calls skip the prompt for that tool.
-  // Init from the agent's persisted confirmTools; "always" is in-memory only.
-  const confirmSetRef = useRef<Set<string>>(new Set(agent.confirmTools ?? []));
+  // Confirm-gate state: native/claude-code agents prompt only for
+  // agent.confirmTools names; ACP agents prompt on every permission request
+  // the agent raises. "always" is remembered in-memory only.
+  const confirmGateRef = useRef(new ConfirmGateState(provider.type, agent.confirmTools));
   const [pendingConfirm, setPendingConfirm] = useState<{
     id: string;
     name: string;
@@ -169,7 +170,7 @@ export default function ChatScreen({
           onThinking: (s) => setLiveThinking((prev) => prev + s),
           confirmTool: (id, name, args) =>
             new Promise<ConfirmDecision>((resolve) => {
-              if (!confirmSetRef.current.has(name)) {
+              if (!confirmGateRef.current.needsAsk(name)) {
                 resolve('once');
                 return;
               }
@@ -307,9 +308,7 @@ export default function ChatScreen({
               ]}
               onSelect={(item) => {
                 const decision = item.value as ConfirmDecision;
-                if (decision === 'always') {
-                  confirmSetRef.current.delete(pendingConfirm.name);
-                }
+                confirmGateRef.current.remember(pendingConfirm.name, decision);
                 pendingConfirm.resolve(decision);
                 setPendingConfirm(null);
               }}

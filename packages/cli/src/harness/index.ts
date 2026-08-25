@@ -4,6 +4,7 @@
 // stable surface exposed via `caretaker-cli/harness`.
 
 export { run } from './loop.js';
+export { ConfirmGateState } from './confirm_gate.js';
 export type { RunOptions, RunCallbacks, RunResult, ConfirmDecision } from './loop.js';
 
 export { resolveAgentTools, ToolRegistry, registerBuiltins, toOpenAiTool } from './tools/index.js';

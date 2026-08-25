@@ -71,16 +71,16 @@ export class ChatSessionController {
   private metaRecord: SessionMetaRecord | null = null;
   private history: MessageRecord[] = [];
   private inflight: AbortController | null = null;
-  /** Tools that still require explicit confirmation. Seeded from
-   * `agent.confirmTools`; mutated in-session when the user picks
-   * "always" so subsequent calls for the same tool bypass the prompt.
-   * The persisted `agent.confirmTools` is never changed from here. */
-  private readonly confirmSet: Set<string>;
+  /** Confirm-gate state: native/claude-code agents prompt only for
+   * `agent.confirmTools` names; ACP agents prompt on every permission
+   * request the agent raises. "always" is remembered in-session only —
+   * the persisted `agent.confirmTools` is never changed from here. */
+  private readonly confirmGate: harness.ConfirmGateState;
   /** Optional existing session id to load messages from. */
   private readonly sessionId?: string;
 
   constructor(private readonly opts: ChatSessionOptions) {
-    this.confirmSet = new Set(opts.agent.confirmTools ?? []);
+    this.confirmGate = new harness.ConfirmGateState(opts.provider.type, opts.agent.confirmTools);
     this.sessionId = opts.sessionId;
   }
 
@@ -155,9 +155,9 @@ export class ChatSessionController {
           onToolCall: cb.onToolCall,
           onToolResult: cb.onToolResult,
           confirmTool: async (id, name, args) => {
-            if (!this.confirmSet.has(name)) return 'once';
+            if (!this.confirmGate.needsAsk(name)) return 'once';
             const decision = await cb.askConfirm(id, name, args);
-            if (decision === 'always') this.confirmSet.delete(name);
+            this.confirmGate.remember(name, decision);
             return decision;
           },
           onMessage: async (msg) => {

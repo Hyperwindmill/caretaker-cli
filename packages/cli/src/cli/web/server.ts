@@ -82,7 +82,7 @@ export class WebSessionController {
   private metaRecord: SessionMetaRecord | null = null;
   private history: MessageRecord[] = [];
   private inflight: AbortController | null = null;
-  private readonly confirmSet: Set<string>;
+  private readonly confirmGate: harness.ConfirmGateState;
   private readonly sessionId?: string;
 
   constructor(
@@ -94,7 +94,7 @@ export class WebSessionController {
       sessionId?: string;
     },
   ) {
-    this.confirmSet = new Set(opts.agent.confirmTools ?? []);
+    this.confirmGate = new harness.ConfirmGateState(opts.provider.type, opts.agent.confirmTools);
     this.sessionId = opts.sessionId;
   }
 
@@ -172,9 +172,9 @@ export class WebSessionController {
           onToolCall: cb.onToolCall,
           onToolResult: cb.onToolResult,
           confirmTool: async (id, name, args) => {
-            if (!this.confirmSet.has(name)) return 'once';
+            if (!this.confirmGate.needsAsk(name)) return 'once';
             const decision = await cb.askConfirm(id, name, args);
-            if (decision === 'always') this.confirmSet.delete(name);
+            this.confirmGate.remember(name, decision);
             return decision;
           },
           onMessage: async (msg) => {
