@@ -305,8 +305,9 @@ export default function Agents({ onBack }: { onBack: () => void }) {
 
   if (mode === 'detail' && selected) {
     const managed = !!selected.pluginId;
-    const isClaudeCode =
-      providers.find((p) => p.name === selected.provider)?.type === 'claude-code';
+    const providerType = providers.find((p) => p.name === selected.provider)?.type ?? 'openai';
+    const isClaudeCode = providerType === 'claude-code';
+    const isAcp = providerType === 'acp';
     return (
       <Box flexDirection="column">
         <Text bold>{selected.name}</Text>
@@ -322,6 +323,8 @@ export default function Agents({ onBack }: { onBack: () => void }) {
             <Text>permissionMode: {selected.permissionMode || 'Auto (Claude Code default)'}</Text>
             <Text>strictMcp: {selected.strictMcp ? 'on' : 'off (merge ~/.claude MCP)'}</Text>
           </>
+        ) : isAcp ? (
+          <Text dimColor>ACP agent — tools and permissions are the agent's own</Text>
         ) : (
           <>
             <Text>maxTurns: {selected.maxTurns === 0 ? 'unlimited' : selected.maxTurns}</Text>
@@ -462,16 +465,23 @@ function namespacedToolList(allTools: Tool[]): Tool[] {
   ];
 }
 
-// Computes the step sequence for a given form flavor, so claude-code's
-// skip-tools/plugins/maxTurns + insert-permissionMode branching lives in one
-// place instead of scattered across every transition.
-function stepSequence(managed: boolean, isClaudeCode: boolean): FormStep[] {
+// Computes the step sequence for a given form flavor, so the external-runner
+// branching (claude-code, acp: skip tools/plugins/maxTurns; claude-code adds
+// permissionMode/strictMcp) lives in one place instead of scattered across
+// every transition.
+function stepSequence(
+  managed: boolean,
+  flavor: 'openai' | 'claude-code' | 'acp',
+): FormStep[] {
   const seq: FormStep[] = [];
   if (!managed) seq.push('name');
   seq.push('provider', 'model');
   if (!managed) seq.push('systemPrompt');
-  if (isClaudeCode) {
+  if (flavor === 'claude-code') {
     seq.push('mcpServers', 'workingDir', 'permissionMode', 'strictMcp');
+  } else if (flavor === 'acp') {
+    // acp agents own their tools/permissions; workingDir is the last step.
+    seq.push('mcpServers', 'workingDir');
   } else {
     seq.push('tools', 'plugins', 'mcpServers', 'workingDir', 'maxTurns');
   }
@@ -498,7 +508,10 @@ function AgentForm({
   const [step, setStep] = useState<FormStep>(managed ? 'provider' : 'name');
   const [name, setName] = useState(initial?.name ?? '');
   const [provider, setProvider] = useState(initial?.provider ?? '');
-  const isClaudeCode = providers.find((p) => p.name === provider)?.type === 'claude-code';
+  const providerType = providers.find((p) => p.name === provider)?.type ?? 'openai';
+  const isClaudeCode = providerType === 'claude-code';
+  const isAcp = providerType === 'acp';
+  const isExternalRunner = isClaudeCode || isAcp;
   const [model, setModel] = useState(initial?.model ?? '');
   const [systemPrompt, setSystemPrompt] = useState(initial?.systemPrompt ?? '');
   const [permissionMode, setPermissionMode] = useState(initial?.permissionMode ?? '');
@@ -542,9 +555,9 @@ function AgentForm({
   });
 
   // Step sequence computed as a filtered array (rather than scattering
-  // isClaudeCode conditionals across every transition): claude-code skips
-  // tools/plugins/maxTurns and gets a permissionMode step instead.
-  const steps = stepSequence(managed, isClaudeCode);
+  // provider-type conditionals across every transition): external runners skip
+  // tools/plugins/maxTurns; claude-code gets a permissionMode step instead.
+  const steps = stepSequence(managed, providerType);
   const nextAfter = (s: FormStep): FormStep => {
     const idx = steps.indexOf(s);
     return idx >= 0 && idx + 1 < steps.length ? steps[idx + 1] : s;
@@ -599,6 +612,12 @@ function AgentForm({
       if (v && !isAbsolute(v))
         return setError('workingDir must be an absolute path (or empty for cwd)');
       setError(null);
+      if (steps[steps.length - 1] === 'workingDir') {
+        // acp flavor: workingDir is the last step — no maxTurns to collect.
+        const n = Number.parseInt(maxTurns.trim(), 10);
+        finalize(Number.isFinite(n) && n >= 0 ? n : 30);
+        return;
+      }
       setStep(nextAfter('workingDir'));
     } else if (step === 'maxTurns') {
       const n = Number.parseInt(maxTurns.trim(), 10);
@@ -694,7 +713,7 @@ function AgentForm({
         )}
       </Box>
 
-      {!isClaudeCode && (
+      {!isExternalRunner && (
         <Box flexDirection="column">
           <Text>tools:</Text>
           {step === 'tools' ? (
@@ -716,7 +735,7 @@ function AgentForm({
         </Box>
       )}
 
-      {!isClaudeCode && (
+      {!isExternalRunner && (
         <Box flexDirection="column">
           <Text>plugins:</Text>
           {step === 'plugins' ? (
@@ -780,7 +799,7 @@ function AgentForm({
         )}
       </Box>
 
-      {!isClaudeCode && (
+      {!isExternalRunner && (
         <Box>
           <Text>maxTurns: </Text>
           {step === 'maxTurns' ? (
@@ -887,15 +906,17 @@ function ModelStep({
   onPick: (id: string) => void;
 }) {
   const isClaudeCode = provider.type === 'claude-code';
+  const isAcp = provider.type === 'acp';
+  const isExternalRunner = isClaudeCode || isAcp;
   const [state, setState] = useState<ModelStepState>(
-    isClaudeCode ? { mode: 'manual', reason: null } : { mode: 'loading' },
+    isExternalRunner ? { mode: 'manual', reason: null } : { mode: 'loading' },
   );
   const [manualValue, setManualValue] = useState(initialModel ?? '');
 
   useEffect(() => {
-    // claude-code providers never expose an OpenAI-style model-listing
-    // endpoint — always go straight to manual entry.
-    if (isClaudeCode) return;
+    // External-runner providers (claude-code, acp) never expose an OpenAI-style
+    // model-listing endpoint — always go straight to manual entry.
+    if (isExternalRunner) return;
     let cancelled = false;
     void fetchOpenAiStyleModels(provider.endpoint, provider.apiKey ?? null).then((res) => {
       if (cancelled) return;
@@ -910,7 +931,7 @@ function ModelStep({
     return () => {
       cancelled = true;
     };
-  }, [isClaudeCode, provider.endpoint, provider.apiKey]);
+  }, [isExternalRunner, provider.endpoint, provider.apiKey]);
 
   if (state.mode === 'loading') {
     return <Text dimColor>fetching models from {provider.name}…</Text>;
@@ -924,10 +945,16 @@ function ModelStep({
           onChange={setManualValue}
           onSubmit={() => {
             const v = manualValue.trim();
-            if (v) onPick(v);
+            // acp: the agent server picks its own model — the field is only an
+            // optional label (shown in task threads), so empty is fine.
+            if (v || isAcp) onPick(v);
           }}
           placeholder={
-            isClaudeCode ? 'sonnet | opus | haiku (or full model id)' : 'e.g. gpt-4o-mini'
+            isClaudeCode
+              ? 'sonnet | opus | haiku (or full model id)'
+              : isAcp
+                ? 'optional — label shown in task threads'
+                : 'e.g. gpt-4o-mini'
           }
         />
         {state.reason && (
