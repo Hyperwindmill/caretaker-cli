@@ -93,6 +93,9 @@ export interface RunOptions {
   /** claude-code runner extras (ignored by the native loop): permission
    *  mode override, tool allow/deny rules, extra per-run MCP servers. */
   claudeCode?: import('./claude_code_runner.js').ClaudeCodeRunExtras;
+  /** acp runner extras (ignored by the native loop): permission policy mode,
+   *  extra per-run MCP servers, docker confinement. */
+  acp?: import('./acp_policy.js').AcpRunExtras;
   /** Native-loop only: run `bash` commands inside this docker container. */
   dockerContainer?: string;
   /** The turn came from voice conversation mode; append the spoken-reply
@@ -126,6 +129,12 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
     // replaced by the Claude Code CLI (see claude_code_runner.ts).
     const { runClaudeCode } = await import('./claude_code_runner.js');
     return runClaudeCode(opts, cb);
+  }
+  if (opts.provider.type === 'acp') {
+    // Same single-dispatch pattern: ACP providers get the whole loop replaced
+    // by an external ACP agent (see acp_runner.ts).
+    const { runAcp } = await import('./acp_runner.js');
+    return runAcp(opts, cb);
   }
   const { agent, provider, tools, prompt } = opts;
   const baseUrl = provider.endpoint.replace(/\/+$/, '');
