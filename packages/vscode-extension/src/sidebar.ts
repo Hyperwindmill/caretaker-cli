@@ -160,7 +160,12 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
         loadPlugins(),
         loadMcpServers(),
       ]);
-      const availableTools = harness.tools.list().map((t) => t.name);
+      // Hidden tools (memory_read) are harness infrastructure, auto-included
+      // by resolveAgentTools behind their own gate — never a picker choice.
+      const availableTools = harness.tools
+        .list()
+        .filter((t) => !t.hidden)
+        .map((t) => t.name);
       const enrichedServers = mcpServersFile.servers.map((server) => {
         let hasMcpTokens = false;
         try {

@@ -1,9 +1,22 @@
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { ToolRegistry } from './registry.js';
 import { resolveAgentTools } from './resolve.js';
 import type { Tool } from './types.js';
 import type { AgentConfig } from '../../types.js';
+
+// File-scope isolation: resolveAgentTools reads the config (memory-gated
+// tier), so the whole file runs against a throwaway CARETAKER_HOME.
+const testHome = mkdtempSync(join(tmpdir(), 'caretaker-resolve-test-'));
+process.env.CARETAKER_HOME = testHome;
+after(async () => {
+  await rm(testHome, { recursive: true, force: true });
+  delete process.env.CARETAKER_HOME;
+});
 
 function fakeTool(name: string): Tool {
   return {
@@ -131,4 +144,27 @@ test('resolveAgentTools: the namespace wildcard is generic and scoped to its nam
     r,
   );
   assert.equal(both.length, 3);
+});
+
+test('resolveAgentTools: memory_read stays off while memory is unconfigured', async () => {
+  const r = new ToolRegistry();
+  r.register(fakeTool('mcp__memory__memory_read'));
+
+  const tools = await resolveAgentTools(agent({ allowedTools: [] }), r);
+  assert.deepEqual(tools.map((t) => t.name), []);
+});
+
+test('resolveAgentTools: memory_read is auto-included when MemoryConfig is present', async () => {
+  const { loadConfig, saveConfig } = await import('../../store/json.js');
+  await saveConfig({ ...(await loadConfig()), memory: { agentId: 'mem-agent' } } as any);
+
+  const r = new ToolRegistry();
+  r.register(fakeTool('mcp__memory__memory_read'));
+
+  const tools = await resolveAgentTools(agent({ allowedTools: [] }), r);
+  assert.deepEqual(tools.map((t) => t.name), ['mcp__memory__memory_read']);
+
+  // No duplicate when the agent had already opted the namespace in.
+  const opted = await resolveAgentTools(agent({ allowedTools: ['mcp__memory__*'] }), r);
+  assert.deepEqual(opted.map((t) => t.name), ['mcp__memory__memory_read']);
 });
