@@ -16,15 +16,26 @@ import { randomBytes } from 'node:crypto';
 import type { Hono } from 'hono';
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { buildBuiltinMcpServer } from '../../mcp/builtin_server.js';
+import { buildBuiltinMcpServer, builtinMcpTools } from '../../mcp/builtin_server.js';
+import { makeRunCommandTool } from '../../mcp/run_command_tool.js';
 import { loadAgents } from '../../store/json.js';
 
-/** token → the agent id the run belongs to ('' when the caller didn't say). */
-const activeTokens = new Map<string, string>();
+type TokenInfo = {
+  agentId: string;
+  /** When set, a run_command tool bound to this container is served. */
+  exec?: { container: string; workdir: string };
+  /** Serve ONLY run_command (review runs: shell yes, task-state tools no). */
+  execOnly?: boolean;
+};
+/** token → token info (agent id, exec binding, exec-only mode). */
+const activeTokens = new Map<string, TokenInfo>();
 
-export function issueBridgeToken(agentId = ''): string {
+export function issueBridgeToken(
+  agentId = '',
+  opts: { exec?: { container: string; workdir: string }; execOnly?: boolean } = {},
+): string {
   const token = randomBytes(24).toString('hex');
-  activeTokens.set(token, agentId);
+  activeTokens.set(token, { agentId, exec: opts.exec, execOnly: opts.execOnly });
   return token;
 }
 export function revokeBridgeToken(token: string): void {
@@ -48,11 +59,14 @@ export function registerTaskBridge(app: Hono): void {
     // Resolve the run's agent so ctx.callerAgent is set for the tools that scope
     // by it. A token issued without an agent id (or pointing at a since-deleted
     // agent) leaves it unset, which the email tools treat as an unscoped caller.
-    const agentId = activeTokens.get(token) ?? '';
+    const tokenInfo = activeTokens.get(token)!;
+    const agentId = tokenInfo.agentId;
     const callerAgent = agentId
       ? (await loadAgents().catch(() => [])).find((a) => a.id === agentId)
       : undefined;
-    const server = buildBuiltinMcpServer(undefined, { callerAgent });
+    const extraTools = tokenInfo.exec ? [makeRunCommandTool(tokenInfo.exec)] : [];
+    const tools = tokenInfo.execOnly ? extraTools : [...builtinMcpTools(), ...extraTools];
+    const server = buildBuiltinMcpServer(undefined, { callerAgent, tools });
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined, // stateless
       enableJsonResponse: true, // plain JSON responses, no SSE needed

@@ -55,3 +55,21 @@ test('unknown tool returns isError', async () => {
   assert.equal(res.isError, true);
   await mcp.close();
 });
+
+test('opts.tools overrides the served list', async () => {
+  const customTool = {
+    name: 'mcp__task__run_command',
+    description: 'run custom cmd',
+    parameters: { type: 'object', properties: { command: { type: 'string' } } },
+    execute: async () => ({ content: 'custom ok' }),
+  };
+  const server = buildBuiltinMcpServer(undefined, { tools: [customTool] });
+  const [clientT, serverT] = InMemoryTransport.createLinkedPair();
+  const mcp = new Client({ name: 'test', version: '0.0.0' });
+  await Promise.all([server.connect(serverT), mcp.connect(clientT)]);
+  const tools = await mcp.listTools();
+  assert.deepEqual(tools.tools.map((t) => t.name), ['run_command']);
+  const res = await mcp.callTool({ name: 'run_command', arguments: { command: 'ls' } });
+  assert.deepEqual(res.content, [{ type: 'text', text: 'custom ok' }]);
+  await mcp.close();
+});
