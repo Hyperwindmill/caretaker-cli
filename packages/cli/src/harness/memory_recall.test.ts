@@ -52,6 +52,35 @@ describe('memory recall', () => {
       assert.deepEqual(recall.matchMemories('ab initio', [m]), []);
     });
 
+    it('a single word of a multi-word keyword matches on its own', () => {
+      const m = mem({ keywords: ['reaper linux'] });
+      assert.deepEqual(recall.matchMemories('come configuro reaper?', [m]), [m]);
+    });
+
+    it('the full phrase scores higher than one of its words', () => {
+      const partial = mem({ id: 'a1b2c3d4-0000-0000-0000-00000000000a', keywords: ['memory sweep'] });
+      const full = mem({ id: 'a1b2c3d4-0000-0000-0000-00000000000b', keywords: ['memory sweep'] });
+      const one = recall.matchMemories('how does the sweep work?', [partial]);
+      const both = recall.matchMemories('how does the memory sweep work?', [full, partial]);
+      assert.equal(one.length, 1);
+      assert.equal(both.length, 2); // both match, full phrase = 2 words matched
+    });
+
+    it('dedups overlapping words across keywords of the same memory', () => {
+      const a = mem({ id: 'a1b2c3d4-0000-0000-0000-00000000000a', keywords: ['sweep', 'memory sweep'] });
+      const b = mem({ id: 'a1b2c3d4-0000-0000-0000-00000000000b', keywords: ['memory', 'sweep'] });
+      // Same effective word set {memory, sweep} → same score, no double count of 'sweep'.
+      const out = recall.matchMemories('the memory sweep', [a, b]);
+      assert.equal(out.length, 2);
+    });
+
+    it('short words inside a multi-word keyword are still ignored', () => {
+      const m = mem({ keywords: ['ui di gtdj'] });
+      assert.deepEqual(recall.matchMemories('parliamo di questo', [m]), []); // 'di' too short
+      assert.deepEqual(recall.matchMemories('la ui nuova', [m]), []); // 'ui' too short
+      assert.deepEqual(recall.matchMemories('lo skin di gtdj', [m]), [m]); // 'gtdj' fires
+    });
+
     it('scores by matched count × importance × recall strength', () => {
       const weak = mem({ id: 'a1b2c3d4-0000-0000-0000-00000000000a', keywords: ['docker'], importance: 'low' });
       const strong = mem({ id: 'a1b2c3d4-0000-0000-0000-00000000000b', keywords: ['docker'], importance: 'high' });
