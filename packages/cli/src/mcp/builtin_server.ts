@@ -35,18 +35,19 @@ export function builtinMcpTools(): Tool[] {
 
 export function buildBuiltinMcpServer(
   info: { name: string; version: string } = { name: 'caretaker-task', version: '0.0.0' },
-  opts: { callerAgent?: AgentConfig } = {},
+  opts: { callerAgent?: AgentConfig; tools?: Tool[] } = {},
 ): Server {
+  const served = () => opts.tools ?? builtinMcpTools();
   const server = new Server(info, { capabilities: { tools: {} } });
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: builtinMcpTools().map((t) => ({
+    tools: served().map((t) => ({
       name: externalName(t.name),
       description: t.description,
       inputSchema: t.parameters as any,
     })),
   }));
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
-    const tool = builtinMcpTools().find((t) => externalName(t.name) === req.params.name);
+    const tool = served().find((t) => externalName(t.name) === req.params.name);
     if (!tool) {
       return {
         content: [{ type: 'text', text: `Error: unknown tool "${req.params.name}"` }],
