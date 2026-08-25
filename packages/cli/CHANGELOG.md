@@ -1,5 +1,19 @@
 # caretaker-cli
 
+## 0.24.0
+
+### Minor Changes
+
+- f3dd9a0: Memory subsystem step 1: a scheduler memory-sweep loop maintaining a per-session cursor and rolling summary (`session_digests` collection), configured via the new `memory` key (`MemoryConfig` in caretaker-types) referencing the _agent_ that runs the summarize calls — every provider type works, claude-code included, since the sweep launches through the harness loop. Off unless configured; a Memory settings tab (web GUI/desktop) configures it. Sweep failures are isolated per session: a digest save that throws (e.g. a hand-copied session file whose name the store rejects) skips that session instead of aborting the sweep.
+- 3039f50: Memory subsystem step 2: the memory sweep's per-chunk call now also extracts durable memories (project/global scope, fact/episode kind, tone-derived importance) into a new `memories` folder-DB collection. Write path only; same model-call count as before. Documentation, architecture notes, and implementation plan updated.
+- 88a879c: Memory daemon step 3: the read path. A host-side lexical keyword match on the user message injects a `<memories>` block (top-K titles) into the prelude on every surface, and a new `mcp__memory__memory_read` builtin returns memory bodies on demand — each read increments the memory's recall accounting (`recallCount`/`lastRecalledAt`), the acquired strength signal for future consolidation and decay. Autonomous task cycles receive the project's memories via explicit host-side scope (their worktree never matches the project directory). `memory_read` is auto-included (and hidden from the tool pickers) whenever memory is configured — the same switch as the injected block, so reading is never permission-gated.
+
+### Patch Changes
+
+- 063128b: Design spec and implementation plan for memory subsystem step 1: periodic session-digest daemon (per-session cursor + rolling summary) in the background scheduler.
+- effbf5b: Design spec and implementation plan for memory subsystem step 2: memory extraction from the sweep's per-chunk call (combined summary+memories JSON output, project/global scope, kind+importance classification, durable `memories` collection).
+- 356a4da: Design spec and implementation plan for memory subsystem step 3: the recall/read path (host-side inverted lexical keyword match on the user message, `<memories>` prelude block with top-K titles, `mcp__memory__memory_read` tool with recall accounting via `recallCount`/`lastRecalledAt`).
+
 ## 0.23.0
 
 ### Minor Changes
