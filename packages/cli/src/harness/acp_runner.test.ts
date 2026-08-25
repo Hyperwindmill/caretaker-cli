@@ -160,3 +160,12 @@ test('sessionId runs persist acpSessionId and reuse the pooled child; second tur
   const secondJoined = prompts[1].prompt.map((b: any) => b.text).join('\n');
   assert.ok(!secondJoined.includes('caretaker-context'));
 });
+
+import { run } from './loop.js';
+
+test('loop.run dispatches acp providers to runAcp', async () => {
+  useFakeAgent(async () => ({ stopReason: 'end_turn' }));
+  const res = await run({ agent: agentCfg, provider, tools: [], prompt: 'x' });
+  assert.equal(res.stop, 'done');
+});
+
