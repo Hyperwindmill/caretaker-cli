@@ -1,10 +1,10 @@
 // Shared builder: wraps the built-in `mcp__<ns>__*` registry tools as an MCP
 // Server. Used by BOTH the per-task HTTP bridge (cli/web/mcp_bridge.ts) and the
 // general stdio subcommand (cli/mcp.ts) so this surface has one definition and
-// one wrapping. Two namespaces today — `task` (drive the autonomous task state
-// machine) and `email` (send mail through a configured account); a new tool in
-// either is picked up by both consumers through the prefix filter, never a
-// second allowlist.
+// one wrapping. Three namespaces today — `task` (drive the autonomous task state
+// machine), `email` (send mail through a configured account), and `memory`
+// (read stored memories, bumping recall accounting); a new tool in either is
+// picked up by both consumers through the prefix filter, never a second allowlist.
 //
 // The tools are context-free (they take task_id / account by argument), so a
 // stub ToolContext is sufficient — except for the caller's identity, which the
@@ -21,7 +21,8 @@ import type { AgentConfig } from '../types.js';
 
 export const TASK_PREFIX = 'mcp__task__';
 export const EMAIL_PREFIX = 'mcp__email__';
-const SERVED_PREFIXES = [TASK_PREFIX, EMAIL_PREFIX];
+export const MEMORY_PREFIX = 'mcp__memory__';
+const SERVED_PREFIXES = [TASK_PREFIX, EMAIL_PREFIX, MEMORY_PREFIX];
 
 /** `mcp__task__task_complete` → `task_complete`, `mcp__email__email_send` → `email_send`. */
 function externalName(name: string): string {
