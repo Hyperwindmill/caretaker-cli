@@ -60,4 +60,24 @@ describe('memory store', () => {
     assert.equal(all.length, 1);
     assert.equal(all[0]!.id, 'a1b2c3d4-0000-0000-0000-000000000001');
   });
+
+  it('bumpMemoryRecall increments recallCount and sets lastRecalledAt', async () => {
+    const id = 'a1b2c3d4-0000-0000-0000-000000000001';
+    await db.bumpMemoryRecall(id);
+    let m = (await db.listMemories()).find((x) => x.id === id)!;
+    assert.equal(m.recallCount, 1); // absent field treated as 0
+    assert.ok(m.lastRecalledAt);
+    assert.equal(m.title, 'Uses pnpm'); // rest of the record untouched
+    await db.bumpMemoryRecall(id);
+    m = (await db.listMemories()).find((x) => x.id === id)!;
+    assert.equal(m.recallCount, 2);
+  });
+
+  it('bumpMemoryRecall is a no-op on unknown or invalid ids', async () => {
+    await db.bumpMemoryRecall('a1b2c3d4-0000-0000-0000-00000000dead');
+    await db.bumpMemoryRecall("bad'id");
+    const all = await db.listMemories();
+    assert.equal(all.length, 1);
+  });
 });
+

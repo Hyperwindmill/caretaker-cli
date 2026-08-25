@@ -309,6 +309,12 @@ export interface Memory {
   body: string;
   /** Associative base for the future read path, emitted at write time. */
   keywords: string[];
+  // ─── recall accounting (step 3) — the acquired-strength signal for the
+  //     future consolidation/decay; bumped ONLY by memory_read ────────────
+  /** Times delivered by memory_read. Absent on pre-step-3 records = 0. */
+  recallCount?: number;
+  /** ISO timestamp of the last memory_read delivery. */
+  lastRecalledAt?: string;
   // ─── provenance — host-side facts, never model output ─────────────────
   sourceSessionId: string;
   /** The session's agent directory — NOT a scope; mined by a future
@@ -336,6 +342,24 @@ export async function listMemories(): Promise<Memory[]> {
 export async function deleteMemory(id: string): Promise<void> {
   if (!safeId(id)) return;
   await runQuery(`DELETE FROM memories WHERE id = '${id}'`);
+}
+
+/** Recall event: memory_read delivered this memory to an agent. Delete +
+ *  insert (saveSessionDigest pattern — the store has no UPDATE). No-op on
+ *  unknown ids: a stale id in a prelude block is not an error. */
+export async function bumpMemoryRecall(id: string): Promise<void> {
+  if (!safeId(id)) return;
+  const rows = (await runQuery(`SELECT * FROM memories WHERE id = '${id}'`)) as Memory[];
+  const m = rows[0];
+  if (!m) return;
+  await runQuery(`DELETE FROM memories WHERE id = '${id}'`);
+  await runQuery(
+    `INSERT INTO memories ${JSON.stringify({
+      ...m,
+      recallCount: (m.recallCount ?? 0) + 1,
+      lastRecalledAt: new Date().toISOString(),
+    })}`
+  );
 }
 
 
