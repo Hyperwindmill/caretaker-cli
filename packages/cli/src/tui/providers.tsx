@@ -107,11 +107,16 @@ export default function Providers({ onBack }: { onBack: () => void }) {
   }
 
   if (mode === 'detail' && selected) {
-    const isClaudeCode = selected.type === 'claude-code';
     return (
       <Box flexDirection="column">
         <Text bold>{selected.name}</Text>
-        {isClaudeCode ? (
+        {selected.type === 'acp' ? (
+          <>
+            <Text>type: acp</Text>
+            <Text>command: {selected.command || '(none)'}</Text>
+            <Text>args: {(selected.args ?? []).join(' ') || '(none)'}</Text>
+          </>
+        ) : selected.type === 'claude-code' ? (
           <>
             <Text>type: claude-code</Text>
             <Text>command: {selected.command || '(default: claude on PATH)'}</Text>
@@ -150,9 +155,11 @@ export default function Providers({ onBack }: { onBack: () => void }) {
   const items = [
     ...providers.map((p) => ({
       label:
-        p.type === 'claude-code'
-          ? `${p.name}  —  Claude Code (local CLI)${p.command ? `  —  ${p.command}` : ''}`
-          : `${p.name}  —  ${p.endpoint}`,
+        p.type === 'acp'
+          ? `${p.name}  —  ACP — ${p.command ?? ''} ${(p.args ?? []).join(' ')}`.trim()
+          : p.type === 'claude-code'
+            ? `${p.name}  —  Claude Code (local CLI)${p.command ? `  —  ${p.command}` : ''}`
+            : `${p.name}  —  ${p.endpoint}`,
       value: `p:${p.name}`,
     })),
     { label: '+ Create new', value: '__new__' },
@@ -161,19 +168,16 @@ export default function Providers({ onBack }: { onBack: () => void }) {
 
   return (
     <Box flexDirection="column">
-      <Text bold>Providers ({providers.length})</Text>
+      <Text bold>Providers</Text>
       <Box marginTop={1}>
         <SelectInput
           items={items}
           onSelect={(item) => {
             if (item.value === '__back__') return onBack();
             if (item.value === '__new__') return setMode('create');
-            const name = item.value.replace(/^p:/, '');
-            const p = providers.find((x) => x.name === name);
-            if (p) {
-              setSelected(p);
-              setMode('detail');
-            }
+            const name = item.value.slice(2);
+            setSelected(providers.find((p) => p.name === name) ?? null);
+            setMode('detail');
           }}
         />
       </Box>
@@ -184,7 +188,7 @@ export default function Providers({ onBack }: { onBack: () => void }) {
   );
 }
 
-type FormStep = 'type' | 'name' | 'endpoint' | 'apiKey' | 'command';
+type FormStep = 'type' | 'name' | 'endpoint' | 'apiKey' | 'command' | 'args';
 type ProviderType = 'openai' | 'claude-code' | 'acp';
 
 function ProviderForm({
@@ -204,12 +208,13 @@ function ProviderForm({
   // (same rationale as the webview form).
   const [type, setType] = useState<ProviderType>(initial?.type ?? 'openai');
   const [step, setStep] = useState<FormStep>(
-    isEdit ? (type === 'claude-code' ? 'command' : 'endpoint') : 'type',
+    isEdit ? (type === 'acp' || type === 'claude-code' ? 'command' : 'endpoint') : 'type',
   );
   const [name, setName] = useState(initial?.name ?? '');
   const [endpoint, setEndpoint] = useState(initial?.endpoint ?? '');
   const [apiKey, setApiKey] = useState(initial?.apiKey ?? '');
   const [command, setCommand] = useState(initial?.command ?? '');
+  const [args, setArgs] = useState((initial?.args ?? []).join(' '));
   const [error, setError] = useState<string | null>(null);
 
   useInput((_input, key) => {
@@ -217,6 +222,20 @@ function ProviderForm({
   });
 
   const finalize = () => {
+    if (type === 'acp') {
+      const p: ProviderConfig = {
+        name: name.trim(),
+        type: 'acp',
+        endpoint: '',
+        command: command.trim(),
+      };
+      const argList = args.trim() ? args.trim().split(/\s+/) : [];
+      if (argList.length) p.args = argList;
+      if (initial?.env) p.env = initial.env;
+      if (initial?.selfLoadedContextFiles) p.selfLoadedContextFiles = initial.selfLoadedContextFiles;
+      void onSave(p);
+      return;
+    }
     if (type === 'claude-code') {
       const p: ProviderConfig = { name: name.trim(), type: 'claude-code', endpoint: '' };
       if (command.trim()) p.command = command.trim();
@@ -237,13 +256,23 @@ function ProviderForm({
       if (!v) return setError('name is required');
       if (existingNames.includes(v)) return setError('name already exists');
       setError(null);
-      setStep(type === 'claude-code' ? 'command' : 'endpoint');
+      setStep(type === 'acp' || type === 'claude-code' ? 'command' : 'endpoint');
     } else if (step === 'endpoint') {
       const v = endpoint.trim();
       if (!v) return setError('endpoint is required');
       setError(null);
       setStep('apiKey');
     } else if (step === 'command') {
+      if (type === 'acp') {
+        const v = command.trim();
+        if (!v) return setError('command is required (e.g. npx or binary path)');
+        setError(null);
+        setStep('args');
+      } else {
+        setError(null);
+        finalize();
+      }
+    } else if (step === 'args') {
       setError(null);
       finalize();
     } else {
@@ -252,7 +281,11 @@ function ProviderForm({
   };
 
   const stepOrder: FormStep[] =
-    type === 'claude-code' ? ['type', 'name', 'command'] : ['type', 'name', 'endpoint', 'apiKey'];
+    type === 'acp'
+      ? ['type', 'name', 'command', 'args']
+      : type === 'claude-code'
+        ? ['type', 'name', 'command']
+        : ['type', 'name', 'endpoint', 'apiKey'];
   const currentIdx = stepOrder.indexOf(step);
   const isPending = (s: FormStep) => stepOrder.indexOf(s) > currentIdx;
 
@@ -266,8 +299,9 @@ function ProviderForm({
             items={[
               { label: 'OpenAI-compatible endpoint', value: 'openai' },
               { label: 'Claude Code (local CLI)', value: 'claude-code' },
+              { label: 'ACP agent (external CLI)', value: 'acp' },
             ]}
-            initialIndex={type === 'claude-code' ? 1 : 0}
+            initialIndex={type === 'acp' ? 2 : type === 'claude-code' ? 1 : 0}
             onSelect={(item) => {
               setType(item.value as ProviderType);
               setError(null);
@@ -276,7 +310,11 @@ function ProviderForm({
           />
         ) : (
           <Text>
-            {type === 'claude-code' ? 'Claude Code (local CLI)' : 'OpenAI-compatible endpoint'}
+            {type === 'acp'
+              ? 'ACP agent (external CLI)'
+              : type === 'claude-code'
+                ? 'Claude Code (local CLI)'
+                : 'OpenAI-compatible endpoint'}
           </Text>
         )}
       </Box>
@@ -290,7 +328,45 @@ function ProviderForm({
           <Text>{name}</Text>
         )}
       </Box>
-      {type === 'claude-code' ? (
+      {type === 'acp' ? (
+        <>
+          <Box>
+            <Text>command: </Text>
+            {step === 'command' ? (
+              <TextInput
+                value={command}
+                onChange={setCommand}
+                onSubmit={submit}
+                placeholder="npx or /path/to/binary"
+              />
+            ) : isPending('command') ? (
+              <Text dimColor>(pending)</Text>
+            ) : (
+              <Text>{command}</Text>
+            )}
+          </Box>
+          <Box>
+            <Text>arguments: </Text>
+            {step === 'args' ? (
+              <TextInput
+                value={args}
+                onChange={setArgs}
+                onSubmit={submit}
+                placeholder="@agentclientprotocol/claude-agent-acp"
+              />
+            ) : isPending('args') ? (
+              <Text dimColor>(pending)</Text>
+            ) : (
+              <Text>{args || '(none)'}</Text>
+            )}
+          </Box>
+          <Box marginTop={1}>
+            <Text dimColor>
+              Space-separated arguments for the agent server. Edit caretaker.json for env vars.
+            </Text>
+          </Box>
+        </>
+      ) : type === 'claude-code' ? (
         <>
           <Box>
             <Text>command: </Text>
