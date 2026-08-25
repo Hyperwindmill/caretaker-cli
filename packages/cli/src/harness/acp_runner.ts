@@ -102,7 +102,7 @@ function extractToolResultText(content: unknown): string {
     .join('\n');
 }
 
-export async function runAcp(opts: RunOptions & { acp?: AcpRunExtras }, cb: RunCallbacks = {}): Promise<RunResult> {
+export async function runAcp(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunResult> {
   const { agent, provider } = opts;
   const extras: AcpRunExtras = opts.acp ?? {};
   const workingDir = opts.workingDir ?? process.cwd();
