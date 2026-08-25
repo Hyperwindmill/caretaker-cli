@@ -3,7 +3,7 @@
 // and host-side project resolution. No harness or store imports (types only)
 // so everything here is unit-testable without CARETAKER_HOME.
 // See docs/superpowers/specs/2026-08-24-memory-daemon-step2-extraction-design.md
-import { isAbsolute, resolve, sep } from 'node:path';
+import { resolveProjectIdForDir } from '../../../lib/project_resolve.js';
 import type { AgentConfig, ProjectConfig } from '../../../types.js';
 
 export const MAX_DEDUP_CHARS = 4000;
@@ -131,22 +131,13 @@ export function formatDedupBlock(entries: Array<{ title: string; keywords: strin
 /** Host-side project resolution (scope ids are never chosen by a model):
  *  the session agent's workingDir prefix-matched, path-aware, against the
  *  configured projects' workingDir. Longest match wins (nested projects).
- *  '' = no project in scope → global-only extraction. */
+ *  '' = no project in scope → global-only extraction.
+ *  Delegates to lib/project_resolve.ts — shared with the read path. */
 export function resolveProjectId(
   sessionAgentId: string,
   agents: AgentConfig[],
   projects: ProjectConfig[]
 ): string {
   const dir = agents.find((a) => a.id === sessionAgentId)?.workingDir;
-  if (!dir || !isAbsolute(dir)) return '';
-  const agentDir = resolve(dir);
-  let best: { id: string; len: number } | null = null;
-  for (const p of projects) {
-    if (!p.workingDir || !isAbsolute(p.workingDir)) continue;
-    const projDir = resolve(p.workingDir);
-    if (agentDir === projDir || agentDir.startsWith(projDir + sep)) {
-      if (!best || projDir.length > best.len) best = { id: p.id, len: projDir.length };
-    }
-  }
-  return best?.id ?? '';
+  return dir ? resolveProjectIdForDir(dir, projects) : '';
 }
