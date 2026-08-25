@@ -30,8 +30,8 @@ export const memoryReadTool: Tool = {
     required: ['ids'],
     additionalProperties: false,
   },
-  execute: async (args, _ctx): Promise<ToolResult> => {
-    const ids = Array.isArray(args.ids)
+  execute: async (args: any, _ctx): Promise<ToolResult> => {
+    const ids = Array.isArray(args?.ids)
       ? (args.ids as unknown[]).filter(
           (v): v is string => typeof v === 'string' && v.trim() !== ''
         )

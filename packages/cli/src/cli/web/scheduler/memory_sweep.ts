@@ -148,6 +148,7 @@ export function makeSummarizer(resolved: ResolvedMemoryConfig): SummarizeFn {
         signal: ac.signal,
         workingDir: dataDir(),
         claudeCode: { permissionMode: 'dontAsk' },
+        skipMemoryRecall: true,
       });
       if (result.stop !== 'done') return null;
       const parsed = parseCombinedResponse(result.text);
