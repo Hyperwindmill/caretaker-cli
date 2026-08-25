@@ -101,6 +101,7 @@
     "zod": "^4.4.3"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "^1.4.0",
     "@hono/node-server": "^2.0.4",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@morphql/store": "^0.1.45",
