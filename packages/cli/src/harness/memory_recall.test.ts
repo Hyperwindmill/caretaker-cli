@@ -119,5 +119,19 @@ describe('memory recall', () => {
     it("'' when nothing matches", async () => {
       assert.equal(await recall.buildMemoriesBlock('completely unrelated', '/tmp/proj-a'), '');
     });
+
+    it('explicit projectId overrides dir resolution (task worktree case)', async () => {
+      const worktree = '/tmp/not-a-project-dir/worktrees/t-1';
+      const block = await recall.buildMemoriesBlock('pnpm question', worktree, 'proj-b');
+      assert.ok(block.includes('Uses pnpm')); // global still included
+      assert.ok(block.includes('B-fact'));    // explicit scope wins
+      assert.ok(!block.includes('A-fact'));   // dir-based match not consulted
+    });
+
+    it('absent override keeps dir resolution intact', async () => {
+      const block = await recall.buildMemoriesBlock('pnpm question', '/tmp/proj-b');
+      assert.ok(block.includes('B-fact'));
+      assert.ok(!block.includes('A-fact'));
+    });
   });
 });

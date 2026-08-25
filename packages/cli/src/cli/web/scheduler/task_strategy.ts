@@ -461,6 +461,9 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
           prompt: effectivePrompt,
           history: historyRecords,
           workingDir,
+          // The worktree never prefix-matches the project's workingDir, so
+          // the recall block gets the project scope explicitly.
+          memoryProjectId: task.projectId,
           claudeCode,
           dockerContainer,
           signal,
@@ -671,6 +674,7 @@ async function runReviewCycle(opts: {
       objective: task.objective,
       branch: task.branch || '(unknown)',
       workingDir,
+      projectId: task.projectId,
       round,
       signal,
       maxRunSeconds,

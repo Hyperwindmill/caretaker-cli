@@ -142,7 +142,11 @@ MCP servers are pooled by `mcp/client.ts` (both stdio and HTTP/SSE); their tools
   per-turn host-side lexical match injects `<memories>` block (top-K titles)
   into the prelude; `mcp__memory__memory_read` returns bodies on demand and
   bumps recall accounting. Recall works on every surface (folder DB, no scheduler
-  needed), unlike the sweep.
+  needed), unlike the sweep. Autonomous task cycles (developer/planner/review)
+  pass the project scope explicitly (`RunOptions.memoryProjectId`, from the task
+  record — still host-side): their workingDir is a worktree or managed repo dir
+  that never prefix-matches the project's `workingDir`, so dir-based resolution
+  would degrade them to global-only.
 
 The first two are per-agent strategies keyed by `task.type` and configured from the **Services** settings panel; the task heartbeat is always-on. A third service type, `email`, is a **credentials record, not a strategy**: it stores an account's IMAP and SMTP settings (passwords encrypted, see State on disk), has **no strategy registered**, and is therefore never ticked — only `heartbeat` is cron-scheduled, `telegram` polls. It is what the `mcp__email__*` tools send and read through (layer 8); reading is driven by an ordinary `heartbeat` service, not by a strategy of its own. Cross-strategy shared state lives in `scheduler/locks.ts` (`runningTasks` Set, plus `runningTaskControllers` — a `Map<taskId, AbortController>` registered while a heartbeat run is in flight) and `scheduler/logs.ts` (log dir + JSONL append/read). Pausing/blocking a task (`POST /api/tasks/:id/status` → non-`active`) calls `abortRunningTask(taskId)`, which aborts the in-flight run mid-cycle — the loop checks `opts.signal` between turns — rather than only skipping the next tick; the signal is threaded into the developer/planner run and the review pass, so an off-the-rails agent stops now. Strategies depend on sibling modules, never on the parent `scheduler.ts`.
 
