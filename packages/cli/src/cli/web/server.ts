@@ -981,7 +981,12 @@ export async function startServer(port: number, host: string): Promise<void> {
         // Collapse every builtin `mcp__<ns>__` namespace (task, email, …) into a
         // single wildcard entry: the picker offers the namespace, so a namespace
         // gaining a tool needs no config change. resolveAgentTools expands it.
-        const toolNames = harness.tools.list().map((t) => t.name);
+        // Hidden tools (memory_read) are harness infrastructure, auto-included
+        // by resolveAgentTools behind their own gate — never a picker choice.
+        const toolNames = harness.tools
+          .list()
+          .filter((t) => !t.hidden)
+          .map((t) => t.name);
         const namespaces = [
           ...new Set(
             toolNames.map((name) => /^mcp__[a-z]+__/.exec(name)?.[0]).filter((p): p is string => !!p),

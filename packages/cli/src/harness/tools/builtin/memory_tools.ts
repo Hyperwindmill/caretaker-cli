@@ -16,6 +16,9 @@ import { listMemories, bumpMemoryRecall } from '../../../store/db.js';
 
 export const memoryReadTool: Tool = {
   name: 'mcp__memory__memory_read',
+  // Auto-included by resolveAgentTools when MemoryConfig is present (the
+  // same gate as the <memories> prelude block) — never a picker choice.
+  hidden: true,
   description:
     'Read the full content of stored memories by id. Ids come from the <memories> block in the system prompt. Reading a memory reinforces it (recall statistics are updated), so read the ones actually relevant, not all of them.',
   parameters: {

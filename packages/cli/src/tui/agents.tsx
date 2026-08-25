@@ -441,8 +441,11 @@ const NAMESPACE_DESCRIPTIONS: Record<string, string> = {
 };
 
 /** The picker's tool list: one synthetic entry per `mcp__<ns>__` namespace in
- *  place of its individual tools, everything else as-is. */
-function namespacedToolList(tools: Tool[]): Tool[] {
+ *  place of its individual tools, everything else as-is. Hidden tools
+ *  (memory_read) are harness infrastructure, auto-included by
+ *  resolveAgentTools behind their own gate — never a picker choice. */
+function namespacedToolList(allTools: Tool[]): Tool[] {
+  const tools = allTools.filter((t) => !t.hidden);
   const namespaces = [
     ...new Set(
       tools.map((t) => /^mcp__[a-z]+__/.exec(t.name)?.[0]).filter((p): p is string => !!p),
