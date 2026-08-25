@@ -26,6 +26,7 @@ import {
   toOpenAiTool,
 } from './tools/index.js';
 import { withHarnessPrelude, VOICE_CONVERSATION_PRELUDE } from './prelude.js';
+import { buildMemoriesBlock } from './memory_recall.js';
 import { formatRuntimeInfoBlock } from './runtime_info.js';
 import { loadContextFiles, formatContextBlock, resolveFileReferences } from './context_files.js';
 
@@ -97,6 +98,15 @@ export interface RunOptions {
   /** The turn came from voice conversation mode; append the spoken-reply
    *  block to the system prompt so the agent writes speakable prose. */
   voiceConversation?: boolean;
+  /** Skip the per-turn <memories> recall block. Set by the memory sweep's
+   *  own summarize runs: injecting recalled memories into the call that
+   *  extracts memories would pollute its carefully-shaped prompt. */
+  skipMemoryRecall?: boolean;
+  /** Explicit project scope for the recall block. Set by autonomous task
+   *  runs, whose workingDir is a worktree (or managed repo dir) that never
+   *  prefix-matches the project's workingDir — the task record already
+   *  knows the project. Host-side, never the model's choice. */
+  memoryProjectId?: string;
 }
 
 export interface RunResult {
@@ -167,6 +177,16 @@ export async function run(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunR
     workingDir: toolCtx.workingDir,
   });
   effectiveSystemPrompt = `${effectiveSystemPrompt}\n\n${runtimeBlock}`.trim();
+
+  // Memory recall (read path): per-turn <memories> block — titles matched
+  // host-side against the user prompt, zero model calls. '' when memory is
+  // unconfigured or nothing matches.
+  if (!opts.skipMemoryRecall) {
+    const memoriesBlock = await buildMemoriesBlock(prompt, toolCtx.workingDir, opts.memoryProjectId);
+    if (memoriesBlock) {
+      effectiveSystemPrompt = `${effectiveSystemPrompt}\n\n${memoriesBlock}`.trim();
+    }
+  }
 
   // Voice-conversation block is appended last (strongest recency) and only
   // on voice turns — the same session mixes typed and spoken turns.

@@ -171,6 +171,23 @@ export type VoiceConfig = {
   autoStartBackend?: boolean;
 };
 
+/** Memory subsystem configuration — step 1: the session-digest sweep daemon
+ *  (web-server scheduler only). Unset ⇒ subsystem off, zero cost.
+ *  See docs/superpowers/specs/2026-08-24-memory-daemon-step1-design.md */
+export type MemoryConfig = {
+  /** Agent whose identity (systemPrompt + provider + model) runs the
+   *  summarize calls — every provider type works, claude-code included,
+   *  because the sweep launches through the harness loop. Calls are always
+   *  fresh one-shot conversations, never the agent's live sessions. A lean
+   *  dedicated agent (no plugins, short systemPrompt) keeps calls cheap. */
+  agentId: string;
+  /** Minimum minutes between sweeps. Default 5. */
+  sweepMinutes?: number;
+  /** Per-session debounce: summarize only when at least this many new
+   *  messages accumulated since the cursor. Default 4. */
+  minNewMessages?: number;
+};
+
 export type CaretakerConfig = {
   port: number;
   providers: ProviderConfig[];
@@ -179,7 +196,9 @@ export type CaretakerConfig = {
   };
   projects?: ProjectConfig[];
   voice?: VoiceConfig;
+  memory?: MemoryConfig;
 };
+
 
 
 export type PluginManifestKind = 'cc-marketplace' | 'cc-plugin' | 'skill-glob';

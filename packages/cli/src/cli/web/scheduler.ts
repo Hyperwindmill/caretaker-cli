@@ -2,6 +2,7 @@ import { loadConfig } from '../../store/json.js';
 import { HeartbeatStrategy } from './scheduler/heartbeat.js';
 import { TelegramStrategy } from './scheduler/telegram.js';
 import { runTaskHeartbeatTick } from './scheduler/task_strategy.js';
+import { runMemorySweepTick } from './scheduler/memory_sweep.js';
 
 // Re-exported for backwards compatibility with existing consumers (server.ts, tests).
 export {
@@ -41,10 +42,16 @@ export async function runSchedulerTick(): Promise<void> {
     await runTaskHeartbeatTick(now).catch((err) => {
       console.error('[scheduler] Autonomous Task Heartbeat Tick failed:', err);
     });
+
+    // Memory sweep (session digests) — self-gated to at most one run per sweepMinutes.
+    await runMemorySweepTick(now).catch((err) => {
+      console.error('[scheduler] Memory sweep tick failed:', err);
+    });
   } catch (err) {
     console.error('[scheduler] Error evaluating scheduler tasks tick:', err);
   }
 }
+
 
 let schedulerIntervalRef: NodeJS.Timeout | null = null;
 

@@ -231,3 +231,135 @@ export async function deleteTask(taskId: string): Promise<void> {
   await runQuery(`DELETE FROM task_messages WHERE taskId = '${taskId}'`);
   await runQuery(`DELETE FROM tasks WHERE id = '${taskId}'`);
 }
+
+/** Per-session memory digest: cursor + rolling summary maintained by the
+ *  memory sweep daemon. The whole collection is a regenerable cache — never
+ *  a source of truth; deleting it costs one full re-scan.
+ *  See docs/superpowers/specs/2026-08-24-memory-daemon-step1-design.md */
+export interface SessionDigest {
+  /** = sessionId (uuid of the JSONL session file). */
+  id: string;
+  agentId: string;
+  /** Cursor: last processed MessageRecord.id. '' = nothing processed yet. */
+  lastMessageId: string;
+  /** Messages processed so far (O(1) "how many new?" check). */
+  messageCount: number;
+  /** Rolling summary, standalone text. '' until the first summarize call. */
+  summary: string;
+  /** Model that produced the current summary. '' until then. */
+  model: string;
+  /** Start of the last *fully caught-up* scan. INVARIANT: written only when
+   *  the digest covers everything read at this timestamp; the sweep's mtime
+   *  gate (skip when file mtime < scannedAt) is only sound because of that. */
+  scannedAt: string;
+  updatedAt: string;
+}
+
+export async function getSessionDigest(sessionId: string): Promise<SessionDigest | null> {
+  if (!safeId(sessionId)) return null;
+  try {
+    const rows = (await runQuery(`SELECT * FROM session_digests WHERE id = '${sessionId}'`)) as SessionDigest[];
+    return rows[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function listSessionDigests(): Promise<SessionDigest[]> {
+  try {
+    return (await runQuery('SELECT * FROM session_digests')) as SessionDigest[];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveSessionDigest(d: SessionDigest): Promise<void> {
+  if (!safeId(d.id)) throw new Error(`Invalid session id: ${d.id}`);
+  // Delete + insert = upsert; summary goes through JSON.stringify, so quotes
+  // and newlines never touch the interpolated SQL string.
+  await runQuery(`DELETE FROM session_digests WHERE id = '${d.id}'`);
+  await runQuery(
+    `INSERT INTO session_digests ${JSON.stringify({ ...d, updatedAt: new Date().toISOString() })}`
+  );
+}
+
+export async function deleteSessionDigest(sessionId: string): Promise<void> {
+  if (!safeId(sessionId)) return;
+  await runQuery(`DELETE FROM session_digests WHERE id = '${sessionId}'`);
+}
+
+/** One durable memory extracted by the sweep's combined call. Unlike the
+ *  digests this is NOT a regenerable cache — it is the first durable store
+ *  of the memory subsystem. Append-only at write time; merge/supersede/decay
+ *  are the future consolidation's job.
+ *  See docs/superpowers/specs/2026-08-24-memory-daemon-step2-extraction-design.md */
+export interface Memory {
+  /** crypto.randomUUID() — passes safeId. */
+  id: string;
+  /** '' = global (user/machine level). Resolved host-side, never by the model. */
+  projectId: string;
+  /** Semantic/episodic split: timeless knowledge vs a dated event. */
+  kind: 'fact' | 'episode';
+  /** Initial strength, derived from the tone of the conversation at write
+   *  time (the tone is unrecoverable later). Ordinal on purpose — models
+   *  calibrate numeric scales poorly. */
+  importance: 'low' | 'normal' | 'high';
+  title: string;
+  /** Markdown, self-contained. */
+  body: string;
+  /** Associative base for the future read path, emitted at write time. */
+  keywords: string[];
+  // ─── recall accounting (step 3) — the acquired-strength signal for the
+  //     future consolidation/decay; bumped ONLY by memory_read ────────────
+  /** Times delivered by memory_read. Absent on pre-step-3 records = 0. */
+  recallCount?: number;
+  /** ISO timestamp of the last memory_read delivery. */
+  lastRecalledAt?: string;
+  // ─── provenance — host-side facts, never model output ─────────────────
+  sourceSessionId: string;
+  /** The session's agent directory — NOT a scope; mined by a future
+   *  personality step. */
+  sourceAgentId: string;
+  /** Extraction model. */
+  model: string;
+  createdAt: string;
+}
+
+export async function saveMemory(m: Memory): Promise<void> {
+  if (!safeId(m.id)) throw new Error(`Invalid memory id: ${m.id}`);
+  // Insert-only: memories are append-only; there is deliberately no upsert.
+  await runQuery(`INSERT INTO memories ${JSON.stringify(m)}`);
+}
+
+export async function listMemories(): Promise<Memory[]> {
+  try {
+    return (await runQuery('SELECT * FROM memories')) as Memory[];
+  } catch {
+    return [];
+  }
+}
+
+export async function deleteMemory(id: string): Promise<void> {
+  if (!safeId(id)) return;
+  await runQuery(`DELETE FROM memories WHERE id = '${id}'`);
+}
+
+/** Recall event: memory_read delivered this memory to an agent. Delete +
+ *  insert (saveSessionDigest pattern — the store has no UPDATE). No-op on
+ *  unknown ids: a stale id in a prelude block is not an error. */
+export async function bumpMemoryRecall(id: string): Promise<void> {
+  if (!safeId(id)) return;
+  const rows = (await runQuery(`SELECT * FROM memories WHERE id = '${id}'`)) as Memory[];
+  const m = rows[0];
+  if (!m) return;
+  await runQuery(`DELETE FROM memories WHERE id = '${id}'`);
+  await runQuery(
+    `INSERT INTO memories ${JSON.stringify({
+      ...m,
+      recallCount: (m.recallCount ?? 0) + 1,
+      lastRecalledAt: new Date().toISOString(),
+    })}`
+  );
+}
+
+
