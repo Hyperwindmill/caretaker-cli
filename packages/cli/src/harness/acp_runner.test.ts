@@ -191,3 +191,25 @@ test('adapter hook notices route to thinking, not the reply text (claude-agent-a
   assert.deepEqual(thinking, ['**Notice:** UserPromptSubmit says: MEMORY REMINDER blah']);
   assert.deepEqual(chunks, ['real reply', ' — **Notice:** inline is fine']);
 });
+
+test('_meta-marked informational chunks route to thinking even without a text prefix (#1042 landed)', async () => {
+  useFakeAgent(async (ctx) => {
+    await ctx.client.notify('session/update', {
+      sessionId: 'acp-1',
+      update: {
+        sessionUpdate: 'agent_message_chunk' as const,
+        content: { type: 'text' as const, text: 'plain hook detail, no bold prefix' },
+        _meta: { claudeCode: { kind: 'informational', level: 'info' } },
+      },
+    });
+    await ctx.client.notify('session/update', textUpdate('real reply'));
+    return { stopReason: 'end_turn' };
+  });
+  const thinking: string[] = [];
+  const res = await runAcp(
+    { agent: agentCfg, provider, tools: [], prompt: 'x' },
+    { onThinking: (t) => thinking.push(t) },
+  );
+  assert.equal(res.text, 'real reply');
+  assert.deepEqual(thinking, ['plain hook detail, no bold prefix']);
+});
