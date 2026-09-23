@@ -92,19 +92,23 @@ function diffUsage(prev: Usage | undefined, cur: Usage): AssistantUsage {
   return usage;
 }
 
-/** Heuristic for claude-agent-acp harness notices (hook output, warnings):
- *  the adapter folds SDK "informational" messages into plain
- *  agent_message_chunk text as `**Notice:** …` / `**Warning:** …` /
- *  `**Error:** …`, indistinguishable from model prose on the wire — see
- *  https://github.com/agentclientprotocol/claude-agent-acp/issues/1042
- *  (asks for a _meta marker; drop this heuristic when it lands). A notice
- *  arrives as ONE complete chunk, so only a whole-chunk prefix match counts —
- *  model deltas that merely contain a bold label mid-stream stay untouched.
- *  Matches route to the thinking channel: visible but collapsed, out of the
- *  persisted reply text and out of TTS. 'info'-level messages carry no
- *  prefix at all and cannot be detected. */
+/** claude-agent-acp harness notices (hook output, warnings) are demoted to
+ *  the thinking channel: visible but collapsed, out of the persisted reply
+ *  text and out of TTS. Two signals, in order:
+ *  1. `_meta.claudeCode.kind === 'informational'` on the chunk — the marker
+ *     https://github.com/agentclientprotocol/claude-agent-acp/issues/1042
+ *     landed (PR #1055, 2026-09-23). Covers every level, including 'info'
+ *     chunks that carry no visible prefix.
+ *  2. Fallback for pre-#1055 adapters (pinned npx versions): the folded
+ *     `**Notice:** …` / `**Warning:** …` / `**Error:** …` text prefix. A
+ *     notice arrives as ONE complete chunk, so only a whole-chunk prefix
+ *     match counts — model deltas that merely contain a bold label
+ *     mid-stream stay untouched. Drop this arm when pre-fix adapters are no
+ *     longer a concern. */
 const ADAPTER_NOTICE_RE = /^\*\*(Notice|Warning|Error):\*\* /;
-export function isAdapterNotice(text: string): boolean {
+export function isAdapterNotice(text: string, meta?: unknown): boolean {
+  const kind = (meta as { claudeCode?: { kind?: string } } | null | undefined)?.claudeCode?.kind;
+  if (kind === 'informational') return true;
   return ADAPTER_NOTICE_RE.test(text);
 }
 
@@ -179,7 +183,7 @@ export async function runAcp(opts: RunOptions, cb: RunCallbacks = {}): Promise<R
     switch (u.sessionUpdate) {
       case 'agent_message_chunk':
         if (u.content.type === 'text') {
-          if (isAdapterNotice(u.content.text)) {
+          if (isAdapterNotice(u.content.text, (u as { _meta?: unknown })._meta)) {
             // Adapter harness notice (see isAdapterNotice / issue #1042):
             // demote to thinking instead of polluting the reply.
             await safeEmit(() => cb.onThinking?.((u.content as any).text));
