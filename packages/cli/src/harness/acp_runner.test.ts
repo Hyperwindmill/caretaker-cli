@@ -213,3 +213,31 @@ test('_meta-marked informational chunks route to thinking even without a text pr
   assert.equal(res.text, 'real reply');
   assert.deepEqual(thinking, ['plain hook detail, no bold prefix']);
 });
+
+test('a signal already aborted before the turn starts returns aborted without hanging', async () => {
+  let cancelled = false;
+  const app = acpAgent({ name: 'fake' })
+    .onRequest('initialize', () => ({ protocolVersion: PROTOCOL_VERSION, agentCapabilities: {} }))
+    .onRequest('session/new', () => ({ sessionId: 'acp-1' }))
+    .onNotification('session/cancel', () => {
+      cancelled = true;
+    })
+    .onRequest('session/prompt', async () => {
+      // Waits for session/cancel forever: only the runner's abort handling
+      // (which must fire even for a signal aborted BEFORE the listener is
+      // registered) unblocks this.
+      while (!cancelled) await new Promise((r) => setTimeout(r, 5));
+      return { stopReason: 'cancelled' };
+    });
+  __setConnector((_p, clientApp) => {
+    const conn = clientApp.connect(app);
+    return { conn, kill: () => conn.close() };
+  });
+  const ac = new AbortController();
+  ac.abort(); // aborted before runAcp is even called
+  const res = await runAcp(
+    { agent: agentCfg, provider, tools: [], prompt: 'x', signal: ac.signal },
+    {},
+  );
+  assert.equal(res.stop, 'aborted');
+});

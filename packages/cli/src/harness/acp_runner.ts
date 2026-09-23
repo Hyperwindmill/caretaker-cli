@@ -298,6 +298,14 @@ export async function runAcp(opts: RunOptions, cb: RunCallbacks = {}): Promise<R
     };
     opts.signal?.addEventListener('abort', onAbort, { once: true });
     try {
+      if (opts.signal?.aborted) {
+        // addEventListener never fires for a signal aborted BEFORE registration
+        // (e.g. a Pause or wall-clock budget landing during session setup) —
+        // without this check the prompt would run un-cancellable, and a wedged
+        // agent would hang the turn forever.
+        aborted = true;
+        return { text, toolCalls, usage, stop: 'aborted' };
+      }
       const res = await handle.conn.agent.request('session/prompt', {
         sessionId: acpSessionId,
         prompt: blocks,
