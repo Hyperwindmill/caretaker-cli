@@ -59,6 +59,11 @@ export function formatMemoriesBlock(matches: Memory[]): string {
     '<memories>',
     'Stored memories that may be relevant to the current message:',
     ...matches.map((m) => `- ${m.id} — ${m.title} (${m.kind}, ${m.importance})`),
+    // ponytail: "(when available)" papers over a gap — external runners (acp,
+    // claude-code) never get memory_read in ordinary chat, so they see titles
+    // they cannot open. Suspended 2026-10-05. Upgrade path, cheapest first:
+    // inline bodies for external runners; or inject `caretaker-cli mcp` as a
+    // stdio MCP server into interactive ACP sessions behind a namespace filter.
     'To read their full content, call the memory_read tool with the ids (when available).',
     '</memories>',
   ].join('\n');
