@@ -17,14 +17,18 @@ import { dataDir } from '../store/json.js';
 import type { AcpAgentPreset } from '../types.js';
 
 const exec = promisify(execFile);
+/** Whole-download ceiling (headers + body): archives are tens of MB, so this is
+ *  generous, but a stalled mirror must not leave the Install button spinning. */
+const DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
 
 type FetchLike = (url: string) => Promise<Response>;
-let fetchImpl: FetchLike = (url) => fetch(url);
+const defaultFetch: FetchLike = (url) => fetch(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
+let fetchImpl: FetchLike = defaultFetch;
 export function __setFetch(f: FetchLike): void {
   fetchImpl = f;
 }
 export function __resetFetch(): void {
-  fetchImpl = (url) => fetch(url);
+  fetchImpl = defaultFetch;
 }
 
 export type InstalledAcp = { command: string; args: string[]; env?: Record<string, string> };
