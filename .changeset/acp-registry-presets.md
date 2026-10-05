@@ -12,3 +12,4 @@ ACP agent census: the provider form (relabeled "External agent (ACP)") offers pr
 - Binary installer: download + sha256 + extract into ~/.caretaker/acp/<id>/<version>/.
 - Bridge messages + web/VSCode hosts for registry fetch and managed install.
 - Provider form presets (webview): agent census select, install flow, "External agent (ACP)" label.
+- TUI provider presets (npx/uvx prefill; binary presets point at the web installer or manual path).

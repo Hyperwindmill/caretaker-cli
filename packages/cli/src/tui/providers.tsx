@@ -3,7 +3,8 @@ import { Box, Text, useInput } from 'ink';
 import SelectInput from 'ink-select-input';
 import TextInput from 'ink-text-input';
 import { loadAgents, loadConfig, saveConfig } from '../store/json.js';
-import type { ProviderConfig } from '../types.js';
+import { fetchAcpRegistry } from '../acp/index.js';
+import type { AcpAgentPreset, ProviderConfig } from '../types.js';
 
 type Mode = 'list' | 'detail' | 'create' | 'edit' | 'delete';
 
@@ -112,7 +113,7 @@ export default function Providers({ onBack }: { onBack: () => void }) {
         <Text bold>{selected.name}</Text>
         {selected.type === 'acp' ? (
           <>
-            <Text>type: acp</Text>
+            <Text>type: External agent (ACP)</Text>
             <Text>command: {selected.command || '(none)'}</Text>
             <Text>args: {(selected.args ?? []).join(' ') || '(none)'}</Text>
           </>
@@ -156,7 +157,7 @@ export default function Providers({ onBack }: { onBack: () => void }) {
     ...providers.map((p) => ({
       label:
         p.type === 'acp'
-          ? `${p.name}  —  ACP — ${p.command ?? ''} ${(p.args ?? []).join(' ')}`.trim()
+          ? `${p.name}  —  External agent (ACP) — ${p.command ?? ''} ${(p.args ?? []).join(' ')}`.trim()
           : p.type === 'claude-code'
             ? `${p.name}  —  Claude Code (local CLI)${p.command ? `  —  ${p.command}` : ''}`
             : `${p.name}  —  ${p.endpoint}`,
@@ -188,7 +189,7 @@ export default function Providers({ onBack }: { onBack: () => void }) {
   );
 }
 
-type FormStep = 'type' | 'name' | 'endpoint' | 'apiKey' | 'command' | 'args';
+type FormStep = 'type' | 'name' | 'preset' | 'endpoint' | 'apiKey' | 'command' | 'args';
 type ProviderType = 'openai' | 'claude-code' | 'acp';
 
 function ProviderForm({
@@ -215,11 +216,80 @@ function ProviderForm({
   const [apiKey, setApiKey] = useState(initial?.apiKey ?? '');
   const [command, setCommand] = useState(initial?.command ?? '');
   const [args, setArgs] = useState((initial?.args ?? []).join(' '));
+  const [presets, setPresets] = useState<AcpAgentPreset[]>([]);
+  const [presetError, setPresetError] = useState<string | null>(null);
+  const [presetLabel, setPresetLabel] = useState<string>('Custom (manual command)');
+  const [selfLoaded, setSelfLoaded] = useState<string[]>(initial?.selfLoadedContextFiles ?? []);
+  const [env, setEnv] = useState<Record<string, string> | undefined>(initial?.env);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (step === 'preset') {
+      void fetchAcpRegistry()
+        .then(setPresets)
+        .catch((e) => {
+          setPresetError(String(e));
+          setStep('command');
+        });
+    }
+  }, [step]);
 
   useInput((_input, key) => {
     if (key.escape) onCancel();
   });
+
+  const presetItems = [
+    { label: 'Custom (manual command)', value: 'custom' },
+    ...presets.map((p) => ({
+      label: p.dist
+        ? p.dist.kind === 'binary'
+          ? `${p.name} (binary — install from the web GUI, or enter the path manually)`
+          : p.name
+        : `${p.name} (not available on this platform)`,
+      value: p.id,
+    })),
+  ];
+
+  const handleSelectPreset = (item: { value: string }) => {
+    if (item.value === 'custom') {
+      setPresetLabel('Custom (manual command)');
+      setSelfLoaded([]);
+      setEnv(undefined);
+      setStep('command');
+      return;
+    }
+    const chosen = presets.find((p) => p.id === item.value);
+    if (!chosen) {
+      setStep('command');
+      return;
+    }
+    setPresetLabel(chosen.name);
+    setSelfLoaded(chosen.selfLoadedContextFiles);
+    if (!chosen.dist || chosen.dist.kind === 'binary') {
+      setCommand('');
+      setArgs('');
+      if (chosen.dist?.env) setEnv(chosen.dist.env);
+      setStep('command');
+    } else {
+      const cmd = chosen.dist.command;
+      const a = (chosen.dist.args ?? []).join(' ');
+      setCommand(cmd);
+      setArgs(a);
+      if (chosen.dist.env) setEnv(chosen.dist.env);
+      const p: ProviderConfig = {
+        name: name.trim(),
+        type: 'acp',
+        endpoint: '',
+        command: cmd,
+      };
+      if (chosen.dist.args?.length) p.args = chosen.dist.args;
+      if (chosen.dist.env) p.env = chosen.dist.env;
+      if (chosen.selfLoadedContextFiles.length) {
+        p.selfLoadedContextFiles = chosen.selfLoadedContextFiles;
+      }
+      void onSave(p);
+    }
+  };
 
   const finalize = () => {
     if (type === 'acp') {
@@ -231,8 +301,10 @@ function ProviderForm({
       };
       const argList = args.trim() ? args.trim().split(/\s+/) : [];
       if (argList.length) p.args = argList;
-      if (initial?.env) p.env = initial.env;
-      if (initial?.selfLoadedContextFiles) p.selfLoadedContextFiles = initial.selfLoadedContextFiles;
+      const envToSave = env ?? initial?.env;
+      if (envToSave) p.env = envToSave;
+      const selfLoadedToSave = selfLoaded.length ? selfLoaded : initial?.selfLoadedContextFiles;
+      if (selfLoadedToSave?.length) p.selfLoadedContextFiles = selfLoadedToSave;
       void onSave(p);
       return;
     }
@@ -256,7 +328,13 @@ function ProviderForm({
       if (!v) return setError('name is required');
       if (existingNames.includes(v)) return setError('name already exists');
       setError(null);
-      setStep(type === 'acp' || type === 'claude-code' ? 'command' : 'endpoint');
+      if (type === 'acp') {
+        setStep('preset');
+      } else if (type === 'claude-code') {
+        setStep('command');
+      } else {
+        setStep('endpoint');
+      }
     } else if (step === 'endpoint') {
       const v = endpoint.trim();
       if (!v) return setError('endpoint is required');
@@ -282,7 +360,7 @@ function ProviderForm({
 
   const stepOrder: FormStep[] =
     type === 'acp'
-      ? ['type', 'name', 'command', 'args']
+      ? ['type', 'name', 'preset', 'command', 'args']
       : type === 'claude-code'
         ? ['type', 'name', 'command']
         : ['type', 'name', 'endpoint', 'apiKey'];
@@ -299,7 +377,7 @@ function ProviderForm({
             items={[
               { label: 'OpenAI-compatible endpoint', value: 'openai' },
               { label: 'Claude Code (local CLI)', value: 'claude-code' },
-              { label: 'ACP agent (external CLI)', value: 'acp' },
+              { label: 'External agent (ACP)', value: 'acp' },
             ]}
             initialIndex={type === 'acp' ? 2 : type === 'claude-code' ? 1 : 0}
             onSelect={(item) => {
@@ -311,7 +389,7 @@ function ProviderForm({
         ) : (
           <Text>
             {type === 'acp'
-              ? 'ACP agent (external CLI)'
+              ? 'External agent (ACP)'
               : type === 'claude-code'
                 ? 'Claude Code (local CLI)'
                 : 'OpenAI-compatible endpoint'}
@@ -330,6 +408,29 @@ function ProviderForm({
       </Box>
       {type === 'acp' ? (
         <>
+          {!isEdit && (
+            <Box flexDirection="column">
+              <Box>
+                <Text>preset: </Text>
+                {step === 'preset' ? (
+                  presets.length === 0 && !presetError ? (
+                    <Text dimColor>loading presets…</Text>
+                  ) : (
+                    <SelectInput items={presetItems} onSelect={handleSelectPreset} />
+                  )
+                ) : isPending('preset') ? (
+                  <Text dimColor>(pending)</Text>
+                ) : (
+                  <Text>{presetLabel}</Text>
+                )}
+              </Box>
+              {presetError && (
+                <Box>
+                  <Text dimColor>Registry unavailable ({presetError}) — enter command manually</Text>
+                </Box>
+              )}
+            </Box>
+          )}
           <Box>
             <Text>command: </Text>
             {step === 'command' ? (
