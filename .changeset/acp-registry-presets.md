@@ -16,3 +16,4 @@ ACP agent census: the provider form (relabeled "External agent (ACP)") offers pr
 - Agent-level acpMode: session/set_mode at session start for interactive runs.
 - Docs: census workflow in README, architecture notes in CLAUDE.md.
 - Review fixes: network timeouts on registry fetch and binary download; an agentless registry response never overwrites the last-good cache; TUI presets prefill instead of auto-saving.
+- Installer hashes the download while streaming it to disk; webview binary presets keep the command field visible (filled by Install or pasted by hand).

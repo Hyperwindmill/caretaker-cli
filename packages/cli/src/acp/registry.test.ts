@@ -5,7 +5,7 @@ process.env.CARETAKER_HOME = mkdtempSync(path.join(os.tmpdir(), 'ct-acpreg-'));
 
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   platformKey,
@@ -129,14 +129,11 @@ test('fetchAcpRegistry: stale cache is last-good when the network fails', async 
 });
 
 test('fetchAcpRegistry: no cache and no network → typed error', async () => {
-  const home = mkdtempSync(path.join(os.tmpdir(), 'ct-acpreg2-'));
-  const prev = process.env.CARETAKER_HOME;
-  process.env.CARETAKER_HOME = home;
+  await rm(join(dataDir(), 'cache', 'acp-registry.json'), { force: true });
   __setFetch(async () => {
     throw new Error('offline');
   });
   await assert.rejects(() => fetchAcpRegistry(), /offline/);
-  process.env.CARETAKER_HOME = prev;
 });
 
 test('fetchAcpRegistry: an agentless 200 is an error and keeps the last-good cache', async () => {
