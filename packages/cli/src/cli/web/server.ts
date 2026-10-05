@@ -57,6 +57,7 @@ import { fsRouter } from './fs.js';
 import { activationStatus, resolvePlanningEnabled } from './scheduler/task_roles.js';
 import { registerVoiceProxy, voiceClientConfig, fetchVoiceCatalog } from './voice_proxy.js';
 import { registerVoiceBackend, maybeAutoStartBackend } from './voice_backend.js';
+import { fetchAcpRegistry, installAcpAgent } from '../../acp/index.js';
 
 
 // Resolve Webview static files path.
@@ -1320,6 +1321,27 @@ export async function startServer(port: number, host: string): Promise<void> {
                 type: 'modelsFetched',
                 result: { ok: false, error: String(err) },
               });
+            }
+            return;
+          case 'fetchAcpRegistry':
+            try {
+              const agents = await fetchAcpRegistry();
+              post({ type: 'acpRegistryFetched', result: { ok: true, agents } });
+            } catch (err) {
+              post({ type: 'acpRegistryFetched', result: { ok: false, error: String(err) } });
+            }
+            return;
+          case 'installAcpAgent':
+            try {
+              const agents = await fetchAcpRegistry();
+              const preset = agents.find((a) => a.id === msg.agentId);
+              if (!preset) throw new Error(`unknown ACP agent "${msg.agentId}"`);
+              const installed = await installAcpAgent(preset, (line) =>
+                post({ type: 'acpInstallProgress', agentId: msg.agentId, line }),
+              );
+              post({ type: 'acpInstallResult', agentId: msg.agentId, ok: true, ...installed });
+            } catch (err) {
+              post({ type: 'acpInstallResult', agentId: msg.agentId, ok: false, error: String(err) });
             }
             return;
           case 'fetchVoiceModels':
