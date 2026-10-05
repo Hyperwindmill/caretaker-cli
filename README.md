@@ -53,19 +53,15 @@ _Claude and Claude Code are trademarks of Anthropic, PBC. This project is an ind
 
 ### ACP agents as providers
 
-You can also use agents that speak the [Agent Client Protocol](https://agentclientprotocol.com) (ACP v1, JSON-RPC over stdio) by configuring a provider with `type: 'acp'`. Instead of an HTTP endpoint, caretaker spawns the agent server executable and communicates with it using the standardized protocol.
+You can also use agents that speak the [Agent Client Protocol](https://agentclientprotocol.com) (ACP v1, JSON-RPC over stdio) by configuring a provider with type **External agent (ACP)**. Instead of an HTTP endpoint, caretaker spawns the agent server executable and communicates with it using the standardized protocol.
 
-#### Worked examples
+Pick the agent from the census in **Settings → Providers**:
 
-1. **Claude Agent ACP** (official Agent SDK wrapper for Claude Code):
-   - **Command**: `npx`
-   - **Arguments**: `@agentclientprotocol/claude-agent-acp`
-2. **Codex ACP** (OpenAI Codex ACP server):
-   - **Command**: `npx`
-   - **Arguments**: `@agentclientprotocol/codex-acp`
-3. **Google Antigravity** (official Google ACP server binary):
-   - **Command**: `/path/to/agy_acp_server.par` (or `agy_acp_server.exe` on Windows)
-   - **Arguments**: (none)
+- **npx/uvx presets** (e.g. Claude Agent ACP, Codex ACP) prefill the command and arguments immediately and work out of the box (Node ≥ 18 required).
+- **Binary agents** (e.g. Google Antigravity, Cursor, goose) get an **Install** button that downloads, verifies checksums, and installs the binary under `~/.caretaker/acp/` (Linux `.zip` extraction requires `unzip`).
+- **Custom (manual command)** remains available for any ACP agent not in the registry or local development builds.
+
+Agents on an ACP provider can optionally specify a **Session mode** (`acpMode`) to pin the agent to one of its advertised permission modes (e.g. `acceptEdits` or `bypassPermissions`) via `session/set_mode` at session start.
 
 #### Authentication & Tools
 
