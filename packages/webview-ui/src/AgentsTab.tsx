@@ -36,6 +36,7 @@ export function AgentsTab({
   const [maxTurns, setMaxTurns] = useState(30);
   const [workingDir, setWorkingDir] = useState('');
   const [permissionMode, setPermissionMode] = useState('');
+  const [acpMode, setAcpMode] = useState('');
   const [strictMcp, setStrictMcp] = useState(false);
 
   // Selected tool states: record toolName -> true/false
@@ -79,6 +80,7 @@ export function AgentsTab({
     setMaxTurns(30);
     setWorkingDir('');
     setPermissionMode('');
+    setAcpMode('');
     setStrictMcp(false);
 
     // Pre-check some standard tools by default (e.g. read_file, grep_search)
@@ -104,6 +106,7 @@ export function AgentsTab({
     setMaxTurns(agent.maxTurns || 30);
     setWorkingDir(agent.workingDir || '');
     setPermissionMode(agent.permissionMode ?? '');
+    setAcpMode(agent.acpMode ?? '');
     setStrictMcp(agent.strictMcp ?? false);
 
     const initialTools: Record<string, boolean> = {};
@@ -230,6 +233,7 @@ export function AgentsTab({
       maxTurns,
       ...(trimmedWorkingDir ? { workingDir: trimmedWorkingDir } : {}),
       ...(isClaudeCode && permissionMode ? { permissionMode } : {}),
+      ...(isAcp && acpMode.trim() ? { acpMode: acpMode.trim() } : {}),
       ...(isClaudeCode && strictMcp ? { strictMcp: true } : {}),
       // Preserve plugin-managed properties
       ...(editingAgent?.pluginId ? { pluginId: editingAgent.pluginId } : {}),
@@ -410,6 +414,21 @@ export function AgentsTab({
             </>
           ) : isAcp ? (
             /* ACP agents own their tools and permissions; the native pickers don't apply. */
+            <>
+            <div className="form-group">
+              <label htmlFor="agent-acp-mode">Session mode (Optional)</label>
+              <input
+                id="agent-acp-mode"
+                type="text"
+                placeholder="e.g. acceptEdits | bypassPermissions (agent-specific)"
+                value={acpMode}
+                onChange={(e) => setAcpMode(e.target.value)}
+              />
+              <p style={{ fontSize: '11px', color: 'var(--vscode-descriptionForeground)', lineHeight: '1.4', margin: '4px 0 0' }}>
+                Pins the agent to one of its own permission modes at session start (session/set_mode).
+                Unknown modes are ignored with a warning; autonomous task runs ignore this.
+              </p>
+            </div>
             <div className="form-group">
               <p style={{ fontSize: '11px', color: 'var(--vscode-descriptionForeground)', lineHeight: '1.4', margin: '4px 0 0' }}>
                 ACP agents use the agent's own tools and permission model. When the agent asks for
@@ -417,6 +436,7 @@ export function AgentsTab({
                 (scheduler, tasks) are auto-approved with the task policy applied.
               </p>
             </div>
+            </>
           ) : (
             <>
               {/* Tools Selection */}

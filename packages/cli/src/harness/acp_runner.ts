@@ -18,6 +18,7 @@ import type {
   SessionNotification,
   McpServer,
   Usage,
+  SessionModeState,
 } from '@agentclientprotocol/sdk';
 import type { RunOptions, RunCallbacks, RunResult } from './loop.js';
 import type { AssistantUsage } from './provider.js';
@@ -240,6 +241,7 @@ export async function runAcp(opts: RunOptions, cb: RunCallbacks = {}): Promise<R
     let isNewSession = false;
     if (!acpSessionId) {
       let persisted: string | undefined;
+      let modes: SessionModeState | null | undefined;
       if (opts.sessionId) {
         try {
           persisted = (await readSession(agent.id, opts.sessionId)).meta.acpSessionId;
@@ -252,11 +254,12 @@ export async function runAcp(opts: RunOptions, cb: RunCallbacks = {}): Promise<R
         // session/update notifications we deliberately drop (our own store
         // already has the conversation).
         try {
-          await handle.conn.agent.request('session/load', {
+          const loadRes = await handle.conn.agent.request('session/load', {
             sessionId: persisted,
             cwd: workingDir,
             mcpServers,
           });
+          modes = loadRes.modes;
           acpSessionId = persisted;
         } catch (err) {
           console.warn(`[acp] session/load "${persisted}" failed; starting fresh:`, err);
@@ -265,9 +268,35 @@ export async function runAcp(opts: RunOptions, cb: RunCallbacks = {}): Promise<R
       if (!acpSessionId) {
         const res = await handle.conn.agent.request('session/new', { cwd: workingDir, mcpServers });
         acpSessionId = res.sessionId;
+        modes = res.modes;
         isNewSession = true;
       }
       handle.acpSessionId = acpSessionId;
+
+      // Agent-level session mode (AgentConfig.acpMode): pin the agent to one
+      // of its OWN permission modes so it stops asking at the source. Only for
+      // interactive-policy runs — task runs' policy (unattended/planner/
+      // deny-all) stays authoritative. Unknown/unadvertised modes warn and
+      // continue: a wrong mode id must never brick the chat.
+      const wantMode = agent.acpMode?.trim();
+      if (wantMode && (extras.mode ?? 'interactive') === 'interactive') {
+        const available = modes?.availableModes.some((m) => m.id === wantMode);
+        if (!available) {
+          console.warn(
+            `[acp] agent "${agent.name}": acpMode "${wantMode}" is not among the agent's advertised modes — ignored`,
+          );
+        } else if (modes!.currentModeId !== wantMode) {
+          try {
+            await handle.conn.agent.request('session/set_mode', {
+              sessionId: acpSessionId,
+              modeId: wantMode,
+            });
+          } catch (err) {
+            console.warn(`[acp] session/set_mode "${wantMode}" failed:`, err);
+          }
+        }
+      }
+
       if (opts.sessionId && acpSessionId !== persisted) {
         try {
           await updateAcpSessionId({ agentId: agent.id, id: opts.sessionId }, acpSessionId);

@@ -241,3 +241,58 @@ test('a signal already aborted before the turn starts returns aborted without ha
   );
   assert.equal(res.stop, 'aborted');
 });
+
+const MODES = {
+  currentModeId: 'default',
+  availableModes: [
+    { id: 'default', name: 'Default' },
+    { id: 'bypassPermissions', name: 'Bypass' },
+  ],
+};
+
+function fakeAgentWithModes() {
+  const setModes: string[] = [];
+  const app = acpAgent({ name: 'fake' })
+    .onRequest('initialize', () => ({ protocolVersion: PROTOCOL_VERSION, agentCapabilities: {} }))
+    .onRequest('session/new', () => ({ sessionId: 'acp-1', modes: MODES }))
+    .onRequest('session/set_mode', (ctx: any) => {
+      setModes.push(ctx.params.modeId);
+      return {};
+    })
+    .onRequest('session/prompt', async () => ({ stopReason: 'end_turn' }));
+  __setConnector((_p, clientApp) => {
+    const conn = clientApp.connect(app);
+    return { conn, kill: () => conn.close() };
+  });
+  return { setModes };
+}
+
+test('acpMode: set_mode sent when advertised and different from current', async () => {
+  const { setModes } = fakeAgentWithModes();
+  await runAcp(
+    { agent: { ...agentCfg, acpMode: 'bypassPermissions' }, provider, tools: [], prompt: 'x' },
+    {},
+  );
+  assert.deepEqual(setModes, ['bypassPermissions']);
+});
+
+test('acpMode: skipped with a warning when not advertised; skipped for task-policy runs', async () => {
+  const a = fakeAgentWithModes();
+  await runAcp({ agent: { ...agentCfg, acpMode: 'nope' }, provider, tools: [], prompt: 'x' }, {});
+  assert.deepEqual(a.setModes, []);
+
+  __shutdownAcpPool();
+  const b = fakeAgentWithModes();
+  await runAcp(
+    {
+      agent: { ...agentCfg, acpMode: 'bypassPermissions' },
+      provider,
+      tools: [],
+      prompt: 'x',
+      acp: { mode: 'unattended' },
+    },
+    {},
+  );
+  assert.deepEqual(b.setModes, []); // task policy is authoritative — acpMode ignored
+});
+
