@@ -15,3 +15,4 @@ ACP agent census: the provider form (relabeled "External agent (ACP)") offers pr
 - TUI provider presets (npx/uvx prefill; binary presets point at the web installer or manual path).
 - Agent-level acpMode: session/set_mode at session start for interactive runs.
 - Docs: census workflow in README, architecture notes in CLAUDE.md.
+- Review fixes: network timeouts on registry fetch and binary download; an agentless registry response never overwrites the last-good cache; TUI presets prefill instead of auto-saving.

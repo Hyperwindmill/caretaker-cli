@@ -9,14 +9,19 @@ import type { AcpAgentPreset } from '../types.js';
 
 export const REGISTRY_URL = 'https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json';
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+/** A CDN that accepts the socket and goes silent must not pin the provider
+ *  form on "loading presets…" forever (same rationale as NET_TIMEOUT_MS in
+ *  lib/task_git.ts). */
+const FETCH_TIMEOUT_MS = 15_000;
 
 type FetchLike = (url: string) => Promise<Response>;
-let fetchImpl: FetchLike = (url) => fetch(url);
+const defaultFetch: FetchLike = (url) => fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+let fetchImpl: FetchLike = defaultFetch;
 export function __setFetch(f: FetchLike): void {
   fetchImpl = f;
 }
 export function __resetFetch(): void {
-  fetchImpl = (url) => fetch(url);
+  fetchImpl = defaultFetch;
 }
 
 /** What the registry does not know: context files an agent self-loads (the
@@ -99,6 +104,9 @@ export async function fetchAcpRegistry(now: number = Date.now()): Promise<AcpAge
     if (!res.ok) throw new Error(`ACP registry fetch failed: HTTP ${res.status}`);
     const raw = await res.json();
     const list = normalizeRegistry(raw); // validate before caching
+    // An agentless 200 (edge error page, half-deployed CDN) must not overwrite
+    // a good last-good with an empty census for 24h.
+    if (list.length === 0) throw new Error('ACP registry returned no agents');
     await mkdir(join(dataDir(), 'cache'), { recursive: true });
     const tmp = `${cachePath()}.tmp-${process.pid}`;
     await writeFile(tmp, JSON.stringify({ fetchedAt: now, raw }), { mode: 0o600 });

@@ -138,3 +138,13 @@ test('fetchAcpRegistry: no cache and no network → typed error', async () => {
   await assert.rejects(() => fetchAcpRegistry(), /offline/);
   process.env.CARETAKER_HOME = prev;
 });
+
+test('fetchAcpRegistry: an agentless 200 is an error and keeps the last-good cache', async () => {
+  await mkdir(join(dataDir(), 'cache'), { recursive: true });
+  await writeFile(join(dataDir(), 'cache', 'acp-registry.json'), JSON.stringify({ fetchedAt: 0, raw: RAW }));
+  __setFetch(async () => new Response(JSON.stringify({ version: '1.0.0', agents: [] }), { status: 200 }));
+  const list = await fetchAcpRegistry(Date.now());
+  assert.ok(list.find((p) => p.id === 'claude-acp')); // served from last-good, not the empty body
+  const cached = JSON.parse(await readFile(join(dataDir(), 'cache', 'acp-registry.json'), 'utf8'));
+  assert.equal(cached.fetchedAt, 0); // cache untouched
+});

@@ -265,30 +265,13 @@ function ProviderForm({
     }
     setPresetLabel(chosen.name);
     setSelfLoaded(chosen.selfLoadedContextFiles);
-    if (!chosen.dist || chosen.dist.kind === 'binary') {
-      setCommand('');
-      setArgs('');
-      if (chosen.dist?.env) setEnv(chosen.dist.env);
-      setStep('command');
-    } else {
-      const cmd = chosen.dist.command;
-      const a = (chosen.dist.args ?? []).join(' ');
-      setCommand(cmd);
-      setArgs(a);
-      if (chosen.dist.env) setEnv(chosen.dist.env);
-      const p: ProviderConfig = {
-        name: name.trim(),
-        type: 'acp',
-        endpoint: '',
-        command: cmd,
-      };
-      if (chosen.dist.args?.length) p.args = chosen.dist.args;
-      if (chosen.dist.env) p.env = chosen.dist.env;
-      if (chosen.selfLoadedContextFiles.length) {
-        p.selfLoadedContextFiles = chosen.selfLoadedContextFiles;
-      }
-      void onSave(p);
-    }
+    if (chosen.dist?.env) setEnv(chosen.dist.env);
+    // Prefill only — the user reviews command/args before saving (binary
+    // presets have nothing to prefill: install from the web GUI or type the path).
+    const prefill = chosen.dist && chosen.dist.kind !== 'binary' ? chosen.dist : null;
+    setCommand(prefill ? prefill.command : '');
+    setArgs(prefill ? prefill.args.join(' ') : '');
+    setStep('command');
   };
 
   const finalize = () => {
