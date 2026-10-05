@@ -20,6 +20,28 @@ export type ProviderConfig = {
   selfLoadedContextFiles?: string[];
 };
 
+/** One agent from the ACP Agent Registry, normalized for the current
+ *  platform. `dist: null` = the agent exists but has no distribution usable
+ *  on this platform (shown disabled, never hidden). */
+export type AcpAgentDist =
+  | { kind: 'npx' | 'uvx'; command: string; args: string[]; env?: Record<string, string> }
+  | {
+      kind: 'binary';
+      archive: string;
+      cmd: string;
+      args?: string[];
+      env?: Record<string, string>;
+      sha256?: string;
+    };
+export type AcpAgentPreset = {
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  dist: AcpAgentDist | null;
+  selfLoadedContextFiles: string[];
+};
+
 /** One entry in the **Services** settings collection (persisted under the
  *  `scheduler.tasks` key in caretaker.json — the key is kept for backward
  *  compatibility).
@@ -409,6 +431,11 @@ export type AgentConfig = {
    *  permissions.defaultMode, falling back to 'acceptEdits'. Unattended
    *  runs (scheduler/tasks) force 'bypassPermissions' regardless. */
   permissionMode?: string;
+  /** acp providers only: pin the agent to one of its own permission modes
+   *  (session/set_mode) at session start, e.g. 'acceptEdits' or
+   *  'bypassPermissions' for claude-agent-acp. Unknown modes are ignored
+   *  with a warning. Autonomous task runs ignore this field. */
+  acpMode?: string;
   /** claude-code providers only: when true, the per-run MCP config is passed
    *  with --strict-mcp-config so ONLY caretaker's servers are used. Default
    *  (unset/false) merges the user's native ~/.claude MCP servers with
