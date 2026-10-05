@@ -1,15 +1,29 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { CaretakerConfig, AgentConfig, ProviderConfig } from 'caretaker-types';
-import type { ViewToHost } from './bridge.js';
+import type { ViewToHost, AcpRegistryResult } from './bridge.js';
 import { WarningIcon, EditIcon, DeleteIcon } from './icons.js';
 
 interface ProvidersTabProps {
   config: CaretakerConfig;
   agents: AgentConfig[];
   postMessage: (msg: ViewToHost) => void;
+  acpRegistry?: AcpRegistryResult | null;
+  acpInstall?: {
+    agentId: string;
+    lines: string[];
+    result?: { ok: boolean; command?: string; args?: string[]; env?: Record<string, string>; error?: string };
+  } | null;
+  resetAcpInstall?: () => void;
 }
 
-export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps) {
+export function ProvidersTab({
+  config,
+  agents,
+  postMessage,
+  acpRegistry = null,
+  acpInstall = null,
+  resetAcpInstall = () => {},
+}: ProvidersTabProps) {
   const [editingProvider, setEditingProvider] = useState<ProviderConfig | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
@@ -20,7 +34,53 @@ export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps)
   const [apiKey, setApiKey] = useState('');
   const [command, setCommand] = useState('');
   const [args, setArgs] = useState('');
+  const [presetId, setPresetId] = useState('custom');
+  const [selfLoaded, setSelfLoaded] = useState<string[]>([]);
+  const [presetEnv, setPresetEnv] = useState<Record<string, string> | undefined>(undefined);
+  const [installing, setInstalling] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const selectedPreset = acpRegistry?.ok ? acpRegistry.agents.find((a) => a.id === presetId) : null;
+
+  useEffect(() => {
+    if (type === 'acp' && acpRegistry === null) {
+      postMessage({ type: 'fetchAcpRegistry' });
+    }
+  }, [type, acpRegistry, postMessage]);
+
+  useEffect(() => {
+    if (acpInstall?.agentId === presetId && acpInstall.result) {
+      if (acpInstall.result.ok) {
+        if (acpInstall.result.command) setCommand(acpInstall.result.command);
+        setArgs((acpInstall.result.args ?? []).join(' '));
+        if (acpInstall.result.env) setPresetEnv(acpInstall.result.env);
+        setInstalling(false);
+      } else {
+        setErrorMsg(acpInstall.result.error || 'Installation failed');
+        setInstalling(false);
+      }
+    }
+  }, [acpInstall, presetId]);
+
+  const applyPreset = (id: string) => {
+    setPresetId(id);
+    if (id === 'custom') {
+      setSelfLoaded([]);
+      setPresetEnv(undefined);
+      return;
+    }
+    const preset = acpRegistry?.ok ? acpRegistry.agents.find((a) => a.id === id) : null;
+    if (!preset || !preset.dist) return;
+    setSelfLoaded(preset.selfLoadedContextFiles);
+    setPresetEnv(preset.dist.env);
+    if (preset.dist.kind === 'binary') {
+      setCommand('');
+      setArgs('');
+    } else {
+      setCommand(preset.dist.command);
+      setArgs(preset.dist.args.join(' '));
+    }
+  };
 
   const startEdit = (provider: ProviderConfig) => {
     setEditingProvider(provider);
@@ -31,6 +91,10 @@ export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps)
     setApiKey(provider.apiKey || '');
     setCommand(provider.command || '');
     setArgs((provider.args ?? []).join(' '));
+    setPresetId('custom');
+    setSelfLoaded(provider.selfLoadedContextFiles ?? []);
+    setPresetEnv(provider.env);
+    setInstalling(false);
     setErrorMsg(null);
   };
 
@@ -43,12 +107,20 @@ export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps)
     setApiKey('');
     setCommand('');
     setArgs('');
+    setPresetId('custom');
+    setSelfLoaded([]);
+    setPresetEnv(undefined);
+    setInstalling(false);
     setErrorMsg(null);
   };
 
   const cancelForm = () => {
     setIsCreating(false);
     setEditingProvider(null);
+    setPresetId('custom');
+    setSelfLoaded([]);
+    setPresetEnv(undefined);
+    setInstalling(false);
     setErrorMsg(null);
   };
 
@@ -105,8 +177,10 @@ export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps)
       };
       const argList = args.trim() ? args.trim().split(/\s+/) : [];
       if (argList.length) p.args = argList;
-      if (editingProvider?.env) p.env = editingProvider.env;
-      if (editingProvider?.selfLoadedContextFiles) p.selfLoadedContextFiles = editingProvider.selfLoadedContextFiles;
+      const envToSave = presetEnv ?? editingProvider?.env;
+      if (envToSave) p.env = envToSave;
+      const selfLoadedToSave = selfLoaded.length ? selfLoaded : editingProvider?.selfLoadedContextFiles;
+      if (selfLoadedToSave && selfLoadedToSave.length) p.selfLoadedContextFiles = selfLoadedToSave;
       newProv = p;
     } else if (isClaudeCode) {
       newProv = {
@@ -193,7 +267,7 @@ export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps)
             >
               <option value="openai">OpenAI-compatible endpoint</option>
               <option value="claude-code">Claude Code (local CLI)</option>
-              <option value="acp">ACP agent (external CLI)</option>
+              <option value="acp">External agent (ACP)</option>
             </select>
           </div>
           <div className="form-group">
@@ -210,28 +284,70 @@ export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps)
           {type === 'acp' ? (
             <>
               <div className="form-group">
-                <label htmlFor="provider-command">Command</label>
-                <input
-                  id="provider-command"
-                  type="text"
-                  placeholder="npx"
-                  value={command}
-                  onChange={(e) => setCommand(e.target.value)}
-                />
+                <label htmlFor="acp-preset">Agent</label>
+                <select
+                  id="acp-preset"
+                  value={presetId}
+                  onChange={(e) => applyPreset(e.target.value)}
+                >
+                  <option value="custom">Custom (manual command)</option>
+                  {acpRegistry?.ok &&
+                    acpRegistry.agents.map((a) => (
+                      <option key={a.id} value={a.id} disabled={a.dist === null}>
+                        {a.name}
+                        {a.dist === null ? ' (not available on this platform)' : ''}
+                      </option>
+                    ))}
+                </select>
+                {acpRegistry && !acpRegistry.ok && (
+                  <p className="form-error">Registry unavailable: {acpRegistry.error} — use Custom.</p>
+                )}
               </div>
-              <div className="form-group">
-                <label htmlFor="provider-args">Arguments</label>
-                <input
-                  id="provider-args"
-                  type="text"
-                  placeholder="@agentclientprotocol/claude-agent-acp"
-                  value={args}
-                  onChange={(e) => setArgs(e.target.value)}
-                />
-                <p style={{ fontSize: '11px', color: 'var(--vscode-descriptionForeground)', lineHeight: '1.4', margin: '4px 0 0' }}>
-                  Space-separated. Env vars can be added by editing caretaker.json.
-                </p>
-              </div>
+              {selectedPreset?.dist?.kind === 'binary' ? (
+                <div className="form-group">
+                  <button
+                    type="button"
+                    className="btn btn--secondary"
+                    disabled={installing}
+                    onClick={() => {
+                      resetAcpInstall();
+                      setInstalling(true);
+                      postMessage({ type: 'installAcpAgent', agentId: presetId });
+                    }}
+                  >
+                    {installing ? 'Installing…' : 'Install'}
+                  </button>
+                  {acpInstall?.agentId === presetId && (
+                    <pre className="install-log">{acpInstall.lines.join('\n')}</pre>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div className="form-group">
+                    <label htmlFor="provider-command">Command</label>
+                    <input
+                      id="provider-command"
+                      type="text"
+                      placeholder="npx"
+                      value={command}
+                      onChange={(e) => setCommand(e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="provider-args">Arguments</label>
+                    <input
+                      id="provider-args"
+                      type="text"
+                      placeholder="@agentclientprotocol/claude-agent-acp"
+                      value={args}
+                      onChange={(e) => setArgs(e.target.value)}
+                    />
+                    <p style={{ fontSize: '11px', color: 'var(--vscode-descriptionForeground)', lineHeight: '1.4', margin: '4px 0 0' }}>
+                      Space-separated. Env vars can be added by editing caretaker.json.
+                    </p>
+                  </div>
+                </>
+              )}
             </>
           ) : type === 'claude-code' ? (
             <div className="form-group">
@@ -292,7 +408,7 @@ export function ProvidersTab({ config, agents, postMessage }: ProvidersTabProps)
                   <div className="settings-card__title">{prov.name}</div>
                   <div className="settings-card__subtitle">
                     {prov.type === 'acp'
-                      ? `ACP — ${prov.command ?? ''} ${(prov.args ?? []).join(' ')}`.trim()
+                      ? `External agent (ACP) — ${prov.command ?? ''} ${(prov.args ?? []).join(' ')}`.trim()
                       : prov.type === 'claude-code'
                         ? `Claude Code (local CLI)${prov.command ? ` — ${prov.command}` : ''}`
                         : prov.endpoint}

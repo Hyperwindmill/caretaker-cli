@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ViewToHost, ModelsResult, RefreshOutcome, VoiceCatalogResult } from './bridge.js';
+import type { ViewToHost, ModelsResult, RefreshOutcome, VoiceCatalogResult, AcpRegistryResult } from './bridge.js';
 import type { CaretakerConfig, AgentConfig, PluginsFile, McpServerConfig } from 'caretaker-types';
 
 import { ProvidersTab } from './ProvidersTab.js';
@@ -23,6 +23,9 @@ interface SettingsPanelProps {
     availableTools: string[];
   } | null;
   modelsResult: ModelsResult | null;
+  acpRegistry: AcpRegistryResult | null;
+  acpInstall: { agentId: string; lines: string[]; result?: { ok: boolean; command?: string; args?: string[]; env?: Record<string, string>; error?: string } } | null;
+  resetAcpInstall: () => void;
   sttCatalogResult: VoiceCatalogResult | null;
   ttsCatalogResult: VoiceCatalogResult | null;
   setModelsResult: (res: ModelsResult | null) => void;
@@ -43,6 +46,9 @@ export function SettingsPanel({
   postMessage,
   settingsData,
   modelsResult,
+  acpRegistry,
+  acpInstall,
+  resetAcpInstall,
   sttCatalogResult,
   ttsCatalogResult,
   setModelsResult,
@@ -81,6 +87,9 @@ export function SettingsPanel({
             config={config}
             agents={agents}
             postMessage={postMessage}
+            acpRegistry={acpRegistry}
+            acpInstall={acpInstall}
+            resetAcpInstall={resetAcpInstall}
           />
         );
       case 'projects':

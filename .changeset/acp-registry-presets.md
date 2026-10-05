@@ -11,3 +11,4 @@ ACP agent census: the provider form (relabeled "External agent (ACP)") offers pr
 - Registry service: fetch/normalize/cache of the official ACP Agent Registry.
 - Binary installer: download + sha256 + extract into ~/.caretaker/acp/<id>/<version>/.
 - Bridge messages + web/VSCode hosts for registry fetch and managed install.
+- Provider form presets (webview): agent census select, install flow, "External agent (ACP)" label.
