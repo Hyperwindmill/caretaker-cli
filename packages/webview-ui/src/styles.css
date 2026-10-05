@@ -2148,6 +2148,26 @@ body.vscode-light .settings-panel__tab-btn--active {
   flex-shrink: 0;
 }
 
+.form-error {
+  color: var(--danger-red, #f87171);
+  font-size: 11px;
+  line-height: 1.4;
+  margin: 4px 0 0;
+}
+
+.install-log {
+  margin-top: 8px;
+  padding: 8px;
+  font-family: monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
 /* Status line + Start/Stop button for the Voice tab's managed-backend block:
  * text on the left, action on the right — none of the existing form-* rows
  * put a button on the opposite end from its label, so this is a new rule

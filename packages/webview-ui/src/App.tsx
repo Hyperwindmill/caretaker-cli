@@ -27,7 +27,8 @@ import type {
   McpServerConfig,
   ToolAttachmentRecord,
   VoiceClientConfig,
-  VoiceCatalogResult
+  VoiceCatalogResult,
+  AcpRegistryResult,
 } from './bridge.js';
 
 import { MessageList } from './MessageList.js';
@@ -317,6 +318,12 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
     availableTools: string[];
   } | null>(null);
   const [modelsResult, setModelsResult] = useState<ModelsResult | null>(null);
+  const [acpRegistry, setAcpRegistry] = useState<AcpRegistryResult | null>(null);
+  const [acpInstall, setAcpInstall] = useState<{
+    agentId: string;
+    lines: string[];
+    result?: { ok: boolean; command?: string; args?: string[]; env?: Record<string, string>; error?: string };
+  } | null>(null);
   const [refreshingSourceId, setRefreshingSourceId] = useState<string | null>(null);
   const [refreshOutcome, setRefreshOutcome] = useState<RefreshOutcome | null>(null);
   const [mcpAuthOutcome, setMcpAuthOutcome] = useState<{ serverId: string; ok: boolean; error?: string } | null>(null);
@@ -392,6 +399,23 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
           return;
         case 'modelsFetched':
           setModelsResult(msg.result);
+          return;
+        case 'acpRegistryFetched':
+          setAcpRegistry(msg.result);
+          return;
+        case 'acpInstallProgress':
+          setAcpInstall((prev) =>
+            prev && prev.agentId === msg.agentId
+              ? { ...prev, lines: [...prev.lines, msg.line] }
+              : { agentId: msg.agentId, lines: [msg.line] },
+          );
+          return;
+        case 'acpInstallResult':
+          setAcpInstall((prev) => ({
+            agentId: msg.agentId,
+            lines: prev?.agentId === msg.agentId ? prev.lines : [],
+            result: { ok: msg.ok, command: msg.command, args: msg.args, env: msg.env, error: msg.error },
+          }));
           return;
         case 'voiceModelsFetched':
           if (msg.target === 'tts') setTtsCatalogResult(msg.result);
@@ -595,6 +619,9 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
           postMessage={postMessage}
           settingsData={settingsData}
           modelsResult={modelsResult}
+          acpRegistry={acpRegistry}
+          acpInstall={acpInstall}
+          resetAcpInstall={() => setAcpInstall(null)}
           sttCatalogResult={sttCatalogResult}
           ttsCatalogResult={ttsCatalogResult}
           setModelsResult={setModelsResult}
