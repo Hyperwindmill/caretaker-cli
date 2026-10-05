@@ -78,3 +78,14 @@ test('a failed initialize kills the child instead of leaking it', async () => {
   await assert.rejects(() => acquireAcpAgent(provider, null));
   assert.equal(fake.killedCount(), 1);
 });
+
+test('a failed initialize carries the child stderr tail in the error', async () => {
+  const failing = agent({ name: 'fake' }).onRequest('initialize', () => {
+    throw new Error('ACP connection closed');
+  });
+  __setConnector((_provider, clientApp) => {
+    const conn = clientApp.connect(failing);
+    return { conn, kill: () => conn.close(), stderr: () => 'Check failed: Group nobody not found\n' };
+  });
+  await assert.rejects(() => acquireAcpAgent(provider, null), /agent stderr: Check failed: Group nobody not found/);
+});

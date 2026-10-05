@@ -49,7 +49,7 @@ export type AcpAgentHandle = {
 type Connector = (
   provider: ProviderConfig,
   app: ClientApp,
-) => { conn: ClientConnection; kill: () => void };
+) => { conn: ClientConnection; kill: () => void; stderr?: () => string };
 
 const defaultConnector: Connector = (provider, app) => {
   if (!provider.command) {
@@ -80,7 +80,7 @@ const defaultConnector: Connector = (provider, app) => {
     Readable.toWeb(child.stdout!) as ReadableStream<Uint8Array>,
   );
   const conn = app.connect(stream);
-  return { conn, kill: () => child.kill('SIGTERM') };
+  return { conn, kill: () => child.kill('SIGTERM'), stderr: () => stderrTail.trim() };
 };
 
 let connector: Connector = defaultConnector;
@@ -126,7 +126,7 @@ async function createHandle(provider: ProviderConfig): Promise<AcpAgentHandle> {
       if (!b) return { outcome: { outcome: 'cancelled' as const } };
       return b.onPermission(ctx.params);
     });
-  const { conn, kill } = connector(provider, app);
+  const { conn, kill, stderr } = connector(provider, app);
   let init: InitializeResponse;
   try {
     init = await conn.agent.request('initialize', {
@@ -145,6 +145,11 @@ async function createHandle(provider: ProviderConfig): Promise<AcpAgentHandle> {
     // protocol mismatch) must not be leaked as a zombie process.
     kill();
     conn.close();
+    // The child's stderr is the only diagnostic a crash-at-boot leaves behind
+    // (e.g. Antigravity without --uid= aborts on "Group nobody not found");
+    // "connection closed" alone sends the user hunting in the wrong place.
+    const tail = stderr?.();
+    if (tail) throw new Error(`${(err as Error)?.message ?? err} — agent stderr: ${tail.slice(-1500)}`);
     throw err;
   }
   return { conn, init, binding, kill, lastUsed: Date.now() };

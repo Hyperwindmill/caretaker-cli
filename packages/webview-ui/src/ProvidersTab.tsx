@@ -73,13 +73,10 @@ export function ProvidersTab({
     if (!preset || !preset.dist) return;
     setSelfLoaded(preset.selfLoadedContextFiles);
     setPresetEnv(preset.dist.env);
-    if (preset.dist.kind === 'binary') {
-      setCommand('');
-      setArgs('');
-    } else {
-      setCommand(preset.dist.command);
-      setArgs(preset.dist.args.join(' '));
-    }
+    // Registry args/env apply to binary presets too (Antigravity on Linux needs
+    // `--uid=` or it aborts at boot); only the command waits for Install/paste.
+    setCommand(preset.dist.kind === 'binary' ? '' : preset.dist.command);
+    setArgs((preset.dist.args ?? []).join(' '));
   };
 
   const startEdit = (provider: ProviderConfig) => {
