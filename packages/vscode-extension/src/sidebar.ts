@@ -43,6 +43,10 @@ import {
   revokeMcpAuth,
   readOAuthBlob,
 } from '@hyperwindmill/caretaker-cli/mcp';
+import {
+  fetchAcpRegistry,
+  installAcpAgent,
+} from '@hyperwindmill/caretaker-cli/acp';
 
 import {
   listForAgent,
@@ -541,6 +545,27 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
             type: 'modelsFetched',
             result: { ok: false, error: String(err) },
           });
+        }
+        return;
+      case 'fetchAcpRegistry':
+        try {
+          const agents = await fetchAcpRegistry();
+          this.post(webview, { type: 'acpRegistryFetched', result: { ok: true, agents } });
+        } catch (err) {
+          this.post(webview, { type: 'acpRegistryFetched', result: { ok: false, error: String(err) } });
+        }
+        return;
+      case 'installAcpAgent':
+        try {
+          const agents = await fetchAcpRegistry();
+          const preset = agents.find((a) => a.id === msg.agentId);
+          if (!preset) throw new Error(`unknown ACP agent "${msg.agentId}"`);
+          const installed = await installAcpAgent(preset, (line) =>
+            this.post(webview, { type: 'acpInstallProgress', agentId: msg.agentId, line }),
+          );
+          this.post(webview, { type: 'acpInstallResult', agentId: msg.agentId, ok: true, ...installed });
+        } catch (err) {
+          this.post(webview, { type: 'acpInstallResult', agentId: msg.agentId, ok: false, error: String(err) });
         }
         return;
     }

@@ -55,7 +55,13 @@ export interface ContextUsage {
   percent: number | null;
 }
 
+import type { AcpAgentPreset } from 'caretaker-types';
+
 export type ModelsResult = { ok: true; ids: string[] } | { ok: false; error: string };
+
+export type AcpRegistryResult =
+  | { ok: true; agents: AcpAgentPreset[] }
+  | { ok: false; error: string };
 
 export type RefreshOutcome = {
   pluginsFound: number;
@@ -112,6 +118,17 @@ export type HostToView =
       availableTools: string[];
     }
   | { type: 'modelsFetched'; result: ModelsResult }
+  | { type: 'acpRegistryFetched'; result: AcpRegistryResult }
+  | { type: 'acpInstallProgress'; agentId: string; line: string }
+  | {
+      type: 'acpInstallResult';
+      agentId: string;
+      ok: boolean;
+      command?: string;
+      args?: string[];
+      env?: Record<string, string>;
+      error?: string;
+    }
   | { type: 'refreshingPlugin'; sourceId: string }
   | { type: 'refreshPluginOutcome'; outcome: RefreshOutcome }
   | { type: 'taskRunsLoaded'; taskId: string; runs: any[] }
@@ -139,6 +156,8 @@ export type ViewToHost =
   | { type: 'saveMcpServer'; server: any }
   | { type: 'deleteMcpServer'; serverId: string }
   | { type: 'fetchModels'; endpoint: string; apiKey?: string }
+  | { type: 'fetchAcpRegistry' }
+  | { type: 'installAcpAgent'; agentId: string }
   | { type: 'fetchVoiceModels'; endpoint: string; apiKey?: string; target?: 'stt' | 'tts' }
   | { type: 'getTaskRuns'; taskId: string }
   | { type: 'authenticateMcpServer'; serverId: string }
@@ -217,6 +236,10 @@ export function parseViewToHost(value: unknown): ViewToHost | null {
       return typeof value.endpoint === 'string'
         ? { type, endpoint: value.endpoint, apiKey: typeof value.apiKey === 'string' ? value.apiKey : undefined }
         : null;
+    case 'fetchAcpRegistry':
+      return { type };
+    case 'installAcpAgent':
+      return typeof value.agentId === 'string' ? { type, agentId: value.agentId } : null;
     case 'fetchVoiceModels':
       return typeof value.endpoint === 'string'
         ? {
