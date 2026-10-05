@@ -5,7 +5,7 @@ process.env.CARETAKER_HOME = mkdtempSync(path.join(os.tmpdir(), 'ct-acprun-'));
 
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { agent as acpAgent, PROTOCOL_VERSION } from '@agentclientprotocol/sdk';
+import { agent as acpAgent, PROTOCOL_VERSION, RequestError } from '@agentclientprotocol/sdk';
 import type { PromptRequest, RequestPermissionRequest } from '@agentclientprotocol/sdk';
 import { runAcp } from './acp_runner.js';
 import { __setConnector, __resetConnector, __shutdownAcpPool } from './acp_pool.js';
@@ -296,3 +296,53 @@ test('acpMode: skipped with a warning when not advertised; skipped for task-poli
   assert.deepEqual(b.setModes, []); // task policy is authoritative — acpMode ignored
 });
 
+
+function fakeAgentNeedingAuth() {
+  const authCalls: string[] = [];
+  let authed = false;
+  const app = acpAgent({ name: 'fake' })
+    .onRequest('initialize', () => ({
+      protocolVersion: PROTOCOL_VERSION,
+      agentCapabilities: {},
+      authMethods: [
+        { id: 'oauth-personal', name: 'Log in with Google' },
+        { id: 'gemini-api-key', name: 'Gemini API key' },
+      ],
+    }))
+    .onRequest('authenticate', (ctx: any) => {
+      authCalls.push(ctx.params.methodId);
+      authed = true;
+      return {};
+    })
+    .onRequest('session/new', () => {
+      if (!authed) throw RequestError.authRequired();
+      return { sessionId: 'acp-1' };
+    })
+    .onRequest('session/prompt', async () => ({ stopReason: 'end_turn' }));
+  __setConnector((_p, clientApp) => {
+    const conn = clientApp.connect(app);
+    return { conn, kill: () => conn.close() };
+  });
+  return { authCalls };
+}
+
+test('auth_required: interactive runs authenticate with the first advertised method and retry', async () => {
+  const { authCalls } = fakeAgentNeedingAuth();
+  const thinking: string[] = [];
+  const res = await runAcp(
+    { agent: agentCfg, provider, tools: [], prompt: 'x' },
+    { onThinking: (t) => thinking.push(t) },
+  );
+  assert.equal(res.stop, 'done');
+  assert.deepEqual(authCalls, ['oauth-personal']);
+  assert.ok(thinking.some((t) => /Authentication required.*oauth-personal.*gemini-api-key/.test(t)));
+});
+
+test('auth_required: unattended runs fail with a readable error instead of starting a login', async () => {
+  const { authCalls } = fakeAgentNeedingAuth();
+  await assert.rejects(
+    () => runAcp({ agent: agentCfg, provider, tools: [], prompt: 'x', acp: { mode: 'unattended' } }, {}),
+    /requires authentication.*oauth-personal.*interactive chat/,
+  );
+  assert.deepEqual(authCalls, []);
+});

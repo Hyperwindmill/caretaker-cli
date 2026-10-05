@@ -1,1 +1,2 @@
 - Binary presets keep the registry's args/env in both forms (Antigravity on Linux needs `--uid=`), and a failed ACP handshake reports the agent's stderr tail.
+- ACP `auth_required` on session start: interactive chats run the agent's first advertised login method (browser OAuth for Antigravity) and retry; unattended runs fail with a readable hint.

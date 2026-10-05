@@ -19,6 +19,7 @@ import type {
   McpServer,
   Usage,
   SessionModeState,
+  NewSessionResponse,
 } from '@agentclientprotocol/sdk';
 import type { RunOptions, RunCallbacks, RunResult } from './loop.js';
 import type { AssistantUsage } from './provider.js';
@@ -121,6 +122,57 @@ function extractToolResultText(content: unknown): string {
     )
     .filter(Boolean)
     .join('\n');
+}
+
+/** ACP `auth_required` (JSON-RPC -32000) on session/new. The agent owns the
+ *  login flow (OAuth in the browser, device code, …): the client only picks a
+ *  method and calls `authenticate`, then retries. Credentials persist on the
+ *  agent's side, so this is a first-run affair. */
+function isAuthRequired(err: unknown): boolean {
+  return (err as { code?: unknown } | null)?.code === -32000;
+}
+
+async function newSessionWithAuth(
+  handle: AcpAgentHandle,
+  params: { cwd: string; mcpServers: McpServer[] },
+  provider: RunOptions['provider'],
+  extras: AcpRunExtras,
+  cb: RunCallbacks,
+): Promise<NewSessionResponse> {
+  try {
+    return await handle.conn.agent.request('session/new', params);
+  } catch (err) {
+    if (!isAuthRequired(err)) throw err;
+    const methods = handle.init.authMethods ?? [];
+    const names = methods.map((m) => `${m.id} (${m.name})`).join(', ') || 'none advertised';
+    if ((extras.mode ?? 'interactive') !== 'interactive') {
+      // Unattended: nobody is there to finish a browser login, and a pending
+      // OAuth would just burn the run's wall-clock budget.
+      throw new Error(
+        `acp agent "${provider.name}" requires authentication (methods: ${names}) — run one interactive chat with it to log in first`,
+      );
+    }
+    const method = methods[0];
+    if (!method) {
+      throw new Error(
+        `acp agent "${provider.name}" requires authentication but advertises no auth method — log in with the agent's own CLI first`,
+      );
+    }
+    // ponytail: the first advertised method is the agent's own default (what its
+    // CLI would pick); a per-provider override is the upgrade path when someone
+    // needs e.g. oauth-business over oauth-personal.
+    cb.onThinking?.(
+      `Authentication required — starting "${method.name}" (${method.id}); the agent may open your browser. Available methods: ${names}.`,
+    );
+    try {
+      await handle.conn.agent.request('authenticate', { methodId: method.id });
+    } catch (e) {
+      throw new Error(
+        `acp authentication "${method.id}" failed for provider "${provider.name}": ${(e as Error)?.message ?? e} (methods: ${names})`,
+      );
+    }
+    return await handle.conn.agent.request('session/new', params);
+  }
 }
 
 export async function runAcp(opts: RunOptions, cb: RunCallbacks = {}): Promise<RunResult> {
@@ -266,7 +318,7 @@ export async function runAcp(opts: RunOptions, cb: RunCallbacks = {}): Promise<R
         }
       }
       if (!acpSessionId) {
-        const res = await handle.conn.agent.request('session/new', { cwd: workingDir, mcpServers });
+        const res = await newSessionWithAuth(handle, { cwd: workingDir, mcpServers }, provider, extras, cb);
         acpSessionId = res.sessionId;
         modes = res.modes;
         isNewSession = true;
