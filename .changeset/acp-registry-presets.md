@@ -13,3 +13,4 @@ ACP agent census: the provider form (relabeled "External agent (ACP)") offers pr
 - Bridge messages + web/VSCode hosts for registry fetch and managed install.
 - Provider form presets (webview): agent census select, install flow, "External agent (ACP)" label.
 - TUI provider presets (npx/uvx prefill; binary presets point at the web installer or manual path).
+- Agent-level acpMode: session/set_mode at session start for interactive runs.

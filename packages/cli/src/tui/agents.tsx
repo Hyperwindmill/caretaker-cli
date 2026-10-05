@@ -324,7 +324,10 @@ export default function Agents({ onBack }: { onBack: () => void }) {
             <Text>strictMcp: {selected.strictMcp ? 'on' : 'off (merge ~/.claude MCP)'}</Text>
           </>
         ) : isAcp ? (
-          <Text dimColor>ACP agent — tools and permissions are the agent's own</Text>
+          <>
+            <Text>acpMode: {selected.acpMode || '(none)'}</Text>
+            <Text dimColor>ACP agent — tools and permissions are the agent's own</Text>
+          </>
         ) : (
           <>
             <Text>maxTurns: {selected.maxTurns === 0 ? 'unlimited' : selected.maxTurns}</Text>
@@ -427,7 +430,8 @@ type FormStep =
   | 'workingDir'
   | 'maxTurns'
   | 'permissionMode'
-  | 'strictMcp';
+  | 'strictMcp'
+  | 'acpMode';
 
 const CLAUDE_CODE_PERMISSION_MODES = [
   'acceptEdits',
@@ -480,8 +484,8 @@ function stepSequence(
   if (flavor === 'claude-code') {
     seq.push('mcpServers', 'workingDir', 'permissionMode', 'strictMcp');
   } else if (flavor === 'acp') {
-    // acp agents own their tools/permissions; workingDir is the last step.
-    seq.push('mcpServers', 'workingDir');
+    // acp agents own their tools/permissions; acpMode is the last step.
+    seq.push('mcpServers', 'workingDir', 'acpMode');
   } else {
     seq.push('tools', 'plugins', 'mcpServers', 'workingDir', 'maxTurns');
   }
@@ -516,6 +520,7 @@ function AgentForm({
   const [systemPrompt, setSystemPrompt] = useState(initial?.systemPrompt ?? '');
   const [permissionMode, setPermissionMode] = useState(initial?.permissionMode ?? '');
   const [strictMcp, setStrictMcp] = useState(initial?.strictMcp ?? false);
+  const [acpMode, setAcpMode] = useState(initial?.acpMode ?? '');
   // The picker offers one entry per `mcp__<ns>__` namespace (task, email, …),
   // not the individual tools, so a stored per-tool selection is collapsed onto
   // the wildcard. resolveAgentTools expands it back at run time.
@@ -563,9 +568,15 @@ function AgentForm({
     return idx >= 0 && idx + 1 < steps.length ? steps[idx + 1] : s;
   };
 
-  const finalize = (n: number, permissionModeOverride?: string, strictMcpOverride?: boolean) => {
+  const finalize = (
+    n: number,
+    permissionModeOverride?: string,
+    strictMcpOverride?: boolean,
+    acpModeOverride?: string,
+  ) => {
     const pm = permissionModeOverride ?? permissionMode;
     const sm = strictMcpOverride ?? strictMcp;
+    const am = acpModeOverride ?? acpMode;
     const a: AgentConfig = {
       id: initial?.id ?? randomUUID(),
       name: name.trim(),
@@ -580,6 +591,7 @@ function AgentForm({
       ...(workingDir.trim() ? { workingDir: workingDir.trim() } : {}),
       ...(isClaudeCode && pm ? { permissionMode: pm } : {}),
       ...(isClaudeCode && sm ? { strictMcp: true } : {}),
+      ...(isAcp && am.trim() ? { acpMode: am.trim() } : {}),
       // Preserve plugin-managed origin tags so the next sync recognizes
       // this row instead of orphaning it.
       ...(initial?.pluginId ? { pluginId: initial.pluginId } : {}),
@@ -619,6 +631,9 @@ function AgentForm({
         return;
       }
       setStep(nextAfter('workingDir'));
+    } else if (step === 'acpMode') {
+      const n = Number.parseInt(maxTurns.trim(), 10);
+      finalize(Number.isFinite(n) && n >= 0 ? n : 30);
     } else if (step === 'maxTurns') {
       const n = Number.parseInt(maxTurns.trim(), 10);
       if (!Number.isFinite(n) || n < 0)
@@ -876,6 +891,37 @@ function AgentForm({
           ) : (
             <Text>{strictMcp ? 'on' : 'off'}</Text>
           )}
+        </Box>
+      )}
+
+      {isAcp && (
+        <Box flexDirection="column">
+          <Text>acpMode: </Text>
+          {step === 'acpMode' ? (
+            <TextInput
+              value={acpMode}
+              onChange={setAcpMode}
+              onSubmit={(val) => {
+                const n = Number.parseInt(maxTurns.trim(), 10);
+                finalize(
+                  Number.isFinite(n) && n >= 0 ? n : 30,
+                  undefined,
+                  undefined,
+                  val,
+                );
+              }}
+              placeholder="optional — e.g. acceptEdits | bypassPermissions"
+            />
+          ) : steps.indexOf(step) < steps.indexOf('acpMode') ? (
+            <Text dimColor>(pending)</Text>
+          ) : (
+            <Text>{acpMode || '(none)'}</Text>
+          )}
+          <Box marginTop={1}>
+            <Text dimColor>
+              Pins the agent to one of its own session modes at start (session/set_mode).
+            </Text>
+          </Box>
         </Box>
       )}
 
