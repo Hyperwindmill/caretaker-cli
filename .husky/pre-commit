@@ -6,6 +6,12 @@ if [ "$CURRENT_BRANCH" = "main" ] || [ "$CURRENT_BRANCH" = "master" ] || [ -z "$
     exit 0
 fi
 
+# Skip when the commit touches no package code (docs, changesets, hooks, markdown only):
+# a spec or plan commit must not have to fabricate a changeset for code that does not exist yet.
+if [ -z "$(git diff --cached --name-only | grep -vE '^(docs|\.changeset|\.husky)/|\.md$')" ]; then
+    exit 0
+fi
+
 # Check whether any changeset files (.changeset/*.md) are staged in this commit.
 # Ignore the changesets README.md.
 CHANGESET_STAGED=$(git diff --cached --name-only --diff-filter=ACM | grep -E "^\.changeset/[a-zA-Z0-9_-]+\.md$" | grep -v "README.md")
