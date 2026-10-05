@@ -7,9 +7,9 @@
 
 import { createHash } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
-import { chmod, mkdir, readFile, rename, rm, rmdir, stat } from 'node:fs/promises';
+import { chmod, mkdir, rename, rm, rmdir, stat } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
-import { Readable } from 'node:stream';
+import { Readable, Transform } from 'node:stream';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { basename, join, resolve } from 'node:path';
@@ -80,11 +80,23 @@ export async function installAcpAgent(
     if (!res.ok || !res.body) throw new Error(`download failed: HTTP ${res.status}`);
     const archiveName = basename(new URL(d.archive).pathname);
     const archivePath = join(tmp, archiveName);
-    await pipeline(Readable.fromWeb(res.body as any), createWriteStream(archivePath));
+    // Hash while streaming to disk: archives are tens of MB, no need to
+    // re-read them into memory for the checksum.
+    const hasher = createHash('sha256');
+    await pipeline(
+      Readable.fromWeb(res.body as any),
+      new Transform({
+        transform(chunk, _enc, cb) {
+          hasher.update(chunk);
+          cb(null, chunk);
+        },
+      }),
+      createWriteStream(archivePath),
+    );
 
     if (d.sha256) {
       onProgress('verifying checksum');
-      const hash = createHash('sha256').update(await readFile(archivePath)).digest('hex');
+      const hash = hasher.digest('hex');
       if (hash !== d.sha256) throw new Error(`sha256 mismatch: expected ${d.sha256}, got ${hash}`);
     }
 

@@ -303,7 +303,7 @@ export function ProvidersTab({
                   <p className="form-error">Registry unavailable: {acpRegistry.error} — use Custom.</p>
                 )}
               </div>
-              {selectedPreset?.dist?.kind === 'binary' ? (
+              {selectedPreset?.dist?.kind === 'binary' && (
                 <div className="form-group">
                   <button
                     type="button"
@@ -321,33 +321,30 @@ export function ProvidersTab({
                     <pre className="install-log">{acpInstall.lines.join('\n')}</pre>
                   )}
                 </div>
-              ) : (
-                <>
-                  <div className="form-group">
-                    <label htmlFor="provider-command">Command</label>
-                    <input
-                      id="provider-command"
-                      type="text"
-                      placeholder="npx"
-                      value={command}
-                      onChange={(e) => setCommand(e.target.value)}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label htmlFor="provider-args">Arguments</label>
-                    <input
-                      id="provider-args"
-                      type="text"
-                      placeholder="@agentclientprotocol/claude-agent-acp"
-                      value={args}
-                      onChange={(e) => setArgs(e.target.value)}
-                    />
-                    <p style={{ fontSize: '11px', color: 'var(--vscode-descriptionForeground)', lineHeight: '1.4', margin: '4px 0 0' }}>
-                      Space-separated. Env vars can be added by editing caretaker.json.
-                    </p>
-                  </div>
-                </>
               )}
+              <div className="form-group">
+                <label htmlFor="provider-command">Command</label>
+                <input
+                  id="provider-command"
+                  type="text"
+                  placeholder={selectedPreset?.dist?.kind === 'binary' ? 'filled by Install, or paste the binary path' : 'npx'}
+                  value={command}
+                  onChange={(e) => setCommand(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="provider-args">Arguments</label>
+                <input
+                  id="provider-args"
+                  type="text"
+                  placeholder="@agentclientprotocol/claude-agent-acp"
+                  value={args}
+                  onChange={(e) => setArgs(e.target.value)}
+                />
+                <p style={{ fontSize: '11px', color: 'var(--vscode-descriptionForeground)', lineHeight: '1.4', margin: '4px 0 0' }}>
+                  Space-separated. Env vars can be added by editing caretaker.json.
+                </p>
+              </div>
             </>
           ) : type === 'claude-code' ? (
             <div className="form-group">
