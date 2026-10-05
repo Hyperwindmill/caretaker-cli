@@ -1,5 +1,26 @@
 # caretaker-types
 
+## 0.25.0
+
+### Minor Changes
+
+- b7d5a26: ACP agent census: the provider form (relabeled "External agent (ACP)") offers presets from the official ACP Agent Registry instead of hand-typed commands — npx/uvx agents prefill directly, binary-distributed agents (Google Antigravity, Cursor, goose, …) are downloaded, checksum-verified and installed under ~/.caretaker/acp/ by caretaker. New agent-level `acpMode` pins an ACP agent to one of its own permission modes (session/set_mode) so interactive chats can run auto-approved at the source.
+  - Provider-type label everywhere: "External agent (ACP)".
+  - Registry service: fetch/normalize/cache of the official ACP Agent Registry.
+  - Binary installer: download + sha256 + extract into ~/.caretaker/acp/<id>/<version>/.
+  - Bridge messages + web/VSCode hosts for registry fetch and managed install.
+  - Provider form presets (webview): agent census select, install flow, "External agent (ACP)" label.
+  - TUI provider presets (npx/uvx prefill; binary presets point at the web installer or manual path).
+  - Agent-level acpMode: session/set_mode at session start for interactive runs.
+  - Docs: census workflow in README, architecture notes in CLAUDE.md.
+  - Review fixes: network timeouts on registry fetch and binary download; an agentless registry response never overwrites the last-good cache; TUI presets prefill instead of auto-saving.
+  - Installer hashes the download while streaming it to disk; webview binary presets keep the command field visible (filled by Install or pasted by hand).
+- 8c5e18f: New provider type `acp`: drive any Agent Client Protocol agent (claude-agent-acp, codex-acp, Google agy_acp_server, …) as a caretaker runner — side-by-side with the claude-code runner. One ACP client implementation covers chat on every surface, scheduled runs, and autonomous task cycles (planner read-only via permission policy, Docker confinement via deny-execute + a bridge-injected run_command tool).
+
+### Patch Changes
+
+- 29ed86f: ACP agent UI parity: the agent settings forms hide the native tool/plugin pickers, maxTurns, and model listing for ACP providers (model becomes an optional label), and interactive chats now surface a confirmation card for every permission request an ACP agent raises (previously auto-approved because `confirmTools` is empty for external runners), with "always" remembered per tool name in-session.
+
 ## 0.24.0
 
 ## 0.23.0
