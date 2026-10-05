@@ -1,0 +1,1 @@
+- Binary presets keep the registry's args/env in both forms (Antigravity on Linux needs `--uid=`), and a failed ACP handshake reports the agent's stderr tail.

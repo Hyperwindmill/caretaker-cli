@@ -266,11 +266,11 @@ function ProviderForm({
     setPresetLabel(chosen.name);
     setSelfLoaded(chosen.selfLoadedContextFiles);
     if (chosen.dist?.env) setEnv(chosen.dist.env);
-    // Prefill only — the user reviews command/args before saving (binary
-    // presets have nothing to prefill: install from the web GUI or type the path).
-    const prefill = chosen.dist && chosen.dist.kind !== 'binary' ? chosen.dist : null;
-    setCommand(prefill ? prefill.command : '');
-    setArgs(prefill ? prefill.args.join(' ') : '');
+    // Prefill only — the user reviews command/args before saving. A binary
+    // preset has no command yet (install from the web GUI or type the path) but
+    // its registry args still apply (Antigravity on Linux needs `--uid=`).
+    setCommand(chosen.dist && chosen.dist.kind !== 'binary' ? chosen.dist.command : '');
+    setArgs((chosen.dist?.args ?? []).join(' '));
     setStep('command');
   };
 
