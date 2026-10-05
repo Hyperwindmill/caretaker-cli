@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Branch: `feature/acp-runner`. The husky pre-commit hook requires a **staged changeset** in every commit on feature branches: each task appends one `- <summary>` bullet line to `.changeset/acp-registry-presets.md` (already committed in b7d5a26) and stages it with the commit. Never use `--no-verify`.
+- Branch: `feature/acp-runner`. The husky pre-commit hook requires a **staged changeset** in every commit that touches package code (docs-only commits are exempt since 8917650): each code task appends one `- <summary>` bullet line to `.changeset/acp-registry-presets.md` (already committed in b7d5a26) and stages it with the commit. Never use `--no-verify`.
 - `pnpm -F @hyperwindmill/caretaker-cli typecheck` and `pnpm -F @hyperwindmill/caretaker-cli test` must pass after every task (`pnpm test` runs via tsx and does NOT type-check).
 - Tests touching disk set `process.env.CARETAKER_HOME` at FILE scope, before imports.
 - Atomic-write policy for persisted state: tmp + rename (the registry cache included).
