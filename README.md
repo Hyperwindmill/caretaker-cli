@@ -65,7 +65,7 @@ Agents on an ACP provider can optionally specify a **Session mode** (`acpMode`) 
 
 #### Authentication & Tools
 
-- **Authentication**: Log in with the agent's own CLI first (e.g. `claude login`, ChatGPT login, Google account). Caretaker does not manage agent credentials directly; if an agent server reports that authentication is required, log in via the agent's native tool before running turns.
+- **Authentication**: credentials belong to the agent, never to caretaker. When an agent reports that authentication is required at session start, an interactive chat starts the agent's own default login method (for Antigravity that is a Google OAuth page in your browser) and retries once it completes; the thinking panel lists the other methods the agent offers. Scheduled and autonomous runs never start a login — run one interactive chat with that agent first, or log in with the agent's own CLI (e.g. `claude login`).
 - **Tools and Capabilities**: Like `claude-code`, ACP agents own their own tools and execution loop. Caretaker's tool pickers and plugin skill injection do not apply to ACP agents.
 - **Docker Confinement**: For autonomous tasks configured with a Docker container, caretaker auto-denies direct `execute` tool requests and exposes a container-bound `run_command` tool over the task bridge. *Note:* this confinement relies on the ACP agent forwarding permission requests to the client. Adapters that do not forward `execute` permission requests are unfit for Docker-confined tasks until verified.
 
