@@ -130,9 +130,11 @@ export async function openCycle(i: {
       await setCycleOutcome(cycleMsg.id, outcome);
       const since = await cycleSince();
       let fallback: string | null = null;
-      // Developer and planner cycles must leave a handoff: if the agent did not
-      // write one (aborted, turn limit, forgot), the host writes the fallback.
-      if (role !== 'reviewer' && !since.some((m) => m.messageType === 'chat' && m.role === 'assistant')) {
+      // Developer and planner cycles must leave a handoff the next cycle replays:
+      // an agent note or a submitted plan. Without one (aborted, turn limit,
+      // forgot), the host writes the fallback.
+      const hasHandoff = since.some((m) => (m.messageType === 'chat' && m.role === 'assistant') || m.messageType === 'plan');
+      if (role !== 'reviewer' && !hasHandoff) {
         fallback = fallbackNote(outcome, partialText.trim() ? partialText : lastText);
         await addTaskMessage({ taskId: task.id, role: 'assistant', messageType: 'chat', content: fallback, agentLabel });
       }
