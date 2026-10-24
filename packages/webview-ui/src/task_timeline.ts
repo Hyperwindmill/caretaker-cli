@@ -2,7 +2,7 @@
 // tool_call) keep their compact rendering; `cycle` messages become cards that
 // open the cycle's session. Pure TypeScript, shared by the task log and tests.
 
-import type { ChatItem } from './chat_state.js';
+import type { ChatItem, CycleItem } from './chat_state.js';
 
 export interface TaskMessage {
   id: number;
@@ -22,6 +22,31 @@ export interface TaskMessage {
 
 // Adapt stored TaskMessages to the shared ChatItem shape so the task thread
 // reuses the normal chat renderer (MessageList) instead of bespoke inline JSX.
+const CYCLE_ROLE_LABELS: Record<CycleItem['role'], string> = {
+  developer: 'Developer',
+  planner: 'Planner',
+  reviewer: 'Reviewer',
+};
+const CYCLE_OUTCOME_LABELS: Record<string, string> = {
+  running: 'running',
+  handoff: 'handed off',
+  completed: 'completed',
+  blocked: 'blocked',
+  plan: 'plan submitted',
+  'review-pass': 'review passed',
+  'review-changes': 'changes requested',
+  aborted: 'aborted',
+  failed: 'failed',
+};
+
+export function cycleRoleLabel(role: CycleItem['role']): string {
+  return CYCLE_ROLE_LABELS[role];
+}
+
+export function cycleOutcomeLabel(outcome: string): string {
+  return CYCLE_OUTCOME_LABELS[outcome] ?? outcome;
+}
+
 export function taskMessagesToChatItems(
   msgs: TaskMessage[],
   labels?: { developer?: string; planner?: string; reviewer?: string },

@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
 
 import type { ChatItem, CycleItem } from './chat_state.js';
+import { cycleOutcomeLabel, cycleRoleLabel } from './task_timeline.js';
 import { MarkdownText } from './MarkdownText.js';
 import { groupCompactItems } from './compactGroups.js';
 import { prettyArgs, popoverPosition, resultMetric, toolSummary } from './toolFormat.js';
@@ -262,23 +263,6 @@ const ToolBubble = memo(function ToolBubble({ item }: { item: Extract<ChatItem, 
   );
 });
 
-const CYCLE_ROLE_LABELS: Record<CycleItem['role'], string> = {
-  developer: 'Developer',
-  planner: 'Planner',
-  reviewer: 'Reviewer',
-};
-const CYCLE_OUTCOME_LABELS: Record<string, string> = {
-  running: 'running',
-  handoff: 'handed off',
-  completed: 'completed',
-  blocked: 'blocked',
-  plan: 'plan submitted',
-  'review-pass': 'review passed',
-  'review-changes': 'changes requested',
-  aborted: 'aborted',
-  failed: 'failed',
-};
-
 /** One task cycle in the task timeline: who ran, how it ended, when. Running
  *  cycles pulse; clicking (or Enter) opens the cycle's session. */
 const CycleCard = memo(function CycleCard({ item, onOpen }: { item: CycleItem; onOpen?: (item: CycleItem) => void }) {
@@ -304,9 +288,9 @@ const CycleCard = memo(function CycleCard({ item, onOpen }: { item: CycleItem; o
       }
     >
       <span className={`agent-status-dot agent-status-dot--active${running ? ' agent-status-dot--pulsing' : ''}`} />
-      <span className="cycle-card__role">{CYCLE_ROLE_LABELS[item.role]}</span>
+      <span className="cycle-card__role">{cycleRoleLabel(item.role)}</span>
       {item.label && <span className="cycle-card__label">{item.label}</span>}
-      <span className="cycle-card__outcome">{CYCLE_OUTCOME_LABELS[item.outcome] ?? item.outcome}</span>
+      <span className="cycle-card__outcome">{cycleOutcomeLabel(item.outcome)}</span>
       {time && <span className="cycle-card__time">{time}</span>}
     </div>
   );

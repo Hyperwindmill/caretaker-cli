@@ -19,6 +19,9 @@ export interface ComposerProps {
   } | null;
   value?: string;
   onValueChange?: (val: string) => void;
+  /** false hides the attach control and ignores files (drop, paste, picker);
+   *  sends never carry attachments. Default true. */
+  allowAttachments?: boolean;
 }
 
 export function Composer({
@@ -30,6 +33,7 @@ export function Composer({
   voice = null,
   value: propValue,
   onValueChange: propOnValueChange,
+  allowAttachments = true,
 }: ComposerProps) {
   const [internalValue, setInternalValue] = useState('');
   const value = propValue !== undefined ? propValue : internalValue;
@@ -76,7 +80,7 @@ export function Composer({
   };
 
   const handleFiles = (files: FileList | null): void => {
-    if (!files) return;
+    if (!allowAttachments || !files) return;
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       if (!file) continue;
@@ -102,13 +106,14 @@ export function Composer({
   };
 
   const handlePaste = (e: ClipboardEvent<HTMLTextAreaElement>): void => {
-    if (e.clipboardData.files && e.clipboardData.files.length > 0) {
+    if (allowAttachments && e.clipboardData.files && e.clipboardData.files.length > 0) {
       handleFiles(e.clipboardData.files);
     }
   };
 
   const onDragEnter = (e: DragEvent<HTMLDivElement>): void => {
     e.preventDefault();
+    if (!allowAttachments) return;
     dragCounter.current++;
     if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
       setIsDragging(true);
@@ -191,23 +196,27 @@ export function Composer({
         onPaste={handlePaste}
       />
       <div className="composer__controls">
-        <button 
-          type="button" 
-          className="composer__action-btn"
-          title="Attach file or image"
-          aria-label="Attach file or image"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={disabled}
-        >
-          <AttachIcon size={16} />
-        </button>
-        <input 
-          type="file" 
-          ref={fileInputRef} 
-          style={{ display: 'none' }} 
-          onChange={(e) => { handleFiles(e.target.files); e.target.value = ''; }}
-          multiple
-        />
+        {allowAttachments && (
+          <>
+            <button 
+              type="button" 
+              className="composer__action-btn"
+              title="Attach file or image"
+              aria-label="Attach file or image"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={disabled}
+            >
+              <AttachIcon size={16} />
+            </button>
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              style={{ display: 'none' }} 
+              onChange={(e) => { handleFiles(e.target.files); e.target.value = ''; }}
+              multiple
+            />
+          </>
+        )}
         {voice && (
           <div className="composer__voice">
             <button

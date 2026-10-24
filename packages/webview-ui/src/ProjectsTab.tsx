@@ -1,8 +1,11 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
-import type { AgentSummary } from './bridge.js';
+import React, { useCallback, useEffect, useState, useRef, useMemo } from 'react';
+import type { AgentSummary, ViewToHost } from './bridge.js';
 import { DeleteIcon, WarningIcon, ToolIcon, PauseIcon, ActivateIcon, GitIcon, ArchiveIcon, EditIcon, BackIcon } from './icons.js';
 import { MessageList } from './MessageList.js';
+import { Composer } from './Composer.js';
+import { TaskCycleView } from './TaskCycleView.js';
 import { taskMessagesToChatItems, type TaskMessage } from './task_timeline.js';
+import type { CycleItem } from './chat_state.js';
 
 interface Project {
   id: string;
@@ -51,6 +54,8 @@ interface Task {
 interface ProjectsTabProps {
   agents: AgentSummary[];
   onOpenSettings?: () => void;
+  /** Host channel: task cycles are watched over the same socket as the chat. */
+  postMessage: (msg: ViewToHost) => void;
 }
 
 // --- localStorage persistence keys for the task view ---
@@ -93,7 +98,7 @@ function saveShowArchived(v: boolean): void {
 
 const PAGE_SIZE = 20;
 
-export function ProjectsTab({ agents, onOpenSettings }: ProjectsTabProps) {
+export function ProjectsTab({ agents, onOpenSettings, postMessage }: ProjectsTabProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(loadSavedProjectId);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -117,7 +122,6 @@ export function ProjectsTab({ agents, onOpenSettings }: ProjectsTabProps) {
     reviewerAgentId: '',
   });
 
-  const [composerText, setComposerText] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [showArchived, setShowArchived] = useState<boolean>(loadShowArchived);
   // Inline confirm dialog (VSCode webviews disable window.confirm()).
@@ -411,18 +415,16 @@ export function ProjectsTab({ agents, onOpenSettings }: ProjectsTabProps) {
     }
   };
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!composerText.trim() || selectedTaskId === null || isSending) return;
+  const handleSendMessage = async (text: string) => {
+    if (!text.trim() || selectedTaskId === null || isSending) return;
     setIsSending(true);
     try {
       const res = await fetch(`/api/tasks/${selectedTaskId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: composerText.trim() }),
+        body: JSON.stringify({ content: text.trim() }),
       });
       if (res.ok) {
-        setComposerText('');
         fetchTaskMessages(selectedTaskId);
         if (selectedProjectId !== null) fetchTasks(selectedProjectId);
       }
@@ -640,10 +642,9 @@ export function ProjectsTab({ agents, onOpenSettings }: ProjectsTabProps) {
               agentLabels={taskAgentLabels}
               isActiveLike={isActiveLike}
               reviewRound={reviewRound}
-              composerText={composerText}
-              onComposerChange={setComposerText}
               onSend={handleSendMessage}
               isSending={isSending}
+              postMessage={postMessage}
               onBack={backToList}
               onToggleChecklistItem={handleToggleChecklistItem}
               onToggleStatus={handleToggleTaskStatus}
@@ -1148,10 +1149,9 @@ interface TaskLogViewProps {
   agentLabels?: { developer?: string; planner?: string; reviewer?: string };
   isActiveLike: boolean;
   reviewRound: number;
-  composerText: string;
-  onComposerChange: (s: string) => void;
-  onSend: (e: React.FormEvent) => void;
+  onSend: (text: string) => void;
   isSending: boolean;
+  postMessage: (msg: ViewToHost) => void;
   onBack: () => void;
   onToggleChecklistItem: (t: Task, item: ChecklistItem) => void;
   onToggleStatus: (t: Task) => void;
@@ -1164,10 +1164,9 @@ function TaskLogView({
   agentLabels,
   isActiveLike,
   reviewRound,
-  composerText,
-  onComposerChange,
   onSend,
   isSending,
+  postMessage,
   onBack,
   onToggleChecklistItem,
   onToggleStatus,
@@ -1176,6 +1175,22 @@ function TaskLogView({
   const completedCount = task.checklist.filter((c) => c.status === 'done').length;
   const totalCount = task.checklist.length;
   const chatItems = useMemo(() => taskMessagesToChatItems(taskMessages, agentLabels), [taskMessages, agentLabels]);
+  // The cycle open in the full pane, if any. Its card is refreshed from the
+  // thread on every poll, so the header outcome follows the cycle's end.
+  const [openCycle, setOpenCycle] = useState<CycleItem | null>(null);
+  const openCycleItem = useCallback((item: CycleItem) => setOpenCycle(item), []);
+  const autoOpenedFor = useRef<string | null>(null);
+  // Opening a task whose latest cycle is still running lands on that cycle.
+  // Decided once per open: the first time the thread has content.
+  useEffect(() => {
+    if (autoOpenedFor.current === task.id || taskMessages.length === 0) return;
+    autoOpenedFor.current = task.id;
+    const latest = [...chatItems].reverse().find((i): i is CycleItem => i.kind === 'cycle');
+    if (latest && latest.outcome === 'running') setOpenCycle(latest);
+  }, [task.id, taskMessages.length, chatItems]);
+  const liveCycle = openCycle
+    ? (chatItems.find((i): i is CycleItem => i.kind === 'cycle' && i.sessionId === openCycle.sessionId) ?? openCycle)
+    : null;
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Header with back button + task title + status */}
@@ -1295,38 +1310,28 @@ function TaskLogView({
 
         {/* Message thread */}
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-          {taskMessages.length === 0 ? (
+          {liveCycle ? (
+            <TaskCycleView
+              key={liveCycle.sessionId}
+              item={liveCycle}
+              postMessage={postMessage}
+              onBack={() => setOpenCycle(null)}
+            />
+          ) : taskMessages.length === 0 ? (
             <div className="messages messages--empty">No messages in this execution yet. Agent will start on next tick.</div>
           ) : (
-            <MessageList items={chatItems} sessionId={null} compact />
+            <MessageList items={chatItems} sessionId={null} compact onOpenCycle={openCycleItem} />
           )}
 
-          {/* Composer */}
-          <form className="composer" onSubmit={onSend}>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
-              <textarea
-                className="composer__input"
-                placeholder="Provide feedback or ask the agent to resume..."
-                value={composerText}
-                onChange={(e) => onComposerChange(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    onSend(e);
-                  }
-                }}
-                style={{ flex: 1, minHeight: '44px' }}
-              />
-              <button
-                type="submit"
-                className="app__new-chat-btn"
-                disabled={!composerText.trim() || isSending}
-                style={{ height: '40px', padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              >
-                {isSending ? 'Sending...' : 'Send'}
-              </button>
-            </div>
-          </form>
+          {/* Messages queue for the next cycle; Stop is the Pause control. */}
+          <Composer
+            disabled={isSending}
+            canAbort={isActiveLike}
+            onAbort={() => onToggleStatus(task)}
+            onSend={onSend}
+            contextUsage={null}
+            allowAttachments={false}
+          />
         </div>
       </div>
     </div>

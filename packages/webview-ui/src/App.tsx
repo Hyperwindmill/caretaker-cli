@@ -383,7 +383,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
       <div className="app app--with-sidebar">
         {navRail}
         <div className="app__screen">
-          <ProjectsTab agents={agents} onOpenSettings={() => openScreen('settings', 'projects')} />
+          <ProjectsTab agents={agents} onOpenSettings={() => openScreen('settings', 'projects')} postMessage={postMessage} />
         </div>
       </div>
     );
