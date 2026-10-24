@@ -16,6 +16,7 @@ import {
 } from '../../../store/db.js';
 import { appendMessage, assistantMessage, createSession, userMessage } from '../../../session/store.js';
 import type { MessageRecord } from '../../../session/types.js';
+import { beginCycleStream, emitCycleEvent } from './cycle_events.js';
 
 export type CycleRole = 'developer' | 'planner' | 'reviewer';
 
@@ -87,18 +88,29 @@ export async function openCycle(i: {
     projectId: task.projectId,
     taskRole: role,
   });
-  await appendMessage(meta, userMessage(prompt));
-  const cycleMsg = await addTaskMessage({
-    taskId: task.id,
-    role: 'assistant',
-    messageType: 'cycle',
-    content: '',
-    sessionId: meta.id,
-    sessionAgentId: agent.id,
-    cycleRole: role,
-    cycleOutcome: 'running',
-    agentLabel,
-  });
+  // The live stream opens before the prompt is persisted, so a watcher that
+  // attaches right now already sees the prompt.
+  const promptMsg = userMessage(prompt);
+  beginCycleStream(meta.id, promptMsg);
+  let cycleMsg: TaskMessage;
+  try {
+    await appendMessage(meta, promptMsg);
+    cycleMsg = await addTaskMessage({
+      taskId: task.id,
+      role: 'assistant',
+      messageType: 'cycle',
+      content: '',
+      sessionId: meta.id,
+      sessionAgentId: agent.id,
+      cycleRole: role,
+      cycleOutcome: 'running',
+      agentLabel,
+    });
+  } catch (err) {
+    // Never leave a watcher waiting on a stream nobody will finish.
+    emitCycleEvent(meta.id, { type: 'error', message: 'Cycle could not start' });
+    throw err;
+  }
 
   let lastText = '';
 
@@ -127,14 +139,21 @@ export async function openCycle(i: {
       }
     } catch (err) {
       console.error(`[task_cycle] Task #${task.id} cycle ${meta.id} close failed:`, err);
+    } finally {
+      // Terminal event only after the recap is on disk: a watcher that loads
+      // from disk on `done` sees the complete session.
+      emitCycleEvent(
+        meta.id,
+        outcome === 'failed' ? { type: 'error', message: 'Cycle failed' } : { type: 'done' },
+      );
     }
   };
 
   const callbacks: CycleRecorder['callbacks'] = {
-    onChunk: () => {},
-    onThinking: () => {},
-    onToolCall: () => {},
-    onToolResult: () => {},
+    onChunk: (text) => emitCycleEvent(meta.id, { type: 'chunk', text }),
+    onThinking: (text) => emitCycleEvent(meta.id, { type: 'thinking', text }),
+    onToolCall: (id, name, args) => emitCycleEvent(meta.id, { type: 'tool_call', id, name, args }),
+    onToolResult: (id, content) => emitCycleEvent(meta.id, { type: 'tool_result', id, content }),
     onMessage: async (msg: MessageRecord) => {
       await appendMessage(meta, msg);
       if (msg.role === 'assistant' && msg.content) lastText = msg.content;

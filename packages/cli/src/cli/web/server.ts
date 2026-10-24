@@ -51,7 +51,8 @@ import {
 } from '../../session/index.js';
 
 import type { AgentConfig, ProviderConfig, PluginsFile, McpServerConfig } from '../../types.js';
-import type { ConfirmDecision, HostToView, ViewToHost } from 'webview-ui/bridge';
+import type { ChatMessage, ConfirmDecision, HostToView, ViewToHost } from 'webview-ui/bridge';
+import { watchCycleStream } from './scheduler/cycle_events.js';
 import { startBackgroundScheduler, loadTaskRuns } from './scheduler.js';
 import { fsRouter } from './fs.js';
 import { activationStatus, resolvePlanningEnabled } from './scheduler/task_roles.js';
@@ -67,6 +68,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const bundledWebviewDist = path.resolve(__dirname, '../../webview');
 const devWebviewDist = path.resolve(__dirname, '../../../../webview-ui/dist');
 const webviewDistPath = fs.existsSync(bundledWebviewDist) ? bundledWebviewDist : devWebviewDist;
+
+/** Session record → webview chat message. Shared by the chat and cycle loaders. */
+function toChatMessage(m: MessageRecord): ChatMessage {
+  return {
+    id: m.id,
+    role: m.role,
+    content: m.content,
+    parts: m.parts,
+    toolCallId: m.toolCallId,
+    ...(m.recap ? { recap: true as const } : {}),
+    createdAt: m.createdAt,
+  };
+}
 
 export interface ChatCallbacks {
   onChunk: (text: string) => void;
@@ -857,6 +871,12 @@ export async function startServer(port: number, host: string): Promise<void> {
     let currentSessionId: string | null = null;
     let agents: AgentConfig[] = [];
     const pendingConfirms = new Map<string, (d: ConfirmDecision) => void>();
+    // Task cycles this socket is following, by session id (see scheduler/cycle_events.ts).
+    const cycleWatchers = new Map<string, () => void>();
+    const unwatchCycle = (sessionId: string) => {
+      cycleWatchers.get(sessionId)?.();
+      cycleWatchers.delete(sessionId);
+    };
 
     const post = (msg: HostToView) => {
       if (ws.readyState === WebSocket.OPEN) {
@@ -956,14 +976,7 @@ export async function startServer(port: number, host: string): Promise<void> {
     const loadSessionMessagesAndSend = async (agentId: string, sessionId: string) => {
       try {
         const sessionData = await readSession(agentId, sessionId);
-        const messages = sessionData.messages.map((m) => ({
-          id: m.id,
-          role: m.role as 'user' | 'assistant' | 'tool',
-          content: m.content,
-          parts: m.parts,
-          toolCallId: m.toolCallId,
-          createdAt: m.createdAt,
-        }));
+        const messages = sessionData.messages.map(toChatMessage);
         post({ type: 'sessionLoaded', messages });
 
         const usage = computeContextUsage(sessionData.messages, currentAgent?.model ?? null);
@@ -1042,6 +1055,7 @@ export async function startServer(port: number, host: string): Promise<void> {
       resolveAllPending('reject');
       controller?.abort();
       watcher.close();
+      for (const sessionId of [...cycleWatchers.keys()]) unwatchCycle(sessionId);
     });
 
     ws.on('message', async (data: string) => {
@@ -1354,6 +1368,32 @@ export async function startServer(port: number, host: string): Promise<void> {
             } catch (err) {
               post({ type: 'voiceModelsFetched', result: { ok: false, error: String(err) }, target: msg.target });
             }
+            return;
+          case 'watchCycle': {
+            // Ids name files on disk; the same rule as the bridge parser.
+            if (!/^[A-Za-z0-9_-]+$/.test(msg.agentId) || !/^[A-Za-z0-9_-]+$/.test(msg.sessionId)) return;
+            const { sessionId } = msg;
+            unwatchCycle(sessionId);
+            const live = watchCycleStream(sessionId, (event) => post({ type: 'cycleEvent', sessionId, event }));
+            if (live) {
+              // Running: the prompt, then every event so far, then the tail — all
+              // synchronously, so nothing is lost between snapshot and listener.
+              cycleWatchers.set(sessionId, live.unwatch);
+              post({ type: 'cycleLoaded', sessionId, messages: [toChatMessage(live.prompt)], running: true });
+              for (const event of live.events) post({ type: 'cycleEvent', sessionId, event });
+              return;
+            }
+            try {
+              const data = await readSession(msg.agentId, sessionId);
+              post({ type: 'cycleLoaded', sessionId, messages: data.messages.map(toChatMessage), running: false });
+            } catch (err) {
+              console.warn('[web] failed to load task cycle:', err);
+              post({ type: 'cycleEvent', sessionId, event: { type: 'error', message: 'Cycle session not found' } });
+            }
+            return;
+          }
+          case 'unwatchCycle':
+            if (/^[A-Za-z0-9_-]+$/.test(msg.sessionId)) unwatchCycle(msg.sessionId);
             return;
           case 'getTaskRuns':
             try {

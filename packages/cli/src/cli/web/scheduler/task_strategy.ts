@@ -372,19 +372,6 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
 
     const checklistBefore = (task.checklist || []).filter((item) => item.status !== 'pending').length;
 
-    // The cycle is a chat session of its own; the task gets a `cycle` timeline
-    // message pointing at it. Capture the role-resolved agent behind this cycle,
-    // so the thread shows who actually ran (planner during planning, developer
-    // during active) — as text of the moment, not resolved live in the UI.
-    const cycleRole: CycleRole = planning ? 'planner' : 'developer';
-    const cycle: CycleRecorder = await openCycle({
-      task,
-      agent,
-      role: cycleRole,
-      agentLabel: `${agent.name} · ${agent.model}`,
-      prompt: effectivePrompt,
-    });
-
     // Load full history for replay: handoffs only, never cycle transcripts.
     const historyMessages = (await runQuery(`SELECT * FROM task_messages WHERE taskId = '${task.id}'`)) as TaskMessage[];
     historyMessages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
@@ -458,6 +445,20 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
         console.warn('[tasks] acp agent without task bridge URL — task tools unavailable this run');
       }
     }
+
+    // The cycle is a chat session of its own; the task gets a `cycle` timeline
+    // message pointing at it. Capture the role-resolved agent behind this cycle,
+    // so the thread shows who actually ran (planner during planning, developer
+    // during active) — as text of the moment, not resolved live in the UI.
+    // Opened right before the try: the finally below must always close it.
+    const cycleRole: CycleRole = planning ? 'planner' : 'developer';
+    const cycle: CycleRecorder = await openCycle({
+      task,
+      agent,
+      role: cycleRole,
+      agentLabel: `${agent.name} · ${agent.model}`,
+      prompt: effectivePrompt,
+    });
 
     let runFailed = false;
     try {

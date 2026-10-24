@@ -46,8 +46,19 @@ export interface ChatMessage {
   >;
   toolCallId?: string;
   attachments?: ToolAttachmentRecord[];
+  /** Task cycle closing notice (handoff recap); rendered as a notice. */
+  recap?: true;
   createdAt: string;
 }
+
+/** Live events of a running task cycle: the chat's own stream events. */
+export type CycleEvent =
+  | { type: 'chunk'; text: string }
+  | { type: 'thinking'; text: string }
+  | { type: 'tool_call'; id: string; name: string; args: unknown }
+  | { type: 'tool_result'; id: string; content: string }
+  | { type: 'done' }
+  | { type: 'error'; message: string };
 
 export interface ContextUsage {
   lastTokens: number;
@@ -134,7 +145,9 @@ export type HostToView =
   | { type: 'taskRunsLoaded'; taskId: string; runs: any[] }
   | { type: 'mcpAuthOutcome'; serverId: string; ok: boolean; error?: string }
   | { type: 'voiceConfig'; voice: VoiceClientConfig | null }
-  | { type: 'voiceModelsFetched'; result: VoiceCatalogResult; target?: 'stt' | 'tts' };
+  | { type: 'voiceModelsFetched'; result: VoiceCatalogResult; target?: 'stt' | 'tts' }
+  | { type: 'cycleLoaded'; sessionId: string; messages: ChatMessage[]; running: boolean }
+  | { type: 'cycleEvent'; sessionId: string; event: CycleEvent };
 
 
 export type ViewToHost =
@@ -161,7 +174,9 @@ export type ViewToHost =
   | { type: 'fetchVoiceModels'; endpoint: string; apiKey?: string; target?: 'stt' | 'tts' }
   | { type: 'getTaskRuns'; taskId: string }
   | { type: 'authenticateMcpServer'; serverId: string }
-  | { type: 'revokeMcpAuth'; serverId: string };
+  | { type: 'revokeMcpAuth'; serverId: string }
+  | { type: 'watchCycle'; agentId: string; sessionId: string }
+  | { type: 'unwatchCycle'; sessionId: string };
 
 /** Runtime validator for messages coming from the webview. Returns
  * the typed message on success, or null on any structural mismatch.
@@ -255,10 +270,21 @@ export function parseViewToHost(value: unknown): ViewToHost | null {
       return typeof value.serverId === 'string' ? { type, serverId: value.serverId } : null;
     case 'revokeMcpAuth':
       return typeof value.serverId === 'string' ? { type, serverId: value.serverId } : null;
+    case 'watchCycle':
+      return isSafeId(value.agentId) && isSafeId(value.sessionId)
+        ? { type, agentId: value.agentId, sessionId: value.sessionId }
+        : null;
+    case 'unwatchCycle':
+      return isSafeId(value.sessionId) ? { type, sessionId: value.sessionId } : null;
 
     default:
       return null;
   }
+}
+
+/** Ids that reach the filesystem path of a session file: no separators, no dots. */
+function isSafeId(v: unknown): v is string {
+  return typeof v === 'string' && /^[A-Za-z0-9_-]+$/.test(v);
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
