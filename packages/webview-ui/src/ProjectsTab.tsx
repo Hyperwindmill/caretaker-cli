@@ -58,26 +58,17 @@ interface ProjectsTabProps {
   postMessage: (msg: ViewToHost) => void;
 }
 
-// --- localStorage persistence keys for the task view ---
-const LS_PROJECT_KEY = 'caretaker.taskView.selectedProjectId';
+// --- localStorage persistence for the task view (per-browser conveniences).
+// The selected project is NOT here: it lives server-side in ui-state.json,
+// because the desktop app gets a new origin (port) on every launch.
 const LS_ARCHIVED_KEY = 'caretaker.taskView.showArchived';
 
-function loadSavedProjectId(): string | null {
-  try {
-    const raw = localStorage.getItem(LS_PROJECT_KEY);
-    return raw && raw.trim() ? raw.trim() : null;
-  } catch {
-    return null;
-  }
-}
-
-function saveProjectId(id: string | null): void {
-  try {
-    if (id === null) localStorage.removeItem(LS_PROJECT_KEY);
-    else localStorage.setItem(LS_PROJECT_KEY, id);
-  } catch {
-    /* ignore */
-  }
+function persistLastProject(id: string): void {
+  void fetch('/api/ui-state', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lastProjectId: id }),
+  }).catch(() => {});
 }
 
 function loadShowArchived(): boolean {
@@ -100,7 +91,7 @@ const PAGE_SIZE = 20;
 
 export function ProjectsTab({ agents, onOpenSettings, postMessage }: ProjectsTabProps) {
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(loadSavedProjectId);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [taskMessages, setTaskMessages] = useState<TaskMessage[]>([]);
@@ -134,7 +125,20 @@ export function ProjectsTab({ agents, onOpenSettings, postMessage }: ProjectsTab
   const threadIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    fetchProjects();
+    // The saved project is applied before the list arrives, so the "default to
+    // the first project" effect below never overrides it.
+    void (async () => {
+      try {
+        const res = await fetch('/api/ui-state');
+        if (res.ok) {
+          const { lastProjectId } = await res.json();
+          if (typeof lastProjectId === 'string') setSelectedProjectId(lastProjectId);
+        }
+      } catch {
+        /* no saved project: the first one is selected */
+      }
+      await fetchProjects();
+    })();
     return () => {
       stopThreadPolling();
     };
@@ -155,10 +159,7 @@ export function ProjectsTab({ agents, onOpenSettings, postMessage }: ProjectsTab
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projects]);
 
-  // Persist selected project + show-archived preference.
-  useEffect(() => {
-    saveProjectId(selectedProjectId);
-  }, [selectedProjectId]);
+  // Persist the show-archived preference (the project is persisted on pick).
   useEffect(() => {
     saveShowArchived(showArchived);
   }, [showArchived]);
@@ -620,7 +621,10 @@ export function ProjectsTab({ agents, onOpenSettings, postMessage }: ProjectsTab
             <TaskListView
               projects={projects}
               selectedProjectId={selectedProjectId}
-              onProjectChange={setSelectedProjectId}
+              onProjectChange={(id) => {
+                setSelectedProjectId(id);
+                persistLastProject(id);
+              }}
               project={selectedProject}
               agentName={selectedProjectAgentName}
               agents={agents}
