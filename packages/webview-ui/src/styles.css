@@ -2608,7 +2608,8 @@ body.vscode-light .settings-panel__tab-btn--active {
   color: var(--vscode-foreground, #cbd5e1);
 }
 
-.app__nav-btn--active {
+.app__nav-btn--active,
+.app__nav-btn--active:hover {
   background: oklch(0.78 0.16 200 / 0.12);
   color: var(--accent-cyan);
 }
