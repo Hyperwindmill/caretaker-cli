@@ -61,6 +61,7 @@ interface TaskMessage {
 
 interface ProjectsTabProps {
   agents: AgentSummary[];
+  onOpenSettings?: () => void;
 }
 
 // --- localStorage persistence keys for the task view ---
@@ -170,7 +171,7 @@ function taskMessagesToChatItems(
 
 const PAGE_SIZE = 20;
 
-export function ProjectsTab({ agents }: ProjectsTabProps) {
+export function ProjectsTab({ agents, onOpenSettings }: ProjectsTabProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(loadSavedProjectId);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -680,7 +681,13 @@ export function ProjectsTab({ agents }: ProjectsTabProps) {
       <main className="app__chat-pane" style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--vscode-editor-background)' }}>
         {projects.length === 0 ? (
           <div className="app__empty-state">
-            <p>No projects registered. Create one from the Settings panel to get started.</p>
+            <p>
+              No projects registered.{' '}
+              <button className="app__link-btn" onClick={onOpenSettings}>
+                Create one in Settings
+              </button>{' '}
+              to get started.
+            </p>
           </div>
         ) : selectedProject ? (
           view === 'list' ? (

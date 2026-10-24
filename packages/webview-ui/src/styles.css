@@ -410,6 +410,16 @@ body {
 }
 
 /* Premium gradient pulsing visual element for empty state */
+.app__link-btn {
+  padding: 0;
+  font: inherit;
+  background: none;
+  border: none;
+  color: var(--accent-cyan);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .app__empty-state::before {
   content: "";
   width: 48px;

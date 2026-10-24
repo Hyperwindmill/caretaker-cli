@@ -34,7 +34,7 @@ import type {
 import { MessageList } from './MessageList.js';
 import { Composer } from './Composer.js';
 import { ConfirmCard } from './ConfirmCard.js';
-import { SettingsPanel } from './SettingsPanel.js';
+import { SettingsPanel, type TabId } from './SettingsPanel.js';
 import { ProjectsTab } from './ProjectsTab.js';
 import { useVoice } from './useVoice.js';
 import { ChatIcon, SettingsIcon, ChevronDownIcon, ChevronUpIcon, ProjectsIcon, WarningIcon, DeleteIcon } from './icons.js';
@@ -310,6 +310,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
   const [pendingDelete, setPendingDelete] = useState<{ sessionId: string; title: string } | null>(null);
 
   const [activeScreen, setActiveScreen] = useState<'chat' | 'settings' | 'projects'>('chat');
+  const [settingsTab, setSettingsTab] = useState<TabId | undefined>();
   const [settingsData, setSettingsData] = useState<{
     config: CaretakerConfig;
     agents: AgentConfig[];
@@ -578,8 +579,9 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
   const selectedAgentName = agents.find((a) => a.id === selectedAgentId)?.name;
   const activeAgent = agents.find((a) => a.id === selectedAgentId);
 
-  const openScreen = (screen: typeof activeScreen) => {
+  const openScreen = (screen: typeof activeScreen, tab?: TabId) => {
     setActiveScreen(screen);
+    setSettingsTab(tab);
     if (screen === 'settings') postMessage({ type: 'getSettingsData' });
   };
 
@@ -613,7 +615,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
       <div className="app app--with-sidebar">
         {navRail}
         <div className="app__screen">
-          <ProjectsTab agents={agents} />
+          <ProjectsTab agents={agents} onOpenSettings={() => openScreen('settings', 'projects')} />
         </div>
       </div>
     );
@@ -626,6 +628,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
           layout={layout}
           postMessage={postMessage}
           settingsData={settingsData}
+          initialTab={settingsTab}
           modelsResult={modelsResult}
           acpRegistry={acpRegistry}
           acpInstall={acpInstall}
