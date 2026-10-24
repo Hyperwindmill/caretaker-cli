@@ -68,6 +68,17 @@ readable for existing tasks (no migration).
 
 `system`, `block`, `plan`, `review` and human `chat` messages are unchanged.
 
+**Legacy cycles are shown raw, not converted.** A legacy cycle stored its text
+as one blob and its tool calls as separate name+args records — the
+interleaving, the tool results and the thinking were never persisted, so a
+converted session would show the same mess in a new container. There is no
+separate detection step: the renderer dispatches on `messageType`, so
+`heartbeat` / `heartbeat_live` / `tool_call` go through today's
+`taskMessagesToChatItems` path (compact), `cycle` becomes a card. A task that
+spans the upgrade shows its legacy messages followed by cycle cards, in
+chronological order. Required test: a mixed legacy + `cycle` message list maps
+without throwing and in order.
+
 ### 3. Agent context = handoffs, not transcripts
 
 - History replay keeps `chat`, `review`, `plan` and drops `heartbeat`,
@@ -138,7 +149,7 @@ watching from the start.
 
 ## Out of scope
 
-- Migrating legacy `heartbeat`/`tool_call` messages into sessions.
+- Converting legacy `heartbeat`/`tool_call` messages into sessions (the data to rebuild them was never stored — see §2).
 - Voice and attachments in the task composer.
 - Replacing the 3 s polling of task list / status / checklist (small payloads;
   the thread itself no longer polls).
