@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
 
-import type { ChatItem } from './App.js';
+import type { ChatItem, CycleItem } from './chat_state.js';
 import { MarkdownText } from './MarkdownText.js';
 import { groupCompactItems } from './compactGroups.js';
 import { prettyArgs, popoverPosition, resultMetric, toolSummary } from './toolFormat.js';
@@ -16,6 +16,9 @@ export interface MessageListProps {
   /** Task log: render tool calls as compact left-aligned bubbles (no persisted
    *  results there), instead of full-width <details> blocks. */
   compact?: boolean;
+  /** Task timeline: a cycle card opens its session when this is set. Keep it
+   *  reference-stable (useCallback), like `items`. */
+  onOpenCycle?: (item: CycleItem) => void;
 }
 
 const STICK_THRESHOLD = 100;
@@ -34,6 +37,7 @@ export const MessageList = memo(function MessageList({
   isStreaming,
   agentName,
   compact = false,
+  onOpenCycle,
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const prevItemsLengthRef = useRef(items.length);
@@ -83,15 +87,15 @@ export const MessageList = memo(function MessageList({
             g.kind === 'tool-row' ? (
               <div key={g.key} className="tool-bubble-row">
                 {g.items.map((item, j) => (
-                  <Item key={g.key + j} item={item} sessionId={sessionId} compact={compact} />
+                  <Item key={g.key + j} item={item} sessionId={sessionId} compact={compact} onOpenCycle={onOpenCycle} />
                 ))}
               </div>
             ) : (
-              <Item key={g.key} item={g.item} sessionId={sessionId} compact={compact} />
+              <Item key={g.key} item={g.item} sessionId={sessionId} compact={compact} onOpenCycle={onOpenCycle} />
             ),
           )
         : items.map((item, i) => (
-            <Item key={i} item={item} sessionId={sessionId} compact={compact} />
+            <Item key={i} item={item} sessionId={sessionId} compact={compact} onOpenCycle={onOpenCycle} />
           ))}
       {trailing}
       {isStreaming && (
@@ -258,14 +262,66 @@ const ToolBubble = memo(function ToolBubble({ item }: { item: Extract<ChatItem, 
   );
 });
 
+const CYCLE_ROLE_LABELS: Record<CycleItem['role'], string> = {
+  developer: 'Developer',
+  planner: 'Planner',
+  reviewer: 'Reviewer',
+};
+const CYCLE_OUTCOME_LABELS: Record<string, string> = {
+  running: 'running',
+  handoff: 'handed off',
+  completed: 'completed',
+  blocked: 'blocked',
+  plan: 'plan submitted',
+  'review-pass': 'review passed',
+  'review-changes': 'changes requested',
+  aborted: 'aborted',
+  failed: 'failed',
+};
+
+/** One task cycle in the task timeline: who ran, how it ended, when. Running
+ *  cycles pulse; clicking (or Enter) opens the cycle's session. */
+const CycleCard = memo(function CycleCard({ item, onOpen }: { item: CycleItem; onOpen?: (item: CycleItem) => void }) {
+  const running = item.outcome === 'running';
+  const created = new Date(item.createdAt);
+  const time = Number.isNaN(created.getTime()) ? '' : created.toLocaleTimeString();
+  const open = onOpen ? () => onOpen(item) : undefined;
+  return (
+    <div
+      className={`cycle-card${open ? ' cycle-card--clickable' : ''}${running ? ' cycle-card--running' : ''}`}
+      role={open ? 'button' : undefined}
+      tabIndex={open ? 0 : undefined}
+      onClick={open}
+      onKeyDown={
+        open
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                open();
+              }
+            }
+          : undefined
+      }
+    >
+      <span className={`agent-status-dot agent-status-dot--active${running ? ' agent-status-dot--pulsing' : ''}`} />
+      <span className="cycle-card__role">{CYCLE_ROLE_LABELS[item.role]}</span>
+      {item.label && <span className="cycle-card__label">{item.label}</span>}
+      <span className="cycle-card__outcome">{CYCLE_OUTCOME_LABELS[item.outcome] ?? item.outcome}</span>
+      {time && <span className="cycle-card__time">{time}</span>}
+    </div>
+  );
+});
+
 const Item = memo(function Item({
   item,
   sessionId,
   compact,
+  onOpenCycle,
 }: {
   item: ChatItem;
   sessionId: string | null;
   compact: boolean;
+  onOpenCycle?: (item: CycleItem) => void;
 }) {
   switch (item.kind) {
     case 'user':
@@ -355,5 +411,7 @@ const Item = memo(function Item({
           <MarkdownText content={item.text} />
         </div>
       );
+    case 'cycle':
+      return <CycleCard item={item} onOpen={onOpenCycle} />;
   }
 });

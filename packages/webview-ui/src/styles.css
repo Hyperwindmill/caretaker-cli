@@ -1462,6 +1462,42 @@ body.vscode-light .thinking__content {
   border: 1px solid rgba(127, 127, 127, 0.16);
   text-align: center;
 }
+.cycle-card {
+  align-self: stretch;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  background: rgba(127, 127, 127, 0.08);
+  border: 1px solid rgba(127, 127, 127, 0.16);
+}
+.cycle-card--clickable {
+  cursor: pointer;
+}
+.cycle-card--clickable:hover,
+.cycle-card--clickable:focus-visible {
+  border-color: var(--accent-cyan);
+  outline: none;
+}
+.cycle-card__role {
+  font-weight: 600;
+}
+.cycle-card__label {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+}
+.cycle-card__outcome {
+  margin-left: auto;
+  font-size: 11px;
+}
+.cycle-card__time {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
 .notice .markdown-body {
   font-size: 11px;
 }
