@@ -240,14 +240,19 @@ export async function sweepMemory(
           scannedAt: '',
           updatedAt: '',
         };
-        const idx = locateCursor(session.messages, record.lastMessageId);
+        // Task cycle sessions: only the recap reaches the model (tool output and
+        // retries never do), and each recap is its own debounce unit.
+        const isTask = !!session.meta.taskId;
+        const messages = isTask ? session.messages.filter((m) => m.recap) : session.messages;
+        const threshold = isTask ? 1 : resolved.minNewMessages;
+        const idx = locateCursor(messages, record.lastMessageId);
         if (record.lastMessageId && idx === -1) {
           // Cursor lost (rewritten/truncated file): restart from message zero.
           record = { ...record, lastMessageId: '', messageCount: 0, summary: '', model: '' };
         }
-        const fresh = session.messages.slice(idx + 1);
+        const fresh = messages.slice(idx + 1);
 
-        if (fresh.length < resolved.minNewMessages) {
+        if (fresh.length < threshold) {
           // Debounce: arm the mtime gate and wait for the next append.
           await saveSessionDigest({ ...record, agentId, scannedAt });
           continue;
@@ -256,7 +261,9 @@ export async function sweepMemory(
         // Scope + dedup context, once per session. `dedup` is mutated as new
         // memories are saved so the NEXT chunk of this session sees them too;
         // across sessions the fresh listMemories() covers it.
-        const projectId = resolveProjectId(agentId, resolved.agents, resolved.projects);
+        // Task sessions carry their project explicitly: a worktree or managed
+        // repo dir never prefix-matches the project's workingDir.
+        const projectId = session.meta.projectId || resolveProjectId(agentId, resolved.agents, resolved.projects);
         const dedup: Array<{ title: string; keywords: string[] }> = (await listMemories())
           .filter((m) => m.projectId === '' || m.projectId === projectId)
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
