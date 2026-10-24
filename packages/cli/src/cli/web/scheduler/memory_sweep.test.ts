@@ -498,6 +498,31 @@ describe('memory sweep', () => {
       assert.equal(await db.getSessionDigest('WeIrD_Name'), null);
     });
 
+    it('task session: only the recap reaches the model, scoped to meta.projectId', async () => {
+      const meta = await store.createSession({ agentId: 'ag-task-sweep', title: 'c', taskId: 'p1-1', projectId: 'p1', taskRole: 'developer' });
+      await store.appendMessage(meta, store.userMessage('PROMPT-TEXT'));
+      await store.appendMessage(meta, store.toolMessage('t1', 'TOOL-OUTPUT'));
+      await store.appendMessage(meta, { ...store.assistantMessage([{ type: 'text', text: 'RECAP-TEXT' }]), recap: true });
+      const { calls, fn } = fakeSummarize(Infinity, [
+        { level: 'project', kind: 'fact', importance: 'normal', title: 'Task fact', body: 'F.', keywords: [] },
+      ]);
+      await sweep.sweepMemory(resolvedCfg(), fn);
+      const sent = calls.map((c) => c.chunkText).join('\n');
+      assert.match(sent, /RECAP-TEXT/);
+      assert.doesNotMatch(sent, /PROMPT-TEXT|TOOL-OUTPUT/);
+      const mine = (await db.listMemories()).filter((m) => m.sourceSessionId === meta.id);
+      assert.ok(mine.length > 0);
+      assert.ok(mine.every((m) => m.projectId === 'p1'));
+    });
+
+    it('task session with no recap yet is not swept', async () => {
+      const meta = await store.createSession({ agentId: 'ag-task-norecap', title: 'c', taskId: 'p1-3', projectId: 'p1', taskRole: 'developer' });
+      await store.appendMessage(meta, store.userMessage('PROMPT-ONLY'));
+      const { calls, fn } = fakeSummarize();
+      await sweep.sweepMemory(resolvedCfg(), fn);
+      assert.doesNotMatch(calls.map((c) => c.chunkText).join('\n'), /PROMPT-ONLY/);
+    });
+
     it('persists extracted memories with host-side provenance and scope', async () => {
       const projDir = join(testHome, 'proj-mem');
       const agents: import('../../../types.js').AgentConfig[] = [
