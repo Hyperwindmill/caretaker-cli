@@ -578,33 +578,41 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
   const selectedAgentName = agents.find((a) => a.id === selectedAgentId)?.name;
   const activeAgent = agents.find((a) => a.id === selectedAgentId);
 
+  const openScreen = (screen: typeof activeScreen) => {
+    setActiveScreen(screen);
+    if (screen === 'settings') postMessage({ type: 'getSettingsData' });
+  };
+
+  // Persistent nav rail for the sidebar layout (web/desktop). Projects is
+  // scheduler-driven, so — like the Services settings tab — it never shows in
+  // the compact/VSCode surface, which keeps its header buttons instead.
+  const navItems = [
+    { id: 'chat', label: 'Chat', Icon: ChatIcon },
+    { id: 'projects', label: 'Projects', Icon: ProjectsIcon },
+    { id: 'settings', label: 'Settings', Icon: SettingsIcon },
+  ] as const;
+  const navRail = (
+    <nav className="app__nav">
+      <img src={logo} alt="Caretaker" className="app__logo app__nav-logo" />
+      {navItems.map(({ id, label, Icon }) => (
+        <button
+          key={id}
+          className={`app__nav-btn ${activeScreen === id ? 'app__nav-btn--active' : ''}`}
+          onClick={() => openScreen(id)}
+          title={label}
+        >
+          <Icon size={18} />
+          <span>{label}</span>
+        </button>
+      ))}
+    </nav>
+  );
+
   if (activeScreen === 'projects' && layout === 'sidebar') {
     return (
-      <div className="app" style={{ height: '100%' }}>
-        <header className="app__header">
-          <div className="app__header-row">
-            <div className="app__logo-title-wrapper" onClick={() => setActiveScreen('chat')} style={{ cursor: 'pointer' }}>
-              <img src={logo} alt="Caretaker" className="app__logo" />
-              <span>Caretaker</span>
-            </div>
-            <div className="app__controls">
-              <button className="app__sessions-btn" onClick={() => setActiveScreen('chat')}>
-                <ChatIcon size={13} /> Chat
-              </button>
-              <button
-                className="app__settings-btn"
-                onClick={() => {
-                  setActiveScreen('settings');
-                  postMessage({ type: 'getSettingsData' });
-                }}
-                title="Caretaker Settings"
-              >
-                <SettingsIcon size={13} /> Settings
-              </button>
-            </div>
-          </div>
-        </header>
-        <div style={{ flex: 1, minHeight: 0 }}>
+      <div className="app app--with-sidebar">
+        {navRail}
+        <div className="app__screen">
           <ProjectsTab agents={agents} />
         </div>
       </div>
@@ -612,8 +620,8 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
   }
 
   if (activeScreen === 'settings') {
-    return (
-      <div className={`app ${layout === 'sidebar' ? 'app--settings-centered' : ''}`}>
+    const panel = (
+      <div className={`app ${layout === 'sidebar' ? 'app--settings-centered app__screen' : ''}`}>
         <SettingsPanel
           layout={layout}
           postMessage={postMessage}
@@ -633,8 +641,15 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
           taskRuns={taskRuns}
           onClose={() => setActiveScreen('chat')}
         />
-
       </div>
+    );
+    return layout === 'sidebar' ? (
+      <div className="app app--with-sidebar">
+        {navRail}
+        {panel}
+      </div>
+    ) : (
+      panel
     );
   }
 
@@ -656,14 +671,8 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
   if (layout === 'sidebar') {
     return (
       <div className="app app--with-sidebar">
+        {navRail}
         <aside className="app__sidebar">
-          <div className="app__sidebar-header">
-            <div className="app__logo-title-wrapper">
-              <img src={logo} alt="Caretaker" className="app__logo" />
-              <span>Caretaker</span>
-            </div>
-          </div>
-          
           <div className="app__sidebar-content">
             <div className="app__sidebar-section">
               <div className="app__sidebar-section-title">Agents</div>
@@ -751,29 +760,6 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
                 </div>
               </div>
             )}
-          </div>
-
-          <div className="app__sidebar-footer" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <button
-              className="app__sidebar-settings-btn"
-              onClick={() => {
-                setActiveScreen('projects');
-              }}
-              title="Projects & Autonomous Tasks"
-            >
-              <span><ProjectsIcon size={13} /> Projects</span>
-            </button>
-            <button
-              className="app__sidebar-settings-btn"
-              onClick={() => {
-                setActiveScreen('settings');
-                postMessage({ type: 'getSettingsData' });
-              }}
-              title="Caretaker Settings"
-            >
-              <SettingsIcon className="app__settings-icon" size={14} />
-              <span>Settings</span>
-            </button>
           </div>
         </aside>
 
