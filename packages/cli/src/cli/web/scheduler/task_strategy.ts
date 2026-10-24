@@ -62,12 +62,15 @@ On each invocation:
    - which tools you used and what the results were
    - what the recommended next step is
    - any issues encountered or decisions made
-7. If the objective is complete, close with \`task_complete\`
-8. If you need human input to proceed, call \`task_block\` with a clear explanation
-9. Otherwise, stop — you will continue in the next cycle
+7. End the invocation with exactly ONE of these, in this order of checks:
+   - **The objective is met and every checklist item is done → call \`task_complete\`.**
+     Never \`task_yield\` a finished task: a yielded task stays active and runs again.
+   - You need human input to proceed → call \`task_block\` with a clear explanation.
+   - Work remains → call \`task_yield\` with a short note on the next step (or simply stop);
+     you will continue in the next cycle.
 
-Do NOT try to complete everything in one invocation.
-Do ONE meaningful step, then stop and document.
+Do ONE meaningful step per invocation, then document and end it as above.
+If that step finishes the objective, complete the task now — do not leave it for another cycle.
 
 TASK ID: ${taskId}
 TITLE: ${taskTitle}`;
