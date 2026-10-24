@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import type { Task, TaskMessage } from '../../../store/db.js';
 import type { AgentConfig } from '../../../types.js';
 import type { Session } from '../../../session/types.js';
+import { watchCycleStream, type CycleEvent } from './cycle_events.js';
 
 // File-scope CARETAKER_HOME: one temp store for every test in this file.
 let testHome: string;
@@ -90,4 +91,25 @@ test('close on a run that failed before any output', async () => {
   await rec.close({ outcome: 'failed' });
   const recap = (await readCycleSession(rec)).messages.at(-1)!;
   assert.match(recap.content, /\(failed\)\. Last output: \(none\)$/);
+});
+
+test('watcher attached before close sees the cycle, ending with done', async () => {
+  const rec = await cycle.openCycle({ task, agent, role: 'developer', agentLabel: 'A · m', prompt: 'live' });
+  const seen: CycleEvent[] = [];
+  const snap = watchCycleStream(rec.sessionId, (e) => seen.push(e))!;
+  assert.equal(snap.prompt.content, 'live');
+  rec.callbacks.onChunk!('working');
+  rec.callbacks.onToolCall!('t1', 'read_file', { path: 'a' });
+  rec.callbacks.onToolResult!('t1', 'ok');
+  await rec.close({ outcome: 'aborted' });
+  assert.deepEqual(seen.map((e) => e.type), ['chunk', 'tool_call', 'tool_result', 'done']);
+  assert.equal(watchCycleStream(rec.sessionId, () => {}), null);
+});
+
+test('a failed cycle ends its stream with an error event', async () => {
+  const rec = await cycle.openCycle({ task, agent, role: 'developer', agentLabel: 'A · m', prompt: 'boom' });
+  const seen: CycleEvent[] = [];
+  watchCycleStream(rec.sessionId, (e) => seen.push(e));
+  await rec.close({ outcome: 'failed' });
+  assert.equal(seen.at(-1)?.type, 'error');
 });
