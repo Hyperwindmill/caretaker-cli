@@ -168,9 +168,12 @@ export function SettingsPanel({
   return (
     <div className="settings-panel">
       <header className="settings-panel__header">
-        <button className="settings-panel__back-btn" onClick={onClose} title="Go back to chat">
-          <BackIcon size={14} /> Chat
-        </button>
+        {/* The sidebar layout has a persistent nav rail; only compact needs a way back. */}
+        {layout !== 'sidebar' && (
+          <button className="settings-panel__back-btn" onClick={onClose} title="Go back to chat">
+            <BackIcon size={14} /> Chat
+          </button>
+        )}
         <h2 className="settings-panel__title">Caretaker Config</h2>
       </header>
 
