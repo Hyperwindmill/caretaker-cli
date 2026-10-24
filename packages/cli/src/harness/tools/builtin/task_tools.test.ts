@@ -11,7 +11,7 @@ const CT_HOME = await mkdtemp(join(tmpdir(), 'ct-tasktools-home-'));
 process.env.CARETAKER_HOME = CT_HOME;
 
 const { createTask, getTaskById, saveTask, deleteTask, addTaskMessage, runQuery } = await import('../../../store/db.js');
-const { completeTaskTool, taskArchiveTool, taskUnarchiveTool, taskDeleteTool, taskSearchTool, taskSetAgentTool, taskCreateTool, submitPlanTool, taskActivateTool, taskUnpauseTool, getTaskStateTool, updateChecklistItemTool, updateChecklistTool, taskUpdateDetailsTool, projectListTool } = await import('./task_tools.js');
+const { completeTaskTool, yieldTaskTool, taskArchiveTool, taskUnarchiveTool, taskDeleteTool, taskSearchTool, taskSetAgentTool, taskCreateTool, submitPlanTool, taskActivateTool, taskUnpauseTool, getTaskStateTool, updateChecklistItemTool, updateChecklistTool, taskUpdateDetailsTool, projectListTool } = await import('./task_tools.js');
 const { runningTasks } = await import('../../../cli/web/scheduler/locks.js');
 const { saveConfig, saveAgents } = await import('../../../store/json.js');
 
@@ -589,4 +589,36 @@ test('task_delete pushes the branch to the remote before removing the worktree',
 
 test.after(async () => {
   await rm(CT_HOME, { recursive: true, force: true });
+});
+
+test('task_yield with every checklist item done reminds the agent to complete', async () => {
+  const t = await createTask({
+    ...base,
+    title: 'Yield done',
+    checklist: [
+      { id: 'a', text: 'one', status: 'done', order: 0 },
+      { id: 'b', text: 'two', status: 'done', order: 1 },
+    ],
+  });
+  const res = JSON.parse((await yieldTaskTool.execute({ task_id: t.id, notes: 'finished' }, ctx())).content);
+  assert.equal(res.ok, true);
+  assert.match(res.reminder, /task_complete/);
+  assert.equal((await getTaskById(t.id))!.status, 'active');
+});
+
+test('task_yield with work left (or no checklist) carries no reminder', async () => {
+  const pending = await createTask({
+    ...base,
+    title: 'Yield pending',
+    checklist: [
+      { id: 'a', text: 'one', status: 'done', order: 0 },
+      { id: 'b', text: 'two', status: 'pending', order: 1 },
+    ],
+  });
+  const empty = await createTask({ ...base, title: 'Yield empty' });
+  for (const t of [pending, empty]) {
+    const res = JSON.parse((await yieldTaskTool.execute({ task_id: t.id }, ctx())).content);
+    assert.equal(res.ok, true);
+    assert.equal(res.reminder, undefined);
+  }
 });

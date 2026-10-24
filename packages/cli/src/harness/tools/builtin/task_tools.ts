@@ -268,7 +268,7 @@ export const addMessageTool: Tool = {
 
 export const completeTaskTool: Tool = {
   name: 'mcp__task__task_complete',
-  description: 'Mark the task as done. Use when the objective is fully achieved.',
+  description: 'Mark the task as done. Call it as soon as the objective is fully achieved and every checklist item is done, in the same invocation that finishes the work. Do not task_yield a finished task: it would stay active and run again.',
   parameters: {
     type: 'object',
     properties: {
@@ -356,7 +356,7 @@ export const blockTaskTool: Tool = {
 
 export const yieldTaskTool: Tool = {
   name: 'mcp__task__task_yield',
-  description: 'Signal end of this invocation without completing the task. Task remains active.',
+  description: 'End this invocation while work still REMAINS: the task stays active and the next cycle continues it. Never use it to finish — when the objective is met, call task_complete instead.',
   parameters: {
     type: 'object',
     properties: {
@@ -388,7 +388,14 @@ export const yieldTaskTool: Tool = {
       });
     }
 
-    return ok();
+    // Flash-class models often yield a finished task instead of completing it.
+    // Not auto-completed: a done checklist does not prove the objective is met.
+    const allDone = task.checklist.length > 0 && task.checklist.every((c) => c.status === 'done');
+    return ok(
+      allDone
+        ? { reminder: 'Every checklist item is done. If the objective is met, call task_complete now: a yielded task stays active and runs another cycle.' }
+        : {},
+    );
   },
 };
 
