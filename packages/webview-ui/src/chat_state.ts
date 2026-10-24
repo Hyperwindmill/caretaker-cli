@@ -87,9 +87,10 @@ function reconstructChatItems(messages: ChatMessage[]): ChatItem[] {
 
   for (const msg of messages) {
     if (msg.recap) {
-      // Closing notice of a task cycle (its handoff): a notice, never a bubble.
+      // Closing handoff of a task cycle: a labeled markdown bubble — handoffs are
+      // long and structured, which the centered plain-text notice mangles.
       items = closeStreamingAssistant(items);
-      items.push({ kind: 'notice', text: msg.content, variant: 'system' });
+      items.push({ kind: 'assistant', text: msg.content, streaming: false, label: 'Cycle recap' });
     } else if (msg.role === 'user') {
       items = closeStreamingAssistant(items);
       items.push({ kind: 'user', text: msg.content, attachments: msg.attachments });

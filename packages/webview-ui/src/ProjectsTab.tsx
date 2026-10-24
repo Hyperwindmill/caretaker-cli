@@ -415,8 +415,8 @@ export function ProjectsTab({ agents, onOpenSettings, postMessage }: ProjectsTab
     }
   };
 
-  const handleSendMessage = async (text: string) => {
-    if (!text.trim() || selectedTaskId === null || isSending) return;
+  const handleSendMessage = async (text: string): Promise<boolean> => {
+    if (!text.trim() || selectedTaskId === null || isSending) return false;
     setIsSending(true);
     try {
       const res = await fetch(`/api/tasks/${selectedTaskId}/messages`, {
@@ -427,12 +427,14 @@ export function ProjectsTab({ agents, onOpenSettings, postMessage }: ProjectsTab
       if (res.ok) {
         fetchTaskMessages(selectedTaskId);
         if (selectedProjectId !== null) fetchTasks(selectedProjectId);
+        return true;
       }
     } catch (err) {
       console.error('Failed to send message:', err);
     } finally {
       setIsSending(false);
     }
+    return false;
   };
 
   // Open a task in the log view.
@@ -1149,7 +1151,7 @@ interface TaskLogViewProps {
   agentLabels?: { developer?: string; planner?: string; reviewer?: string };
   isActiveLike: boolean;
   reviewRound: number;
-  onSend: (text: string) => void;
+  onSend: (text: string) => Promise<boolean>;
   isSending: boolean;
   postMessage: (msg: ViewToHost) => void;
   onBack: () => void;
@@ -1178,6 +1180,8 @@ function TaskLogView({
   // The cycle open in the full pane, if any. Its card is refreshed from the
   // thread on every poll, so the header outcome follows the cycle's end.
   const [openCycle, setOpenCycle] = useState<CycleItem | null>(null);
+  // Controlled draft: the Composer clears on send, so a failed POST puts it back.
+  const [draft, setDraft] = useState('');
   const openCycleItem = useCallback((item: CycleItem) => setOpenCycle(item), []);
   const autoOpenedFor = useRef<string | null>(null);
   // Opening a task whose latest cycle is still running lands on that cycle.
@@ -1324,13 +1328,19 @@ function TaskLogView({
           )}
 
           {/* Messages queue for the next cycle; Stop is the Pause control. */}
+          {/* Send stays available while the task is active (messages queue for
+              the next cycle); Pause lives in the header. */}
           <Composer
             disabled={isSending}
-            canAbort={isActiveLike}
-            onAbort={() => onToggleStatus(task)}
-            onSend={onSend}
+            canAbort={false}
+            onAbort={() => {}}
+            onSend={async (text) => {
+              if (!(await onSend(text))) setDraft(text);
+            }}
             contextUsage={null}
             allowAttachments={false}
+            value={draft}
+            onValueChange={setDraft}
           />
         </div>
       </div>
