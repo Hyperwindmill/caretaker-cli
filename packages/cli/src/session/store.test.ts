@@ -4,6 +4,14 @@ import { mkdtemp, readFile, writeFile, appendFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
+import {
+  appendMessage as appendTaskMessage,
+  assistantMessage as taskAssistant,
+  createSession as createTaskSession,
+  listForAgent as listTaskSessions,
+  readSession as readTaskSession,
+} from './store.js';
+
 // The store module reads CARETAKER_HOME at import time, so override BEFORE the
 // dynamic import below. Each test gets its own temp dir to avoid cross-test
 // pollution.
@@ -202,3 +210,31 @@ test('saveAttachment + readAttachment + deleteSession cleanup', async () => {
   assert.ok(!fs.existsSync(mod.attachmentsDir(meta.id)));
 });
 
+
+// ─── Task cycle sessions ────────────────────────────────────────────────────
+// File-scope CARETAKER_HOME: the store resolves its root at call time, so the
+// static import below writes into this temp dir and never the real home.
+const taskHome = await mkdtemp(join(tmpdir(), 'caretaker-task-sessions-'));
+process.env.CARETAKER_HOME = taskHome;
+
+test('createSession persists task meta fields', async () => {
+  const meta = await createTaskSession({ agentId: 'a1', title: 't', taskId: 'p-1', projectId: 'p', taskRole: 'developer' });
+  const s = await readTaskSession('a1', meta.id);
+  assert.equal(s.meta.taskId, 'p-1');
+  assert.equal(s.meta.projectId, 'p');
+  assert.equal(s.meta.taskRole, 'developer');
+});
+
+test('listForAgent hides task cycle sessions', async () => {
+  const chat = await createTaskSession({ agentId: 'a2', title: 'chat' });
+  await createTaskSession({ agentId: 'a2', title: 'cycle', taskId: 'p-2', projectId: 'p', taskRole: 'planner' });
+  const ids = (await listTaskSessions('a2')).map((e) => e.meta.id);
+  assert.deepEqual(ids, [chat.id]);
+});
+
+test('recap flag round-trips', async () => {
+  const meta = await createTaskSession({ agentId: 'a3', title: 't' });
+  await appendTaskMessage(meta, { ...taskAssistant([{ type: 'text', text: 'r' }]), recap: true });
+  const s = await readTaskSession('a3', meta.id);
+  assert.equal(s.messages[0]!.recap, true);
+});

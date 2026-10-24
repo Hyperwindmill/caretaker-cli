@@ -105,6 +105,10 @@ export interface CreateSessionInput {
   id?: string;
   /** Optional explicit createdAt (ISO). Defaults to now. Useful for tests. */
   createdAt?: string;
+  /** Task cycle sessions only; written into the meta line when set. */
+  taskId?: string;
+  projectId?: string;
+  taskRole?: SessionMetaRecord['taskRole'];
 }
 
 /** Create a new session: writes the initial meta line. Returns the meta. */
@@ -116,6 +120,9 @@ export async function createSession(input: CreateSessionInput): Promise<SessionM
     agentId: input.agentId,
     title: input.title,
     createdAt: input.createdAt ?? nowIso(),
+    ...(input.taskId !== undefined ? { taskId: input.taskId } : {}),
+    ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
+    ...(input.taskRole !== undefined ? { taskRole: input.taskRole } : {}),
   };
   await ensureDir(agentDir(input.agentId));
   const path = sessionPath(input.agentId, meta.id);
@@ -189,6 +196,8 @@ export async function listForAgent(agentId: string): Promise<SessionListEntry[]>
     try {
       const meta = await readFirstMeta(path);
       if (!meta) continue;
+      // Task cycle sessions are reached through their task, never the chat list.
+      if (meta.taskId) continue;
       const st = await stat(path);
       entries.push({ meta, updatedAt: st.mtime });
     } catch (err) {

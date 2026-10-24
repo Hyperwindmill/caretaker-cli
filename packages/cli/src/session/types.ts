@@ -35,6 +35,11 @@ export interface SessionMetaRecord {
   /** ACP session id for acp runner agents; reused across turns and offered
    *  to session/load when the agent supports it. */
   acpSessionId?: string;
+  /** Autonomous task cycle sessions only. Cycle sessions are hidden from chat
+   *  lists (`listForAgent`) and deleted with their task. */
+  taskId?: string;
+  projectId?: string;
+  taskRole?: 'developer' | 'planner' | 'reviewer';
 }
 
 export type Role = 'user' | 'assistant' | 'tool';
@@ -61,6 +66,9 @@ export interface MessageRecord {
   /** Assistant only, openai-style only. */
   usage?: AssistantUsage;
   attachments?: ToolAttachmentRecord[];
+  /** Task cycle closing notice (handoff recap). Feeds the memory sweep for
+   *  task sessions; rendered as a notice in the cycle viewer. */
+  recap?: true;
   createdAt: string;
 }
 
