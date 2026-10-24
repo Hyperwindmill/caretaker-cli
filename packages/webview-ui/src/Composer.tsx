@@ -188,7 +188,7 @@ export function Composer({
         ref={inputRef}
         className="composer__input"
         value={value}
-        placeholder="Message Caretaker (Drop/paste files/images)..."
+        placeholder={allowAttachments ? 'Message Caretaker (Drop/paste files/images)...' : 'Message Caretaker...'}
         rows={2}
         disabled={disabled}
         onChange={(e) => setValue(e.target.value)}

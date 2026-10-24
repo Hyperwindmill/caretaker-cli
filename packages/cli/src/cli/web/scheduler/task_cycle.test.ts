@@ -78,6 +78,16 @@ test('close without handoff writes the fallback and a recap record', async () =>
   assert.equal(row.agentLabel, 'A · m');
 });
 
+test('aborted mid-turn: the fallback quotes the streamed partial text', async () => {
+  const rec = await cycle.openCycle({ task, agent, role: 'developer', agentLabel: 'A · m', prompt: 'p' });
+  await rec.callbacks.onMessage!(sessions.assistantMessage([{ type: 'text', text: 'first turn' }]));
+  rec.callbacks.onChunk!('now editing ');
+  rec.callbacks.onChunk!('calc.py');
+  await rec.close({ outcome: 'aborted' });
+  const recap = (await readCycleSession(rec)).messages.at(-1)!;
+  assert.match(recap.content, /\(aborted\)\. Last output: now editing calc\.py$/);
+});
+
 test('close with a handoff recaps it and adds no fallback', async () => {
   const rec = await cycle.openCycle({ task, agent, role: 'developer', agentLabel: 'A · m', prompt: 'p' });
   await db.addTaskMessage({ taskId: task.id, role: 'assistant', messageType: 'chat', content: 'did X, next Y' });

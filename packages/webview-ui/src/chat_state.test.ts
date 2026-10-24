@@ -10,7 +10,7 @@ test('tool call closes the streaming assistant span', () => {
   assert.equal((s.items[0] as { streaming: boolean }).streaming, false);
 });
 
-test('load-history: recap becomes a notice, streaming flag sets status', () => {
+test('load-history: recap becomes a labeled bubble, streaming flag sets status', () => {
   const s = chatReducer(initialChatState, {
     kind: 'load-history',
     streaming: true,
@@ -20,7 +20,7 @@ test('load-history: recap becomes a notice, streaming flag sets status', () => {
     ],
   });
   assert.equal(s.status, 'streaming');
-  assert.deepEqual(s.items.at(-1), { kind: 'notice', text: 'R', variant: 'system' });
+  assert.deepEqual(s.items.at(-1), { kind: 'assistant', text: 'R', streaming: false, label: 'Cycle recap' });
 });
 
 test('load-history without the streaming flag is idle', () => {

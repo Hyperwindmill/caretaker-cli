@@ -47,6 +47,8 @@ export function TaskCycleView({ item, postMessage, onBack }: TaskCycleViewProps)
           return;
         case 'done':
           dispatch({ kind: 'done' });
+          // The recap is persisted before `done`: reload the finished session from disk.
+          postRef.current({ type: 'watchCycle', agentId, sessionId });
           return;
         case 'error':
           dispatch({ kind: 'error', text: ev.message });

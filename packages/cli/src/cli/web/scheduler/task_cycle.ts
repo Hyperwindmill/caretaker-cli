@@ -113,6 +113,9 @@ export async function openCycle(i: {
   }
 
   let lastText = '';
+  // Text streamed since the last persisted assistant turn: an aborted turn never
+  // reaches onMessage, so this is the only trace of what the agent was doing.
+  let partialText = '';
 
   // Messages written by this cycle, in order: everything after its `cycle` row.
   const cycleSince = async (): Promise<TaskMessage[]> => {
@@ -130,7 +133,7 @@ export async function openCycle(i: {
       // Developer and planner cycles must leave a handoff: if the agent did not
       // write one (aborted, turn limit, forgot), the host writes the fallback.
       if (role !== 'reviewer' && !since.some((m) => m.messageType === 'chat' && m.role === 'assistant')) {
-        fallback = fallbackNote(outcome, lastText);
+        fallback = fallbackNote(outcome, partialText.trim() ? partialText : lastText);
         await addTaskMessage({ taskId: task.id, role: 'assistant', messageType: 'chat', content: fallback, agentLabel });
       }
       const recap = buildRecap(since, fallback);
@@ -150,13 +153,19 @@ export async function openCycle(i: {
   };
 
   const callbacks: CycleRecorder['callbacks'] = {
-    onChunk: (text) => emitCycleEvent(meta.id, { type: 'chunk', text }),
+    onChunk: (text) => {
+      partialText += text;
+      emitCycleEvent(meta.id, { type: 'chunk', text });
+    },
     onThinking: (text) => emitCycleEvent(meta.id, { type: 'thinking', text }),
     onToolCall: (id, name, args) => emitCycleEvent(meta.id, { type: 'tool_call', id, name, args }),
     onToolResult: (id, content) => emitCycleEvent(meta.id, { type: 'tool_result', id, content }),
     onMessage: async (msg: MessageRecord) => {
       await appendMessage(meta, msg);
-      if (msg.role === 'assistant' && msg.content) lastText = msg.content;
+      if (msg.role === 'assistant') {
+        if (msg.content) lastText = msg.content;
+        partialText = '';
+      }
     },
   };
 
