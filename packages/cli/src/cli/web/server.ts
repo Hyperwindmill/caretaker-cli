@@ -9,7 +9,7 @@ import { serve } from '@hono/node-server';
 import { WebSocketServer, WebSocket } from 'ws';
 
 import * as harness from '../../harness/index.js';
-import { getDb, Task, getTaskById, saveTask, createTask, addTaskMessage, deleteTask, runQuery, tryNormalizeChecklistStatus } from '../../store/db.js';
+import { getDb, Task, getTaskById, saveTask, createTask, addTaskMessage, deleteTask, deleteTaskSessions, runQuery, tryNormalizeChecklistStatus } from '../../store/db.js';
 import { discardWorktree, syncProjectRepo, projectRepoStatus, managedRepoDir } from '../../lib/task_git.js';
 import { removeContainer } from '../../lib/docker.js';
 import { validateRepositoryUrl } from '../../lib/repo_url.js';
@@ -363,7 +363,10 @@ export async function startServer(port: number, host: string): Promise<void> {
       // Remove the managed clone; a user-chosen workingDir is never touched.
       const managed = project ? managedRepoDir(project) : null;
       if (managed) await fs.promises.rm(managed, { recursive: true, force: true });
-      // Delete task messages first, then tasks — avoids orphaned message rows.
+      // Cycle sessions first (they are referenced from the task messages), then
+      // task messages, then tasks — avoids orphaned rows.
+      const projectTasks = (await runQuery(`SELECT * FROM tasks WHERE projectId = '${id}'`)) as Task[];
+      for (const t of projectTasks) await deleteTaskSessions(t.id);
       await runQuery(`DELETE FROM task_messages WHERE taskId IN (SELECT id FROM tasks WHERE projectId = '${id}')`);
       await runQuery(`DELETE FROM tasks WHERE projectId = '${id}'`);
       return c.json({ ok: true });
