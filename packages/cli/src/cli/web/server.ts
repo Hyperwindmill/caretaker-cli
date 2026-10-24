@@ -25,6 +25,8 @@ import {
   loadPlugins,
   loadMcpServers,
   saveMcpServers,
+  loadUiState,
+  saveUiState,
 } from '../../store/json.js';
 import {
   createSource,
@@ -305,6 +307,21 @@ export async function startServer(port: number, host: string): Promise<void> {
   const db = getDb();
 
   // Projects REST endpoints
+  // Last project picked in the Projects screen (ui-state.json, see store/json.ts).
+  app.get('/api/ui-state', async (c) => c.json(await loadUiState()));
+  app.put('/api/ui-state', async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const id = body?.lastProjectId;
+    if (id !== undefined && id !== null && typeof id !== 'string') {
+      return c.json({ error: 'lastProjectId must be a string' }, 400);
+    }
+    const state = await loadUiState();
+    if (id) state.lastProjectId = id;
+    else delete state.lastProjectId;
+    await saveUiState(state);
+    return c.json(state);
+  });
+
   app.get('/api/projects', async (c) => {
     try {
       const config = await loadConfig();

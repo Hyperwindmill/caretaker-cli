@@ -28,6 +28,9 @@ export function pluginsPath(): string {
 export function mcpServersPath(): string {
   return join(dataDir(), 'mcp.json');
 }
+export function uiStatePath(): string {
+  return join(dataDir(), 'ui-state.json');
+}
 
 export const defaultConfig: CaretakerConfig = {
   port: 17777,
@@ -120,6 +123,22 @@ export async function saveConfig(c: CaretakerConfig): Promise<void> {
     c.voice.ttsApiKey = encrypt(c.voice.ttsApiKey);
   }
   await writeJson(configPath(), c);
+}
+
+/** UI preferences that must survive the desktop app, whose per-launch port
+ *  gives every launch a fresh origin (and so a fresh localStorage). Kept out of
+ *  caretaker.json on purpose: the settings form saves that file whole from the
+ *  copy it loaded, which would put back a stale value. */
+export interface UiState {
+  lastProjectId?: string;
+}
+
+export async function loadUiState(): Promise<UiState> {
+  return readJsonOrDefault<UiState>(uiStatePath(), {});
+}
+
+export async function saveUiState(s: UiState): Promise<void> {
+  await writeJson(uiStatePath(), s);
 }
 
 export async function loadAgents(): Promise<AgentConfig[]> {
