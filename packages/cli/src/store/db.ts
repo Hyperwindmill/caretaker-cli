@@ -4,6 +4,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { Store } from '@morphql/store';
 import { FolderAdapter } from '@morphql/store/node';
 import { loadConfig, saveConfig } from './json.js';
+import { deleteSession } from '../session/store.js';
 
 export interface ChecklistItem {
   id: string;
@@ -60,17 +61,34 @@ export interface Task {
   updatedAt: string;
 }
 
+/** How a task cycle ended. `running` until the cycle closes. */
+export type CycleOutcome =
+  | 'running'
+  | 'handoff'
+  | 'completed'
+  | 'blocked'
+  | 'plan'
+  | 'review-pass'
+  | 'review-changes'
+  | 'aborted'
+  | 'failed';
+
 export interface TaskMessage {
   id: number;
   taskId: string;
   role: 'user' | 'assistant' | 'tool';
-  messageType: 'chat' | 'heartbeat' | 'heartbeat_live' | 'system' | 'block' | 'tool_call' | 'yield' | 'review' | 'plan';
+  messageType: 'chat' | 'heartbeat' | 'heartbeat_live' | 'system' | 'block' | 'tool_call' | 'yield' | 'review' | 'plan' | 'cycle';
   content: string;
   toolCallId?: string | null;
   agentId?: string | null;
   /** Identity of the agent that produced this message, captured at creation as
    *  `name · model` text (of that moment — survives later agent reconfig/rename). */
   agentLabel?: string | null;
+  /** `cycle` messages only: the cycle's chat session, the agent that owns it. */
+  sessionId?: string | null;
+  sessionAgentId?: string | null;
+  cycleRole?: 'developer' | 'planner' | 'reviewer' | null;
+  cycleOutcome?: CycleOutcome | null;
   createdAt: string;
 }
 
@@ -224,10 +242,31 @@ export async function updateTaskMessageContent(
   }
 }
 
+/** Close a `cycle` message with its outcome. Only the outcome changes. */
+export async function setCycleOutcome(messageId: number, outcome: CycleOutcome): Promise<void> {
+  await runQuery(`UPDATE task_messages SET cycleOutcome = '${outcome}' WHERE id = ${messageId}`);
+}
+
+/** Delete the chat session behind every `cycle` message of a task. A missing
+ *  file or agent directory is not an error: the session may already be gone. */
+export async function deleteTaskSessions(taskId: string): Promise<void> {
+  if (!safeId(taskId)) return;
+  const rows = (await runQuery(`SELECT * FROM task_messages WHERE taskId = '${taskId}'`)) as TaskMessage[];
+  for (const m of rows) {
+    if (m.messageType !== 'cycle' || !m.sessionId || !m.sessionAgentId) continue;
+    try {
+      await deleteSession(m.sessionAgentId, m.sessionId);
+    } catch (err) {
+      console.warn(`[store/db] failed to delete cycle session ${m.sessionId}:`, err);
+    }
+  }
+}
+
 // Permanently delete a task and all of its messages. Used by the delete
 // action (real deletion from the store); archiving is a soft flag, not this.
 export async function deleteTask(taskId: string): Promise<void> {
   if (!safeId(taskId)) return;
+  await deleteTaskSessions(taskId);
   await runQuery(`DELETE FROM task_messages WHERE taskId = '${taskId}'`);
   await runQuery(`DELETE FROM tasks WHERE id = '${taskId}'`);
 }
