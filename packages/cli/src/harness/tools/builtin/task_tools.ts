@@ -6,6 +6,7 @@ import { discardWorktree, projectWorkingDir } from '../../../lib/task_git.js';
 import { removeContainer } from '../../../lib/docker.js';
 import { runningTasks } from '../../../cli/web/scheduler/locks.js';
 import { resolveReviewEnabled, resolvePlanningEnabled, activationStatus } from '../../../cli/web/scheduler/task_roles.js';
+import { filterHandoffMessages } from '../../../cli/web/scheduler/task_cycle.js';
 
 function ok(data: Record<string, unknown> = {}): ToolResult {
   return { content: JSON.stringify({ ok: true, ...data }) };
@@ -62,7 +63,7 @@ export const getTaskStateTool: Tool = {
               workingDir: projectWorkingDir(project),
             }
           : null,
-        recentMessages: messages.slice(-20),
+        recentMessages: filterHandoffMessages(messages).slice(-20),
       }),
     };
   },

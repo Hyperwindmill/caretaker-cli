@@ -5,6 +5,7 @@ import type { Tool } from '../../../harness/tools/types.js';
 import { CLAUDE_CODE_DEFAULT_RUN_SECONDS } from './task_roles.js';
 import { dockerDevAllowlist } from '../../../lib/docker.js';
 import { getTaskBridgeUrl, issueBridgeToken, revokeBridgeToken } from '../mcp_bridge.js';
+import { resolveCycleOutcome, type CycleRecorder } from './task_cycle.js';
 
 export const MAX_REVIEW_ROUNDS = 3;
 
@@ -65,7 +66,10 @@ export async function runDoneReview(opts: {
   dockerContainer?: string;
   /** Whether git is available inside the container; drives a prompt hint. */
   dockerHasGit?: boolean;
-}): Promise<{ verdict: 'pass' | 'changes'; text: string }> {
+  /** Opens the review's chat session once the prompt is final. The caller
+   *  closes the returned recorder; a throwing review closes it here. */
+  openCycle?: (prompt: string) => Promise<CycleRecorder>;
+}): Promise<{ verdict: 'pass' | 'changes'; text: string; cycle?: CycleRecorder }> {
   // Strip task-state tools: the reviewer must not mutate the task; the harness decides.
   const reviewTools = opts.tools.filter((t) => !t.name.startsWith('mcp__task__'));
   // claude-code reviewer: in a docker container it uses the same dontAsk +
@@ -120,6 +124,7 @@ export async function runDoneReview(opts: {
       prompt += ` Note: \`git\` is NOT available in this container — inspect the changes by reading the files directly instead of running git commands.`;
     }
   }
+  const cycle = opts.openCycle ? await opts.openCycle(prompt) : undefined;
   try {
     const result = await harness.run(
       {
@@ -136,10 +141,16 @@ export async function runDoneReview(opts: {
         ...(acp ? { acp } : {}),
       },
       {
+        ...cycle?.callbacks,
         confirmTool: async () => 'once', // unattended
       },
     );
-    return { verdict: parseReviewVerdict(result.text), text: result.text };
+    return { verdict: parseReviewVerdict(result.text), text: result.text, cycle };
+  } catch (err) {
+    await cycle?.close({
+      outcome: resolveCycleOutcome({ role: 'reviewer', statusAfter: null, aborted: signal.aborted, failed: !signal.aborted }),
+    });
+    throw err;
   } finally {
     clearTimeout(runTimer);
     if (reviewBridgeToken) revokeBridgeToken(reviewBridgeToken);

@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import * as harness from '../../../harness/index.js';
 import { loadAgents, loadConfig } from '../../../store/json.js';
-import { getDb, Task, Project, TaskMessage, getTaskById, saveTask, addTaskMessage, updateTaskMessageContent, runQuery } from '../../../store/db.js';
+import { getDb, Task, Project, TaskMessage, getTaskById, saveTask, addTaskMessage, runQuery } from '../../../store/db.js';
 import { runningTasks, runningTaskControllers, syncingProjects } from './locks.js';
 import { isGitRepo, ensureWorktree, agentDirIn, commitWip, finalizeDone, runBootstrap, gitCommonDir, syncProjectRepo, projectWorkingDir, pushBranch } from '../../../lib/task_git.js';
 import { runDoneReview, MAX_REVIEW_ROUNDS } from './task_review.js';
+import { openCycle, filterHandoffMessages, resolveCycleOutcome, type CycleRecorder, type CycleRole } from './task_cycle.js';
 import type { AgentConfig, ProviderConfig, ProjectConfig } from '../../../types.js';
 import type { Tool } from '../../../harness/tools/types.js';
 import type { RunOptions } from '../../../harness/index.js';
@@ -148,8 +149,6 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
   task.lockedAt = new Date().toISOString();
   task.updatedAt = new Date().toISOString();
   await saveTask(task);
-
-  let liveMsgId: number | null = null;
 
   try {
     // 2. Load Config & Project
@@ -373,38 +372,25 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
 
     const checklistBefore = (task.checklist || []).filter((item) => item.status !== 'pending').length;
 
-    // Create a live assistant message in DB
-    const liveMsg = await addTaskMessage({
-      taskId: task.id,
-      role: 'assistant',
-      messageType: 'heartbeat_live',
-      content: '',
-      // Capture the role-resolved agent behind this cycle, so the thread shows
-      // who actually ran (planner during planning, developer during active) —
-      // as text of the moment, not resolved live in the UI.
+    // The cycle is a chat session of its own; the task gets a `cycle` timeline
+    // message pointing at it. Capture the role-resolved agent behind this cycle,
+    // so the thread shows who actually ran (planner during planning, developer
+    // during active) — as text of the moment, not resolved live in the UI.
+    const cycleRole: CycleRole = planning ? 'planner' : 'developer';
+    const cycle: CycleRecorder = await openCycle({
+      task,
+      agent,
+      role: cycleRole,
       agentLabel: `${agent.name} · ${agent.model}`,
+      prompt: effectivePrompt,
     });
-    liveMsgId = liveMsg.id;
 
-    let buffer = '';
-    let lastWrite = 0;
-
-    const updateLiveContent = async (force = false) => {
-      if (liveMsgId === null) return;
-      const nowMs = Date.now();
-      if (force || nowMs - lastWrite > 2500) {
-        lastWrite = nowMs;
-        await updateTaskMessageContent(liveMsgId, buffer);
-      }
-    };
-
-    // Load full history for replay
+    // Load full history for replay: handoffs only, never cycle transcripts.
     const historyMessages = (await runQuery(`SELECT * FROM task_messages WHERE taskId = '${task.id}'`)) as TaskMessage[];
     historyMessages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
     // Map history to loop-compatible message records
-    const historyRecords = historyMessages
-      .filter((m) => m.messageType === 'chat' || m.messageType === 'heartbeat' || m.messageType === 'tool_call' || m.messageType === 'review' || m.messageType === 'plan')
+    const historyRecords = filterHandoffMessages(historyMessages)
       .map((m) => ({
         id: randomUUID(),
         v: 1 as const,
@@ -473,6 +459,7 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
       }
     }
 
+    let runFailed = false;
     try {
       await harness.run(
         {
@@ -491,31 +478,21 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
           signal,
         },
         {
-          onChunk: (chunk) => {
-            buffer += chunk;
-            void updateLiveContent();
-          },
-          onToolCall: (id, name, args) => {
-            void addTaskMessage({
-              taskId: task.id,
-              role: 'assistant',
-              messageType: 'tool_call',
-              content: `${name} ${JSON.stringify(args)}`,
-              toolCallId: id,
-            });
-          },
+          ...cycle.callbacks,
           confirmTool: async () => 'once', // Autonomous execution auto-approves tools
         },
       );
+    } catch (runErr) {
+      // A Pause or wall-clock abort is an outcome, not a failure.
+      if (!signal.aborted) runFailed = true;
+      throw runErr;
     } finally {
       if (bridgeToken) revokeBridgeToken(bridgeToken);
       clearTimeout(runTimer);
-    }
-
-    // Finalize live message
-    if (liveMsgId !== null) {
-      await updateTaskMessageContent(liveMsgId, buffer, 'heartbeat');
-      liveMsgId = null;
+      const statusAfter = (await getTaskById(task.id))?.status ?? null;
+      await cycle.close({
+        outcome: resolveCycleOutcome({ role: cycleRole, statusAfter, aborted: signal.aborted, failed: runFailed }),
+      });
     }
 
     // 6. Reload task to evaluate checklist progress
@@ -589,10 +566,6 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
   } catch (err: any) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     console.error(`[task_heartbeat] Task #${task.id} run failed:`, errorMsg);
-
-    if (liveMsgId !== null) {
-      await updateTaskMessageContent(liveMsgId, `⚠️ Heartbeat cycle failed: ${errorMsg}`, 'heartbeat');
-    }
 
     await addTaskMessage({
       taskId: task.id,
@@ -688,6 +661,7 @@ async function runReviewCycle(opts: {
 
   let verdict: 'pass' | 'changes' = 'pass';
   let reviewText = '';
+  let cycle: CycleRecorder | undefined;
   try {
     const review = await runDoneReview({
       agent,
@@ -702,19 +676,30 @@ async function runReviewCycle(opts: {
       maxRunSeconds,
       dockerContainer,
       dockerHasGit,
+      openCycle: (prompt) =>
+        openCycle({ task, agent, role: 'reviewer', agentLabel: `${agent.name} · ${agent.model}`, prompt }),
     });
     verdict = review.verdict;
     reviewText = review.text;
+    cycle = review.cycle;
   } catch (reviewErr) {
     // A broken review must not trap the task in reviewing — finalize as pass.
     console.error(`[task_heartbeat] Task #${task.id} review failed, finalizing:`, reviewErr);
     verdict = 'pass';
   }
 
+  // The review cycle's session closes once its verdict is written (the recap
+  // is the review text), or at once when a Pause lands mid-review.
+  const closeCycle = () =>
+    cycle?.close({
+      outcome: resolveCycleOutcome({ role: 'reviewer', verdict, statusAfter: null, aborted: signal?.aborted ?? false, failed: false }),
+    });
+
   // Respect a Pause that arrived mid-review: only transition if still reviewing.
   const current = await getTaskById(task.id);
   if (!current || current.status !== 'reviewing') {
     console.log(`[task_heartbeat] Task #${task.id} left reviewing mid-review (now ${current?.status}); skipping transition.`);
+    await closeCycle();
     return;
   }
 
@@ -729,6 +714,7 @@ async function runReviewCycle(opts: {
       agentLabel: `${agent.name} · ${agent.model}`,
     });
   }
+  await closeCycle();
   console.log(`[task_heartbeat] Task #${task.id} review round ${round}: ${verdict}`);
 
   if (verdict === 'changes' && round < MAX_REVIEW_ROUNDS) {
