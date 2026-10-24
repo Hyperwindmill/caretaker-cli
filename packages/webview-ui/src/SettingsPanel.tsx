@@ -36,10 +36,11 @@ interface SettingsPanelProps {
   setMcpAuthOutcome: (out: { serverId: string; ok: boolean; error?: string } | null) => void;
   taskRuns?: Record<string, any[]>;
   onClose: () => void;
+  initialTab?: TabId;
 }
 
 
-type TabId = 'providers' | 'projects' | 'agents' | 'plugins' | 'mcp' | 'services' | 'voice' | 'memory';
+export type TabId = 'providers' | 'projects' | 'agents' | 'plugins' | 'mcp' | 'services' | 'voice' | 'memory';
 
 export function SettingsPanel({
   layout = 'compact',
@@ -59,9 +60,10 @@ export function SettingsPanel({
   setMcpAuthOutcome,
   taskRuns = {},
   onClose,
+  initialTab = 'providers',
 }: SettingsPanelProps) {
 
-  const [activeTab, setActiveTab] = useState<TabId>('providers');
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab);
 
   if (!settingsData) {
     return (
