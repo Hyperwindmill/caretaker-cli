@@ -88,6 +88,16 @@ test('aborted mid-turn: the fallback quotes the streamed partial text', async ()
   assert.match(recap.content, /\(aborted\)\. Last output: now editing calc\.py$/);
 });
 
+test('planner cycle: a submitted plan is the handoff, no fallback', async () => {
+  const rec = await cycle.openCycle({ task, agent, role: 'planner', agentLabel: 'P · m', prompt: 'plan it' });
+  await db.addTaskMessage({ taskId: task.id, role: 'assistant', messageType: 'plan', content: 'PLAN-BODY' });
+  await rec.close({ outcome: 'plan' });
+  const recap = (await readCycleSession(rec)).messages.at(-1)!;
+  assert.equal(recap.content, 'PLAN-BODY');
+  const fallbacks = (await taskRows(task.id)).filter((m) => m.content.startsWith('Cycle ended without a handoff note (plan)'));
+  assert.equal(fallbacks.length, 0);
+});
+
 test('close with a handoff recaps it and adds no fallback', async () => {
   const rec = await cycle.openCycle({ task, agent, role: 'developer', agentLabel: 'A · m', prompt: 'p' });
   await db.addTaskMessage({ taskId: task.id, role: 'assistant', messageType: 'chat', content: 'did X, next Y' });
