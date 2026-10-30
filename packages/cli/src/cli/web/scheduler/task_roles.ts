@@ -102,11 +102,12 @@ export const PLANNER_TOOL_DENYLIST = new Set([
   'write',
   'edit',
   'multiedit',
+  'delete',
   ...PLANNER_ALWAYS_DENIED,
 ]);
 
 /** Tools the SDD wrapper applies to: workspace writers that take a `path` arg. */
-const SDD_WRAPPED_TOOLS = new Set(['write', 'edit', 'multiedit']);
+const SDD_WRAPPED_TOOLS = new Set(['write', 'edit', 'multiedit', 'delete']);
 
 /** Wrap a writing tool so it only accepts markdown targets. Everything else
  *  about the tool (schema, sandbox, read-before-write guard) is unchanged —

@@ -91,7 +91,7 @@ The prelude is followed by your agent's own system prompt, then the active plugi
 
 ### A soft filesystem jail
 
-Tools that touch files refuse paths outside the agent's working directory and don't follow symlinks out of it. `write` enforces read-before-write. `edit` and `multiedit` rely on exact `oldString` match as an implicit invariant.
+Tools that touch files refuse paths outside the agent's working directory and don't follow symlinks out of it. `write` enforces read-before-write. `edit` and `multiedit` rely on exact `oldString` match as an implicit invariant. `delete` removes a single file or an empty directory, never recursively.
 
 None of this is a security boundary against an adversary; all of it stops the boring accidents that happen ten times a day. See [SECURITY.md](SECURITY.md) for the honest security model.
 
@@ -302,7 +302,7 @@ inside the container:
 
 ## Built-in tools
 
-Filesystem (sandboxed to the agent's working directory): `read_file`, `write`, `edit`, `multiedit`, `glob`, `grep`. Rich readers: `read_document` (PDF / Word / Excel), `read_image`, `read_attachment`.
+Filesystem (sandboxed to the agent's working directory): `read_file`, `write`, `edit`, `multiedit`, `delete`, `glob`, `grep`. Rich readers: `read_document` (PDF / Word / Excel), `read_image`, `read_attachment`.
 
 Network: `fetch`. Shell: `bash`.
 
