@@ -26,16 +26,16 @@
     "@ricky0123/vad-web": "^0.0.30",
     "lucide-react": "^0.545.0",
     "marked": "^15.0.12",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   },
   "devDependencies": {
-    "@types/node": "^25.5.0",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
+    "@types/node": "^25.9.9",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "caretaker-types": "workspace:*",
-    "esbuild": "^0.28.1",
-    "tsx": "^4.19.2",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3"
   }
 }

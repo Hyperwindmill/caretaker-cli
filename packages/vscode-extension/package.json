@@ -75,19 +75,19 @@
   },
   "dependencies": {
     "@hyperwindmill/caretaker-cli": "workspace:*",
-    "webview-ui": "workspace:*",
     "marked": "^15.0.12",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "webview-ui": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^25.5.0",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
+    "@types/node": "^25.9.9",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "@types/vscode": "^1.95.0",
-    "@vscode/vsce": "^3.6.0",
-    "esbuild": "^0.28.1",
-    "tsx": "^4.21.0",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3"
   }
 }
