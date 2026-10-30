@@ -10,6 +10,7 @@ import { readAttachmentTool } from './read_attachment.js';
 import { writeTool } from './write.js';
 import { editTool } from './edit.js';
 import { multieditTool } from './multiedit.js';
+import { deleteTool } from './delete.js';
 import { globTool } from './glob.js';
 import { grepTool } from './grep.js';
 import { fetchTool } from './fetch.js';
@@ -55,6 +56,7 @@ export function registerBuiltins(registry: ToolRegistry): void {
   registry.register(writeTool);
   registry.register(editTool);
   registry.register(multieditTool);
+  registry.register(deleteTool);
   registry.register(globTool);
   registry.register(grepTool);
   // Network.
