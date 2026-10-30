@@ -1,5 +1,5 @@
 // Git source fetcher for plugin sources. Each source has its own cache dir
-// at ~/.caretaker/plugin-cache/<sourceId> (UUID, no collision with the
+// at $CARETAKER_HOME/plugin-cache/<sourceId> (UUID, no collision with the
 // caretaker server's numeric ids if both run on the same host).
 //
 // Auth tokens stored in the source row are decrypted on demand via

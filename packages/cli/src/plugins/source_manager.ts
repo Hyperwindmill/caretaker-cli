@@ -11,9 +11,8 @@
 
 import { rm } from 'node:fs/promises';
 import * as path from 'node:path';
-import * as os from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { loadPlugins, savePlugins } from '../store/json.js';
+import { dataDir, loadPlugins, savePlugins } from '../store/json.js';
 import { encrypt } from '../lib/encryption.js';
 import { syncManagedMcpServers } from '../mcp/server_manager.js';
 import { syncManagedAgents } from '../agents/sync.js';
@@ -53,7 +52,7 @@ export interface RefreshOutcome {
 const inFlight = new Map<string, Promise<RefreshOutcome>>();
 
 function pluginCacheRoot(): string {
-  return process.env.PLUGIN_CACHE_DIR ?? path.join(os.homedir(), '.caretaker', 'plugin-cache');
+  return process.env.PLUGIN_CACHE_DIR ?? path.join(dataDir(), 'plugin-cache');
 }
 
 function cacheDirForSource(id: string): string {
