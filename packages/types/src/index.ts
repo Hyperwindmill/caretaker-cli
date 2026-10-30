@@ -238,7 +238,7 @@ export type PluginManifestKind = 'cc-marketplace' | 'cc-plugin' | 'skill-glob';
 
 /** A plugin source — a fetchable place that contains one or more plugins
  *  (discovered via the manifest layer). `git` sources are cached under
- *  `~/.caretaker/plugin-cache/<id>`; `path` sources read directly from the
+ *  `$CARETAKER_HOME/plugin-cache/<id>`; `path` sources read directly from the
  *  given absolute directory. */
 export type PluginSource = {
   id: string;

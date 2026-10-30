@@ -10,8 +10,7 @@
 
 import { readFile, stat } from 'node:fs/promises';
 import * as path from 'node:path';
-import * as os from 'node:os';
-import { loadPlugins } from '../store/json.js';
+import { dataDir, loadPlugins } from '../store/json.js';
 import type { PluginRecord, PluginSource, SkillSpec } from '../types.js';
 
 const SKILL_FILE_BYTE_CAP = 100_000;
@@ -32,7 +31,7 @@ function isInside(root: string, candidate: string): boolean {
 }
 
 function pluginCacheRoot(): string {
-  return process.env.PLUGIN_CACHE_DIR ?? path.join(os.homedir(), '.caretaker', 'plugin-cache');
+  return process.env.PLUGIN_CACHE_DIR ?? path.join(dataDir(), 'plugin-cache');
 }
 
 function rootForSource(src: PluginSource): string {

@@ -254,4 +254,24 @@ describe('plugin skill loader (per-file granularity)', () => {
       }
     });
   });
+
+  describe('pluginAbsoluteRoot', () => {
+    // A container with CARETAKER_HOME on a persistent volume lost its git
+    // plugin clones on recreate when the cache followed os.homedir().
+    it('places git sources under CARETAKER_HOME/plugin-cache', async () => {
+      const { plugin, sourceId } = pluginRecord({
+        sourceUrl: 'https://example.invalid/p.git',
+        name: 'p',
+        relPath: 'sub',
+      });
+      await store.savePlugins({
+        sources: [{ id: sourceId, kind: 'git', url: 'https://example.invalid/p.git', refreshOnStart: false }],
+        plugins: [plugin],
+      });
+      assert.equal(
+        await loader.pluginAbsoluteRoot(plugin.id),
+        path.join(testHome, 'plugin-cache', sourceId, 'sub'),
+      );
+    });
+  });
 });
