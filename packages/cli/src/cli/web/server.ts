@@ -882,6 +882,10 @@ export async function startServer(port: number, host: string): Promise<void> {
 
   wss.on('connection', async (ws: WebSocket) => {
     let controller: WebSessionController | null = null;
+    // Set when the agent or its provider changed on disk: the controller holds
+    // the config it was built with, so the next turn rebuilds it (history is
+    // reloaded from disk via currentSessionId). A running turn is never cut.
+    let controllerStale = false;
     let currentAgent: AgentConfig | null = null;
     let currentProvider: ProviderConfig | null = null;
     let currentTools: harness.Tool[] | null = null;
@@ -932,17 +936,19 @@ export async function startServer(port: number, host: string): Promise<void> {
         if (currentAgent) {
           const freshAgent = agents.find((a) => a.id === currentAgent!.id);
           if (freshAgent) {
-            // Detect fields that affect runtime and update them in-place
-            const needsToolRefresh =
-              freshAgent.allowedTools.join('|') !== currentAgent.allowedTools.join('|') ||
-              (freshAgent.plugins ?? []).join('|') !== (currentAgent.plugins ?? []).join('|') ||
-              (freshAgent.mcpServers ?? []).join('|') !== (currentAgent.mcpServers ?? []).join('|');
-
-            // Update currentAgent fields that may have changed
-            currentAgent = { ...freshAgent };
-
-            if (needsToolRefresh && currentProvider) {
-              // Re-resolve tools if allowedTools/plugins/mcpServers changed
+            const r = harness.refreshAgentRuntime(
+              { agent: currentAgent, provider: currentProvider },
+              freshAgent,
+              providers,
+            );
+            if (!r.ok) {
+              post({ type: 'error', message: r.error });
+              return;
+            }
+            currentAgent = r.agent;
+            currentProvider = r.provider;
+            if (r.changed) controllerStale = true;
+            if (r.toolsChanged) {
               currentTools = await harness.resolveAgentTools(currentAgent, harness.tools);
               post({ type: 'contextUsage', usage: controller?.getContextUsage() ?? null });
             }
@@ -1096,6 +1102,10 @@ export async function startServer(port: number, host: string): Promise<void> {
               ? currentAgent.workingDir.trim()
               : process.cwd();
 
+            if (controllerStale && !controller?.isRunning) {
+              controller = null;
+              controllerStale = false;
+            }
             if (!controller) {
               controller = new WebSessionController({
                 agent: currentAgent,

@@ -74,6 +74,10 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
 
   private view: vscode.WebviewView | null = null;
   private controller: ChatSessionController | null = null;
+  /** Set when the agent or its provider changed on disk: the controller holds
+   *  the config it was built with, so the next turn rebuilds it (history is
+   *  reloaded from disk via currentSessionId). A running turn is never cut. */
+  private controllerStale = false;
   private currentAgent: AgentConfig | null = null;
   private currentProvider: ProviderConfig | null = null;
   private currentTools: harness.Tool[] | null = null;
@@ -227,18 +231,19 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
       if (this.currentAgent) {
         const freshAgent = this.agents.find((a) => a.id === this.currentAgent!.id);
         if (freshAgent) {
-          // Detect fields that affect runtime and update them in-place
-          const needsToolRefresh =
-            freshAgent.allowedTools.join('|') !== this.currentAgent.allowedTools.join('|') ||
-            (freshAgent.plugins ?? []).join('|') !== (this.currentAgent.plugins ?? []).join('|') ||
-            (freshAgent.mcpServers ?? []).join('|') !==
-              (this.currentAgent.mcpServers ?? []).join('|');
-
-          // Update currentAgent fields that may have changed
-          this.currentAgent = { ...freshAgent };
-
-          if (needsToolRefresh && this.currentProvider) {
-            // Re-resolve tools if allowedTools/plugins/mcpServers changed
+          const r = harness.refreshAgentRuntime(
+            { agent: this.currentAgent, provider: this.currentProvider },
+            freshAgent,
+            providers,
+          );
+          if (!r.ok) {
+            this.post(webview, { type: 'error', message: r.error });
+            return;
+          }
+          this.currentAgent = r.agent;
+          this.currentProvider = r.provider;
+          if (r.changed) this.controllerStale = true;
+          if (r.toolsChanged) {
             this.currentTools = await harness.resolveAgentTools(this.currentAgent, harness.tools);
             this.post(webview, {
               type: 'contextUsage',
@@ -598,6 +603,10 @@ export class SidebarWebviewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
+    if (this.controllerStale && !this.controller?.isRunning) {
+      this.controller = null;
+      this.controllerStale = false;
+    }
     if (!this.controller) {
       this.controller = new ChatSessionController({
         agent: this.currentAgent,
