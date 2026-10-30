@@ -129,9 +129,9 @@ test('activationStatus: planning when enabled and no plan message; active once a
   assert.equal(await activationStatus(t2, makeProject()), 'active');
 });
 
-test('filterPlannerTools strips write/edit/multiedit/delete/bash and keeps the rest', () => {
+test('filterPlannerTools strips write/edit/multiedit/delete/move/bash and keeps the rest', () => {
   const mk = (name: string): Tool => ({ name, description: '', parameters: { type: 'object', properties: {} }, execute: async () => ({ content: '' }) });
-  const tools = ['read_file', 'glob', 'grep', 'write', 'edit', 'multiedit', 'delete', 'bash', 'mcp__task__task_get_state'].map(mk);
+  const tools = ['read_file', 'glob', 'grep', 'write', 'edit', 'multiedit', 'delete', 'move', 'bash', 'mcp__task__task_get_state'].map(mk);
   const filtered = filterPlannerTools(tools).map((t) => t.name);
   assert.deepEqual(filtered, ['read_file', 'glob', 'grep', 'mcp__task__task_get_state']);
 });
@@ -155,8 +155,8 @@ test('filterPlannerTools with sdd: bash stripped, write/edit/multiedit wrapped m
       return { content: 'ok' };
     },
   });
-  const tools = filterPlannerTools(['write', 'edit', 'multiedit', 'delete', 'bash', 'read_file'].map(mk), true);
-  assert.deepEqual(tools.map((t) => t.name), ['write', 'edit', 'multiedit', 'delete', 'read_file']);
+  const tools = filterPlannerTools(['write', 'edit', 'multiedit', 'delete', 'move', 'bash', 'read_file'].map(mk), true);
+  assert.deepEqual(tools.map((t) => t.name), ['write', 'edit', 'multiedit', 'delete', 'move', 'read_file']);
 
   const ctx = { signal: new AbortController().signal, workingDir: '/w', readPaths: new Set<string>() } as any;
   const write = tools.find((t) => t.name === 'write')!;
@@ -182,11 +182,17 @@ test('filterPlannerTools with sdd: bash stripped, write/edit/multiedit wrapped m
   const del = tools.find((t) => t.name === 'delete')!;
   assert.ok((await del.execute({ path: 'src/a.ts' }, ctx)).content.startsWith('Error:'));
   assert.equal((await del.execute({ path: 'docs/old.md' }, ctx)).content, 'ok');
+
+  // move: both ends must be markdown, or a spec could be renamed into source.
+  const mv = tools.find((t) => t.name === 'move')!;
+  assert.ok((await mv.execute({ from: 'docs/a.md', to: 'src/a.ts' }, ctx)).content.startsWith('Error:'));
+  assert.ok((await mv.execute({ from: 'src/a.ts', to: 'docs/a.md' }, ctx)).content.startsWith('Error:'));
+  assert.equal((await mv.execute({ from: 'docs/a.md', to: 'docs/specs/a.md' }, ctx)).content, 'ok');
 });
 
 test('filterPlannerTools without sdd still strips every writer (regression)', () => {
   const mk = (name: string): Tool => ({ name, description: '', parameters: { type: 'object', properties: {} }, execute: async () => ({ content: '' }) });
-  const filtered = filterPlannerTools(['write', 'edit', 'multiedit', 'delete', 'bash', 'grep'].map(mk));
+  const filtered = filterPlannerTools(['write', 'edit', 'multiedit', 'delete', 'move', 'bash', 'grep'].map(mk));
   assert.deepEqual(filtered.map((t) => t.name), ['grep']);
 });
 import { resolveDockerImage } from './task_roles.js';

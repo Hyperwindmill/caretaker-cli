@@ -103,11 +103,13 @@ export const PLANNER_TOOL_DENYLIST = new Set([
   'edit',
   'multiedit',
   'delete',
+  'move',
   ...PLANNER_ALWAYS_DENIED,
 ]);
 
-/** Tools the SDD wrapper applies to: workspace writers that take a `path` arg. */
-const SDD_WRAPPED_TOOLS = new Set(['write', 'edit', 'multiedit', 'delete']);
+/** Tools the SDD wrapper applies to: workspace writers that take a `path`
+ *  arg (`move`: `from` + `to`). */
+const SDD_WRAPPED_TOOLS = new Set(['write', 'edit', 'multiedit', 'delete', 'move']);
 
 /** Wrap a writing tool so it only accepts markdown targets. Everything else
  *  about the tool (schema, sandbox, read-before-write guard) is unchanged —
@@ -117,8 +119,9 @@ function markdownOnly(tool: Tool): Tool {
     ...tool,
     description: `${tool.description} In this planning phase, only markdown (.md) files are accepted.`,
     execute: async (args, ctx) => {
-      const p = (args as { path?: unknown }).path;
-      if (typeof p !== 'string' || !p.toLowerCase().endsWith('.md')) {
+      const a = args as Record<string, unknown>;
+      const paths = ['path', 'from', 'to'].filter((k) => k in a).map((k) => a[k]);
+      if (paths.length === 0 || paths.some((p) => typeof p !== 'string' || !p.toLowerCase().endsWith('.md'))) {
         return { content: 'Error: planning phase (SDD mode): only markdown (.md) files may be written.' };
       }
       return tool.execute(args, ctx);
