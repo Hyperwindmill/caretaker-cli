@@ -1,5 +1,17 @@
 # caretaker-cli
 
+## 0.27.0
+
+### Minor Changes
+
+- 73db5fd: New native `delete` tool: removes a file or an empty directory inside the agent's working directory, so agents without `bash` can clean up. It is never recursive and refuses the working directory itself. Off by default like every other tool (opt it in from the tool picker). The planner role never gets it, except in SDD mode, where it may delete markdown files only.
+- 963c399: New native `move` tool: moves or renames a file or directory inside the agent's working directory, creating the destination's parent directories. It never overwrites: an existing destination is refused. Off by default like every other tool. The planner role never gets it, except in SDD mode, where both the source and the destination must be markdown files.
+
+### Patch Changes
+
+- 0981c22: Changing an agent's provider while its chat was open in the web GUI, the desktop app or the VSCode sidebar no longer runs the new model against the old provider. The selected agent's provider is now re-resolved whenever the config changes on disk. An already-open conversation also picks up the new agent, provider and tool settings on its next turn instead of keeping the old ones until another session is selected; a turn already running finishes on the settings it started with.
+- be282d4: Git plugin sources are now cached under `$CARETAKER_HOME/plugin-cache` instead of `~/.caretaker/plugin-cache`. With `CARETAKER_HOME` on a persistent volume (the `caretaker-web` container), the clones used to live in the container's own home and were lost on every recreate, so plugin MCP servers failed with "Connection closed" until a refresh succeeded. Nothing changes when `CARETAKER_HOME` is unset. When it is set, refresh each git source once (or rely on refresh-on-start) to re-clone into the new location. `PLUGIN_CACHE_DIR` still overrides.
+
 ## 0.26.1
 
 ### Patch Changes

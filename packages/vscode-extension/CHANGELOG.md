@@ -1,5 +1,17 @@
 # caretaker-vscode
 
+## 0.27.0
+
+### Patch Changes
+
+- 0981c22: Changing an agent's provider while its chat was open in the web GUI, the desktop app or the VSCode sidebar no longer runs the new model against the old provider. The selected agent's provider is now re-resolved whenever the config changes on disk. An already-open conversation also picks up the new agent, provider and tool settings on its next turn instead of keeping the old ones until another session is selected; a turn already running finishes on the settings it started with.
+- Updated dependencies [0981c22]
+- Updated dependencies [73db5fd]
+- Updated dependencies [963c399]
+- Updated dependencies [be282d4]
+  - @hyperwindmill/caretaker-cli@0.27.0
+  - webview-ui@0.27.0
+
 ## 0.26.1
 
 ### Patch Changes
