@@ -9,14 +9,17 @@ allowBuilds:
 # Security pins (moved here from package.json#pnpm.overrides — pnpm 10+ reads
 # these from pnpm-workspace.yaml, not package.json). Values starting with `>`
 # must be quoted (leading `>` is a YAML block-scalar indicator).
+# Always caret, never an open `>=`: an uncapped floor resolves to the next
+# major on a fresh lock (js-yaml 5 dropped its default export and broke
+# @morphql/core; undici 8 and markdown-it 15 followed the same way).
 overrides:
-  undici: '>=7.28.0'
-  form-data: '>=4.0.6'
-  tmp: '>=0.2.6'
-  lodash-es: '>=4.18.0'
-  markdown-it: '>=14.2.0'
+  undici: '^7.30.1'
+  form-data: '^4.0.6'
+  tmp: '^0.2.6'
+  lodash-es: '^4.18.0'
+  markdown-it: '^14.3.3'
   linkify-it: '^5.0.1'
-  qs: '>=6.15.2'
-  js-yaml: '>=4.2.0'
-  'read-yaml-file>js-yaml': '^3.14.1'
-  esbuild: '>=0.28.1'
+  qs: '^6.16.0'
+  js-yaml: '^4.3.2'
+  'read-yaml-file>js-yaml': '^3.15.2'
+  esbuild: '^0.28.1'
