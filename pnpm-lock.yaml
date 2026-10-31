@@ -76,8 +76,8 @@ importers:
         specifier: ^1.13.0
         version: 1.13.0
       marked:
-        specifier: ^15.0.12
-        version: 15.0.12
+        specifier: ^18.1.2
+        version: 18.1.2
       nodemailer:
         specifier: ^10.3.1
         version: 10.3.1
@@ -183,8 +183,8 @@ importers:
         specifier: workspace:*
         version: link:../cli
       marked:
-        specifier: ^15.0.12
-        version: 15.0.12
+        specifier: ^18.1.2
+        version: 18.1.2
       react:
         specifier: ^19.3.1
         version: 19.3.1
@@ -229,8 +229,8 @@ importers:
         specifier: ^1.64.0
         version: 1.64.0(@types/react@19.3.0)(react@19.3.1)
       marked:
-        specifier: ^15.0.12
-        version: 15.0.12
+        specifier: ^18.1.2
+        version: 18.1.2
       react:
         specifier: ^19.3.1
         version: 19.3.1
@@ -2802,9 +2802,9 @@ packages:
     resolution: {integrity: sha512-L//tDAkjTjJCU6pBUSBTgs3Kg4InVaZuUZog/b6V12UKhcDQ7S78877ibbCanRExwPuYP1CZD7Gd2dxSy1GXRg==}
     hasBin: true
 
-  marked@15.0.12:
-    resolution: {integrity: sha512-8dD6FusOQSrpv9Z1rdNMdlSgQOIP880DHqnohobOmYLElGEqAL/JvxvuxZO16r4HtjTlfPRDC1hbvxC9dPN2nA==}
-    engines: {node: '>= 18'}
+  marked@18.1.2:
+    resolution: {integrity: sha512-DfOnvLAQ6WYeWxWO1u4RyFOeqyHup6dks5PPqnoFiooU7ipRvidO/2j8plhAHIiZg574E9ZlzSjUiPMLAzFkgg==}
+    engines: {node: '>= 20'}
     hasBin: true
 
   matcher@3.0.0:
@@ -7327,7 +7327,7 @@ snapshots:
       punycode.js: 2.3.1
       uc.micro: 2.1.0
 
-  marked@15.0.12: {}
+  marked@18.1.2: {}
 
   matcher@3.0.0:
     dependencies:
