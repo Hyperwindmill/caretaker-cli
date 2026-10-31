@@ -7,6 +7,10 @@
 // Handlers are registered once per child at client() construction and route
 // through a mutable `binding` the runner sets at turn start — turns on one
 // session are serialized by the surfaces, so there is no race.
+//
+// Every ACP import goes through `@agentclientprotocol/sdk/unstable`: prompt
+// `usage` (the context-window %) is an unstable ACP v1 feature, and SDK 2.x
+// exposes only stable schemas and types from the package root.
 
 import { spawn as nodeSpawn } from 'node:child_process';
 import { Readable, Writable } from 'node:stream';
@@ -21,7 +25,7 @@ import {
   type RequestPermissionResponse,
   type SessionNotification,
   type Usage,
-} from '@agentclientprotocol/sdk';
+} from '@agentclientprotocol/sdk/unstable';
 import type { ProviderConfig } from '../types.js';
 import { mergeShellEnv } from './tools/builtin/shell-env.js';
 

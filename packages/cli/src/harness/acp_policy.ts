@@ -7,7 +7,7 @@ import type {
   PermissionOption,
   RequestPermissionRequest,
   RequestPermissionResponse,
-} from '@agentclientprotocol/sdk';
+} from '@agentclientprotocol/sdk/unstable';
 import type { ConfirmDecision } from './tools/index.js';
 
 export type AcpPolicyMode = 'interactive' | 'unattended' | 'planner' | 'deny-all';

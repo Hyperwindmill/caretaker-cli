@@ -5,8 +5,8 @@ process.env.CARETAKER_HOME = mkdtempSync(path.join(os.tmpdir(), 'ct-acprun-'));
 
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { agent as acpAgent, PROTOCOL_VERSION, RequestError } from '@agentclientprotocol/sdk';
-import type { PromptRequest, RequestPermissionRequest } from '@agentclientprotocol/sdk';
+import { agent as acpAgent, PROTOCOL_VERSION, RequestError } from '@agentclientprotocol/sdk/unstable';
+import type { PromptRequest, RequestPermissionRequest } from '@agentclientprotocol/sdk/unstable';
 import { runAcp } from './acp_runner.js';
 import { __setConnector, __resetConnector, __shutdownAcpPool } from './acp_pool.js';
 import { createSession, readSession } from '../session/store.js';

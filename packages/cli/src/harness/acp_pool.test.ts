@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { agent, PROTOCOL_VERSION } from '@agentclientprotocol/sdk';
+import { agent, PROTOCOL_VERSION } from '@agentclientprotocol/sdk/unstable';
 import {
   acquireAcpAgent,
   releaseAcpAgent,

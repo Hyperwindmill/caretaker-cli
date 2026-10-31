@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { decidePermission, buildPermissionResponse, acpTaskExtras } from './acp_policy.js';
-import type { PermissionOption, RequestPermissionRequest } from '@agentclientprotocol/sdk';
+import type { PermissionOption, RequestPermissionRequest } from '@agentclientprotocol/sdk/unstable';
 
 const req = (kind: string | null, locations?: { path: string }[]): RequestPermissionRequest => ({
   sessionId: 's1',
