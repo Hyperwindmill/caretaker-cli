@@ -114,7 +114,7 @@
     "fast-glob": "^3.3.3",
     "hono": "^4.13.14",
     "imapflow": "^2.10.0",
-    "ink": "^7.1.1",
+    "ink": "^8.0.0",
     "ink-select-input": "^6.2.0",
     "ink-text-input": "^6.0.0",
     "isomorphic-git": "^1.44.8",
