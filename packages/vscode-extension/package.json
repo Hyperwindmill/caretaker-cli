@@ -15,7 +15,7 @@
   },
   "engines": {
     "vscode": "^1.144.0",
-    "node": ">=20"
+    "node": ">=22"
   },
   "main": "./dist/extension.js",
   "categories": [
@@ -81,7 +81,7 @@
     "webview-ui": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^25.9.9",
+    "@types/node": "^22.20.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/vscode": "^1.144.0",

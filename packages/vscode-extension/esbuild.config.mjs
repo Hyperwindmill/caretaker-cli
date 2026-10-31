@@ -15,7 +15,7 @@ const extensionOpts = {
   entryPoints: ['src/extension.ts'],
   bundle: true,
   platform: 'node',
-  target: 'node20',
+  target: 'node22',
   format: 'cjs',
   outfile: 'dist/extension.js',
   external: ['vscode'],
