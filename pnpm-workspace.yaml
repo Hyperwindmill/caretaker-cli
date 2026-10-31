@@ -1,5 +1,9 @@
 packages:
   - 'packages/*'
+# Explicit so local resolution matches CI: a machine-wide override (e.g.
+# minimumReleaseAge: 0 in ~/.config/pnpm/config.yaml) would otherwise let
+# `pnpm update` lock day-old releases that CI's --frozen-lockfile rejects.
+minimumReleaseAge: 1440
 allowBuilds:
   '@vscode/vsce-sign': true
   electron-winstaller: true
