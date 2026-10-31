@@ -20,7 +20,7 @@ import type {
   Usage,
   SessionModeState,
   NewSessionResponse,
-} from '@agentclientprotocol/sdk';
+} from '@agentclientprotocol/sdk/unstable';
 import type { RunOptions, RunCallbacks, RunResult } from './loop.js';
 import type { AssistantUsage } from './provider.js';
 import type { AssistantPart } from '../session/types.js';
