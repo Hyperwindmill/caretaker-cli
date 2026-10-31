@@ -1,5 +1,26 @@
 # caretaker-cli
 
+## 0.28.0
+
+### Minor Changes
+
+- 72edc90: Node 22.12 or newer is now required (was Node 20, end-of-life since April 2026). The desktop app and the VSCode extension already ran on Node 24 through their bundled Electron, so only npm installs on Node 20 are affected.
+
+### Patch Changes
+
+- 18ca193: Agent Client Protocol SDK upgraded to 2.x. External ACP agents (claude-agent-acp, Antigravity, …) behave as before, including per-turn token usage for the agents that report it.
+- c9b7844: commander upgraded to 15. No change to the `run`, `web`, `mcp` or `config claude` subcommands; unknown commands now also report excess arguments in the error message.
+- abebe49: Dependencies refreshed to their latest in-range versions (hono, @hono/node-server, MCP SDK, nodemailer, undici, electron 42.x and transitive packages), clearing most open security advisories. Security overrides are now caret-capped so a fresh lockfile can no longer jump them to a breaking major.
+- f35baba: Desktop app moves from Electron 42 to 45 (Chromium update, bundled Node 24.22). Platform floor rises with it: macOS 13 Ventura or newer, 64-bit only (no Windows ia32 or Linux armv7l builds), and no Unity desktop on Linux.
+- 618f325: imapflow upgraded to 2.x (now ships its own TypeScript types). No change to `email_fetch`: sender allowlist, unread-on-refusal and `\Seen`-on-delivery behave as before.
+- e374f22: TUI renderer (ink) upgraded to 8: less flicker on incremental redraws and better terminal-history preservation on clear. Menus, forms and keyboard handling are unchanged.
+- 0a6ad19: Icon library (lucide-react) upgraded to 1.x. Same icons; they are now `aria-hidden` by default, so screen readers skip them as decoration.
+- e4d8a98: Markdown renderer (marked) upgraded from 15 to 18 for chat bubbles and `email_send` with `markdown: true`. Rendered output is unchanged apart from insignificant whitespace inside raw HTML blocks.
+- 82c975b: nodemailer upgraded to 10.x, closing seven security advisories (address-parser denial of service, DKIM header unfolding, cross-transport TLS servername reuse). No behaviour change for `email_send`.
+- 085864e: Security override for `tar` (pulled in by the desktop packager's node-gyp) raised to the patched 7.5.x release.
+- 160aa5e: VSCode extension packager (vsce) upgraded to 4. The VSIX contents are unchanged.
+- f8b19e9: The VSCode extension now requires VSCode 1.144 or newer (`engines.vscode` and `@types/vscode` raised together from 1.95). Forks that track an older VSCode base may refuse to install it until they catch up.
+
 ## 0.27.0
 
 ### Minor Changes
