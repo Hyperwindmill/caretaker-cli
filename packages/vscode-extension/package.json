@@ -15,7 +15,7 @@
   },
   "engines": {
     "vscode": "^1.144.0",
-    "node": ">=22"
+    "node": ">=22.12.0"
   },
   "main": "./dist/extension.js",
   "categories": [

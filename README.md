@@ -238,7 +238,7 @@ caretaker-cli mcp                      # stdio MCP server: task/project tools fo
 caretaker-cli config claude            # register the MCP server in your Claude Code (user scope)
 ```
 
-Requires Node ≥ 22. Electron desktop and VSCode sidebar builds are attached to each [GitHub Release](https://github.com/Hyperwindmill/caretaker-cli/releases).
+Requires Node ≥ 22.12. Electron desktop and VSCode sidebar builds are attached to each [GitHub Release](https://github.com/Hyperwindmill/caretaker-cli/releases).
 
 On first run: pick **Providers → New**, paste your base URL and key, save. Then **Agents → New**, choose a model, name the agent, set a working directory, pick your tools, write a system prompt, and start chatting.
 
