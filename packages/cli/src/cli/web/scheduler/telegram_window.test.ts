@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, existsSync } from 'node:fs';
+import { writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -17,6 +18,9 @@ const {
   noTextLine,
   buildMergedPrompt,
   telegramSessionId,
+  pendingStatePath,
+  loadPendingState,
+  savePendingState,
 } = await import('./telegram_window.js');
 
 type Entry = Parameters<typeof isAtCapacity>[0]['entries'][number];
@@ -114,4 +118,40 @@ test('buildMergedPrompt gives each entry its own From line when senders differ',
 test('telegramSessionId is the stable telegram_<chatId> form', () => {
   assert.equal(telegramSessionId(7), 'telegram_7');
   assert.equal(telegramSessionId(-100123), 'telegram_-100123');
+});
+
+// --- persistence (Task 2) ---
+// Declaration order matters: the scheduler-logs test below asserts the
+// directory is still absent, so no earlier test may write to disk.
+
+test('loadPendingState returns empty state when no file exists', async () => {
+  assert.deepEqual(await loadPendingState('task_none'), { v: 1, chats: {} });
+});
+
+test('savePendingState creates scheduler-logs when missing', async () => {
+  assert.equal(existsSync(join(process.env.CARETAKER_HOME!, 'scheduler-logs')), false);
+  await savePendingState('task_mkdir', { v: 1, chats: {} });
+  assert.equal(existsSync(join(process.env.CARETAKER_HOME!, 'scheduler-logs')), true);
+});
+
+test('savePendingState round-trips a buffered chat', async () => {
+  const state = {
+    v: 1 as const,
+    chats: {
+      '7': chat({ entries: [entry({ text: 'ciao', attachments: [image] })], lastFlushAt: 42 }),
+    },
+  };
+  await savePendingState('task_rt', state);
+  assert.deepEqual(await loadPendingState('task_rt'), state);
+});
+
+test('loadPendingState returns empty state on corrupt JSON', async () => {
+  await mkdir(join(process.env.CARETAKER_HOME!, 'scheduler-logs'), { recursive: true });
+  await writeFile(pendingStatePath('task_corrupt'), '{ not json', 'utf8');
+  assert.deepEqual(await loadPendingState('task_corrupt'), { v: 1, chats: {} });
+});
+
+test('loadPendingState returns empty state on an unknown version', async () => {
+  await writeFile(pendingStatePath('task_v2'), JSON.stringify({ v: 2, chats: {} }), 'utf8');
+  assert.deepEqual(await loadPendingState('task_v2'), { v: 1, chats: {} });
 });

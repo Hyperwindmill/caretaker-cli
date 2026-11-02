@@ -1,4 +1,9 @@
+import { existsSync } from 'node:fs';
+import { writeFile, readFile, rename } from 'node:fs/promises';
+import { join } from 'node:path';
+
 import type { ToolAttachmentRecord } from '../../../session/types.js';
+import { schedulerLogsDir, ensureSchedulerLogsDir } from './logs.js';
 
 /** How long a caption-less image waits for text in a cold chat. */
 export const HOLD_MS = 180_000;
@@ -91,4 +96,59 @@ export function buildMergedPrompt(chat: PendingChat, isNewSession: boolean): str
     (e) => `From: ${e.fromLabel}\n\n${e.text || noTextLine(e.attachments.length || 1)}`,
   );
   return (isNewSession ? `${chatBlock}\n\n` : '') + blocks.join('\n\n');
+}
+
+export function pendingStatePath(taskId: string): string {
+  return join(schedulerLogsDir(), `${taskId}.pending.json`);
+}
+
+/**
+ * tmp + rename, with the Windows-style transient lock retry. Shared with
+ * saveTelegramOffset so the retry policy lives in one place.
+ */
+export async function atomicWriteFile(path: string, contents: string): Promise<void> {
+  const tmpPath = `${path}.tmp.${process.pid}.${Date.now()}`;
+  await writeFile(tmpPath, contents, 'utf8');
+
+  const maxAttempts = process.platform === 'win32' ? 5 : 1;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await rename(tmpPath, path);
+      return;
+    } catch (err) {
+      lastErr = err;
+      const code = (err as NodeJS.ErrnoException).code;
+      const retryable = code === 'EACCES' || code === 'EPERM' || code === 'EBUSY';
+      if (attempt === maxAttempts || !retryable) break;
+      await new Promise((r) => setTimeout(r, 50 * 2 ** (attempt - 1)));
+    }
+  }
+  throw lastErr;
+}
+
+/**
+ * The buffer must survive a restart: the Telegram offset is committed before
+ * an entry is buffered, so losing the file loses the message. Anything
+ * unreadable degrades to an empty window rather than wedging the poller.
+ */
+export async function loadPendingState(taskId: string): Promise<PendingState> {
+  const path = pendingStatePath(taskId);
+  if (!existsSync(path)) return { v: 1, chats: {} };
+  try {
+    const parsed = JSON.parse(await readFile(path, 'utf8'));
+    if (!parsed || parsed.v !== 1 || typeof parsed.chats !== 'object' || parsed.chats === null) {
+      console.error(`[scheduler/telegram] Unusable pending state at ${path}, starting empty`);
+      return { v: 1, chats: {} };
+    }
+    return parsed as PendingState;
+  } catch (err) {
+    console.error(`[scheduler/telegram] Failed to read pending state ${path}:`, err);
+    return { v: 1, chats: {} };
+  }
+}
+
+export async function savePendingState(taskId: string, state: PendingState): Promise<void> {
+  await ensureSchedulerLogsDir();
+  await atomicWriteFile(pendingStatePath(taskId), JSON.stringify(state));
 }

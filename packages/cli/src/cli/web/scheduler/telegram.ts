@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { writeFile, readFile, rename } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 
 import * as harness from '../../../harness/index.js';
 import { loadAgents, loadConfig } from '../../../store/json.js';
@@ -17,33 +17,14 @@ import type { ServiceConfig } from '../../../types.js';
 import { decrypt, isEncrypted } from '../../../lib/encryption.js';
 import { schedulerLogsDir, ensureSchedulerLogsDir } from './logs.js';
 import { runningTasks } from './locks.js';
+import { atomicWriteFile } from './telegram_window.js';
 import type { SchedulerStrategy } from './strategy.js';
 
 export async function saveTelegramOffset(taskId: string, updateId: number): Promise<void> {
   // The offset is committed before any run is logged, so this can be the very
   // first write into scheduler-logs/ — the dir may not exist yet.
   await ensureSchedulerLogsDir();
-  const path = join(schedulerLogsDir(), `${taskId}.offset`);
-  const tmpPath = `${path}.tmp.${process.pid}.${Date.now()}`;
-  await writeFile(tmpPath, String(updateId), 'utf8');
-
-  // Same rationale as store/json.ts writeJson: retry rename on Windows-style
-  // transient lock errors before propagating.
-  const maxAttempts = process.platform === 'win32' ? 5 : 1;
-  let lastErr: unknown;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      await rename(tmpPath, path);
-      return;
-    } catch (err) {
-      lastErr = err;
-      const code = (err as NodeJS.ErrnoException).code;
-      const retryable = code === 'EACCES' || code === 'EPERM' || code === 'EBUSY';
-      if (attempt === maxAttempts || !retryable) break;
-      await new Promise((r) => setTimeout(r, 50 * 2 ** (attempt - 1)));
-    }
-  }
-  throw lastErr;
+  await atomicWriteFile(join(schedulerLogsDir(), `${taskId}.offset`), String(updateId));
 }
 
 export async function loadTelegramOffset(taskId: string): Promise<number | undefined> {
