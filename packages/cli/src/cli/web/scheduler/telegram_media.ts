@@ -1,3 +1,8 @@
+import { basename, extname } from 'node:path';
+
+import { saveAttachment } from '../../../session/store.js';
+import type { ToolAttachmentRecord } from '../../../session/types.js';
+
 export interface TgPhotoSize {
   file_id: string;
   file_size?: number;
@@ -88,4 +93,68 @@ export function messageText(msg: TgMessage): string | undefined {
 export function senderLabel(msg: TgMessage): string {
   if (msg.from?.username) return `@${msg.from.username}`;
   return msg.from?.first_name || 'unknown';
+}
+
+/** Telegram's bot API will not serve a download above this. */
+export const MAX_FILE_BYTES = 20 * 1024 * 1024;
+
+export class FileTooLargeError extends Error {
+  constructor(public readonly size: number) {
+    super(
+      `image is ${(size / 1024 / 1024).toFixed(1)} MB, over the ${MAX_FILE_BYTES / 1024 / 1024} MB Telegram download limit`,
+    );
+    this.name = 'FileTooLargeError';
+  }
+}
+
+const MIME_BY_EXT: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.bmp': 'image/bmp',
+  '.heic': 'image/heic',
+};
+
+/**
+ * Fetches the image and stores it in the chat's session attachment folder, so
+ * it is on disk before the window decides whether the turn runs now or in
+ * three minutes. `fetchImpl` keeps the tests off the network.
+ */
+export async function downloadImage(
+  token: string,
+  sessionId: string,
+  media: { fileId: string; fileSize?: number },
+  deps: { fetchImpl?: typeof fetch } = {},
+): Promise<ToolAttachmentRecord> {
+  if (media.fileSize !== undefined && media.fileSize > MAX_FILE_BYTES) {
+    throw new FileTooLargeError(media.fileSize);
+  }
+
+  const doFetch = deps.fetchImpl ?? fetch;
+  const metaRes = await doFetch(`https://api.telegram.org/bot${token}/getFile`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file_id: media.fileId }),
+  });
+  const meta = (await metaRes.json()) as {
+    ok: boolean;
+    result?: { file_path?: string };
+    description?: string;
+  };
+  if (!meta.ok || !meta.result?.file_path) {
+    throw new Error(`Telegram API getFile failed: ${meta.description ?? 'no file_path'}`);
+  }
+
+  const filePath = meta.result.file_path;
+  const fileRes = await doFetch(`https://api.telegram.org/file/bot${token}/${filePath}`);
+  if (!fileRes.ok) {
+    throw new Error(`Telegram file download failed with status ${fileRes.status}`);
+  }
+
+  const buf = Buffer.from(await fileRes.arrayBuffer());
+  const ext = (extname(filePath) || '.jpg').toLowerCase();
+  const id = await saveAttachment(sessionId, buf, ext);
+  return { mime: MIME_BY_EXT[ext] ?? 'image/jpeg', id, name: basename(filePath) };
 }

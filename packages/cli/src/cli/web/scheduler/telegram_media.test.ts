@@ -1,15 +1,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 // File-scope isolation: dataDir() reads CARETAKER_HOME at call time.
 process.env.CARETAKER_HOME = mkdtempSync(join(tmpdir(), 'ct-tgmedia-'));
 
-const { classifyMessage, selectImage, messageText, senderLabel } = await import(
-  './telegram_media.js'
-);
+const {
+  classifyMessage,
+  selectImage,
+  messageText,
+  senderLabel,
+  downloadImage,
+  FileTooLargeError,
+  MAX_FILE_BYTES,
+} = await import('./telegram_media.js');
+const { attachmentsDir } = await import('../../../session/store.js');
 
 type Msg = Parameters<typeof classifyMessage>[0];
 
@@ -99,4 +106,60 @@ test('senderLabel prefers username over first_name', () => {
   assert.equal(senderLabel(msg({ from: { id: 1, first_name: 'Ada', username: 'ada' } })), '@ada');
   assert.equal(senderLabel(msg({ from: { id: 1, first_name: 'Ada' } })), 'Ada');
   assert.equal(senderLabel(msg()), 'unknown');
+});
+
+// --- download (Task 4) ---
+
+/** A fetch stub that answers getFile once, then the file bytes. */
+function stubFetch(filePath: string | null, bytes = Buffer.from('PNGDATA')) {
+  const calls: string[] = [];
+  const impl = (async (url: any) => {
+    calls.push(String(url));
+    if (String(url).includes('/getFile')) {
+      return {
+        json: async () =>
+          filePath === null
+            ? { ok: false, description: 'file not found' }
+            : { ok: true, result: { file_path: filePath } },
+      } as any;
+    }
+    return { ok: true, arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) } as any;
+  }) as unknown as typeof fetch;
+  return { impl, calls };
+}
+
+test('downloadImage refuses an oversized file before any request', async () => {
+  const fetchImpl = (() => {
+    throw new Error('network must not be touched');
+  }) as unknown as typeof fetch;
+  await assert.rejects(
+    () =>
+      downloadImage('tok', 'telegram_7', { fileId: 'f', fileSize: MAX_FILE_BYTES + 1 }, { fetchImpl }),
+    FileTooLargeError,
+  );
+});
+
+test('downloadImage stores the bytes and returns an attachment record', async () => {
+  const { impl, calls } = stubFetch('photos/x.png');
+  const rec = await downloadImage('tok', 'telegram_7', { fileId: 'f' }, { fetchImpl: impl });
+  assert.equal(rec.mime, 'image/png');
+  assert.match(rec.id, /\.png$/);
+  assert.equal(existsSync(join(attachmentsDir('telegram_7'), rec.id)), true);
+  assert.equal(calls.length, 2);
+  assert.match(calls[1]!, /\/file\/bottok\/photos\/x\.png$/);
+});
+
+test('downloadImage falls back to .jpg when file_path has no extension', async () => {
+  const { impl } = stubFetch('photos/noext');
+  const rec = await downloadImage('tok', 'telegram_7', { fileId: 'f' }, { fetchImpl: impl });
+  assert.equal(rec.mime, 'image/jpeg');
+  assert.match(rec.id, /\.jpg$/);
+});
+
+test('downloadImage propagates a failed getFile', async () => {
+  const { impl } = stubFetch(null);
+  await assert.rejects(
+    () => downloadImage('tok', 'telegram_7', { fileId: 'f' }, { fetchImpl: impl }),
+    /file not found/,
+  );
 });
