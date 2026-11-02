@@ -18,6 +18,7 @@ import { decrypt, isEncrypted } from '../../../lib/encryption.js';
 import { schedulerLogsDir, ensureSchedulerLogsDir } from './logs.js';
 import { runningTasks } from './locks.js';
 import { atomicWriteFile } from './telegram_window.js';
+import type { TgMessage, TgUpdate } from './telegram_media.js';
 import type { SchedulerStrategy } from './strategy.js';
 
 export async function saveTelegramOffset(taskId: string, updateId: number): Promise<void> {
@@ -37,25 +38,6 @@ export async function loadTelegramOffset(taskId: string): Promise<number | undef
   } catch {
     return undefined;
   }
-}
-
-interface TgMessage {
-  message_id: number;
-  date: number;
-  chat: {
-    id: number;
-    type: string;
-    title?: string;
-    first_name?: string;
-    username?: string;
-  };
-  from?: { id: number; first_name: string; username?: string };
-  text?: string;
-}
-
-interface TgUpdate {
-  update_id: number;
-  message?: TgMessage;
 }
 
 const TOOL_EMOJI: Record<string, string> = {
