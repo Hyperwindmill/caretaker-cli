@@ -12,7 +12,7 @@ import {
   appendMessage,
   userMessage,
 } from '../../../session/store.js';
-import type { MessageRecord } from '../../../session/types.js';
+import type { MessageRecord, ToolAttachmentRecord } from '../../../session/types.js';
 import type { ServiceConfig } from '../../../types.js';
 import { decrypt, isEncrypted } from '../../../lib/encryption.js';
 import { schedulerLogsDir, ensureSchedulerLogsDir } from './logs.js';
@@ -20,10 +20,22 @@ import { runningTasks } from './locks.js';
 import {
   atomicWriteFile,
   buildMergedPrompt,
+  decideFlush,
+  isAtCapacity,
+  loadPendingState,
+  savePendingState,
   telegramSessionId,
   type PendingChat,
 } from './telegram_window.js';
-import { senderLabel, messageText, type TgMessage, type TgUpdate } from './telegram_media.js';
+import {
+  classifyMessage,
+  downloadImage,
+  messageText,
+  selectImage,
+  senderLabel,
+  FileTooLargeError,
+  type TgUpdate,
+} from './telegram_media.js';
 import type { SchedulerStrategy } from './strategy.js';
 
 export async function saveTelegramOffset(taskId: string, updateId: number): Promise<void> {
@@ -350,6 +362,123 @@ export async function executeTelegramTaskRun(
   }
 }
 
+export interface TickDeps {
+  downloadImage: (
+    sessionId: string,
+    media: { fileId: string; fileSize?: number },
+  ) => Promise<ToolAttachmentRecord>;
+  notify: (chatId: number, text: string) => Promise<void>;
+  isLocked: (chatId: number) => boolean;
+  runChat: (chat: PendingChat) => Promise<void>;
+  now: () => number;
+}
+
+const UNSUPPORTED_NOTICE =
+  "\u26a0\ufe0f I can only read text and images. I haven't passed that file to the agent.";
+const TOO_LARGE_NOTICE = '\u26a0\ufe0f That image is too large for me to fetch (20 MB limit).';
+const DOWNLOAD_FAILED_NOTICE = "\u26a0\ufe0f I couldn't download that image. Try sending it again.";
+const BUSY_NOTICE =
+  "\u26a0\ufe0f I'm still working through what you sent. Please wait for my reply before sending more.";
+
+/**
+ * One tick of the accumulation window: fold the new updates into the per-chat
+ * buffer, then deliver every window that is ready. Split out of the poller so
+ * it can be driven without the Telegram API.
+ */
+export async function accumulateAndFlush(
+  taskId: string,
+  updates: TgUpdate[],
+  allowedChats: Set<string>,
+  deps: TickDeps,
+): Promise<void> {
+  const state = await loadPendingState(taskId);
+  const now = deps.now();
+
+  for (const update of updates) {
+    const msg = update.message;
+    if (!msg) continue;
+
+    // Authorization comes before any download: an unauthorized chat must not
+    // be able to put bytes on our disk.
+    const chatIdStr = String(msg.chat.id);
+    if (allowedChats.size > 0 && !allowedChats.has(chatIdStr)) {
+      console.log(`[scheduler/telegram] Skipping message in unauthorized chat ${chatIdStr}`);
+      continue;
+    }
+
+    const kind = classifyMessage(msg);
+    if (kind === 'service') continue;
+    if (kind === 'unsupported') {
+      await deps.notify(msg.chat.id, UNSUPPORTED_NOTICE);
+      continue;
+    }
+
+    let chat = state.chats[chatIdStr];
+    if (!chat) {
+      chat = {
+        chatId: msg.chat.id,
+        chatLabel: msg.chat.title ?? msg.chat.username ?? chatIdStr,
+        chatType: msg.chat.type,
+        entries: [],
+        firstAt: now,
+      };
+      state.chats[chatIdStr] = chat;
+    }
+
+    if (isAtCapacity(chat)) {
+      await deps.notify(msg.chat.id, BUSY_NOTICE);
+      continue;
+    }
+
+    let attachments: ToolAttachmentRecord[] = [];
+    const media = selectImage(msg);
+    if (media) {
+      try {
+        attachments = [await deps.downloadImage(telegramSessionId(msg.chat.id), media)];
+      } catch (err) {
+        console.error(`[scheduler/telegram] Image download failed for chat ${chatIdStr}:`, err);
+        await deps.notify(
+          msg.chat.id,
+          err instanceof FileTooLargeError ? TOO_LARGE_NOTICE : DOWNLOAD_FAILED_NOTICE,
+        );
+        continue;
+      }
+    }
+
+    if (chat.entries.length === 0) chat.firstAt = now;
+    chat.entries.push({
+      updateId: update.update_id,
+      fromLabel: senderLabel(msg),
+      text: messageText(msg),
+      attachments,
+    });
+  }
+
+  // Every chat is considered, including ones with no new update: hold expiry
+  // and post-lock delivery both happen on ticks that bring no traffic.
+  const toRun: PendingChat[] = [];
+  for (const chat of Object.values(state.chats)) {
+    if (deps.isLocked(chat.chatId)) continue;
+    if (decideFlush(chat, now) !== 'flush') continue;
+    toRun.push({ ...chat, entries: chat.entries });
+    chat.entries = [];
+    chat.lastFlushAt = now;
+  }
+
+  // The window is consumed before the run, never after it: a failed run is
+  // reported in the chat by the run itself, and retrying it forever against a
+  // broken provider would burn tokens on every tick.
+  await savePendingState(taskId, state);
+
+  await Promise.all(
+    toRun.map((chat) =>
+      deps.runChat(chat).catch((err) => {
+        console.error(`[scheduler/telegram] Run failed for chat ${chat.chatId}:`, err);
+      }),
+    ),
+  );
+}
+
 async function executeTelegramPoller(task: ServiceConfig): Promise<void> {
   if (pollingTasks.has(task.id)) return;
   pollingTasks.add(task.id);
@@ -370,60 +499,26 @@ async function executeTelegramPoller(task: ServiceConfig): Promise<void> {
 
     const offset = await loadTelegramOffset(task.id);
     const updates = await tgGetUpdates(token, offset !== undefined ? offset + 1 : undefined);
-    if (updates.length === 0) return;
 
-    // Save the highest offset immediately to prevent reprocessing on subsequent ticks
-    const highestUpdate = updates[updates.length - 1]!;
-    await saveTelegramOffset(task.id, highestUpdate.update_id);
-
-    // Group updates by chat.id so messages from the same chat are processed
-    // sequentially (preserves order, avoids "session already in progress" drops),
-    // while different chats progress in parallel.
-    // Scaffolding: Task 6 replaces this grouping with the accumulation window.
-    const toChat = (msg: TgMessage, now: number): PendingChat => ({
-      chatId: msg.chat.id,
-      chatLabel: msg.chat.title ?? msg.chat.username ?? String(msg.chat.id),
-      chatType: msg.chat.type,
-      entries: [
-        {
-          updateId: msg.message_id,
-          fromLabel: senderLabel(msg),
-          text: messageText(msg),
-          attachments: [],
-        },
-      ],
-      firstAt: now,
-    });
-    const byChat = new Map<number, Array<{ update: TgUpdate; msg: TgMessage }>>();
-    for (const update of updates) {
-      const msg = update.message;
-      if (!msg || !msg.text) continue;
-
-      const chatIdStr = String(msg.chat.id);
-      if (allowedChats.size > 0 && !allowedChats.has(chatIdStr)) {
-        console.log(`[scheduler/telegram] Skipping message in unauthorized chat ${chatIdStr}`);
-        continue;
-      }
-
-      const list = byChat.get(msg.chat.id) ?? [];
-      list.push({ update, msg });
-      byChat.set(msg.chat.id, list);
+    // No early return on an empty poll: a held window expires, and a window
+    // parked behind a running chat is delivered, on ticks with no new updates.
+    if (updates.length > 0) {
+      // Save the highest offset immediately to prevent reprocessing on subsequent ticks
+      const highestUpdate = updates[updates.length - 1]!;
+      await saveTelegramOffset(task.id, highestUpdate.update_id);
     }
 
-    await Promise.all(
-      Array.from(byChat.values()).map(async (group) => {
-        for (const { update, msg } of group) {
-          try {
-            await executeTelegramTaskRun(task, toChat(msg, Date.now()));
-          } catch (err) {
-            console.error(
-              `[scheduler/telegram] Failed to execute task run for update ${update.update_id}:`,
-              err,
-            );
-          }
-        }
-      }),
-    );
+    await accumulateAndFlush(task.id, updates, allowedChats, {
+      downloadImage: (sessionId, media) => downloadImage(token, sessionId, media),
+      notify: async (chatId, text) => {
+        await tgApi(token, 'sendMessage', { chat_id: chatId, text }).catch((err) => {
+          console.warn(`[scheduler/telegram] Failed to notify chat ${chatId}:`, err);
+        });
+      },
+      isLocked: (chatId) => runningTasks.has(`${task.id}:${chatId}`),
+      runChat: (chat) => executeTelegramTaskRun(task, chat),
+      now: () => Date.now(),
+    });
   } catch (err) {
     console.error(`[scheduler/telegram] Polling error for task "${task.name}":`, err);
   } finally {
