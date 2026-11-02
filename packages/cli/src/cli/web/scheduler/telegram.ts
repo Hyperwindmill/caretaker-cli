@@ -157,6 +157,7 @@ const pollingTasks = new Set<string>();
 export async function executeTelegramTaskRun(
   task: ServiceConfig,
   chat: PendingChat,
+  deps: { run?: typeof harness.run } = {},
 ): Promise<void> {
   let token = task.telegramBotToken?.trim() || '';
   if (token && isEncrypted(token)) {
@@ -262,7 +263,7 @@ export async function executeTelegramTaskRun(
     await appendMessage(sessionMeta, startMsg);
     runMessages.push(startMsg);
 
-    await harness.run(
+    await (deps.run ?? harness.run)(
       {
         agent: { ...agent, permissionMode: 'bypassPermissions' }, // unattended: mirror the auto-approve confirm gate
         provider,
@@ -271,6 +272,9 @@ export async function executeTelegramTaskRun(
         promptAttachments: promptAttachments.length > 0 ? promptAttachments : undefined,
         history: historyMessages,
         workingDir,
+        // Without this the harness resolves attachments under
+        // attachments/default/ and silently drops every image.
+        sessionId,
       },
       {
         onMessage: async (msg) => {
@@ -377,8 +381,8 @@ const UNSUPPORTED_NOTICE =
   "\u26a0\ufe0f I can only read text and images. I haven't passed that file to the agent.";
 const TOO_LARGE_NOTICE = '\u26a0\ufe0f That image is too large for me to fetch (20 MB limit).';
 const DOWNLOAD_FAILED_NOTICE = "\u26a0\ufe0f I couldn't download that image. Try sending it again.";
-const BUSY_NOTICE =
-  "\u26a0\ufe0f I'm still working through what you sent. Please wait for my reply before sending more.";
+const OVER_CAPACITY_NOTICE =
+  "\u26a0\ufe0f That's more than I can take in one go. I've kept what came first and skipped the rest \u2014 send it again after my reply.";
 
 /**
  * One tick of the accumulation window: fold the new updates into the per-chat
@@ -425,13 +429,13 @@ export async function accumulateAndFlush(
       state.chats[chatIdStr] = chat;
     }
 
-    if (isAtCapacity(chat)) {
-      await deps.notify(msg.chat.id, BUSY_NOTICE);
+    const media = selectImage(msg);
+    if (isAtCapacity(chat, media !== null)) {
+      await deps.notify(msg.chat.id, OVER_CAPACITY_NOTICE);
       continue;
     }
 
     let attachments: ToolAttachmentRecord[] = [];
-    const media = selectImage(msg);
     if (media) {
       try {
         attachments = [await deps.downloadImage(telegramSessionId(msg.chat.id), media)];
@@ -457,7 +461,13 @@ export async function accumulateAndFlush(
   // Every chat is considered, including ones with no new update: hold expiry
   // and post-lock delivery both happen on ticks that bring no traffic.
   const toRun: PendingChat[] = [];
-  for (const chat of Object.values(state.chats)) {
+  for (const [key, chat] of Object.entries(state.chats)) {
+    // The allowlist is the only access boundary, so it is re-checked here
+    // too: a chat revoked while its window was held must not still run.
+    if (allowedChats.size > 0 && !allowedChats.has(key)) {
+      delete state.chats[key];
+      continue;
+    }
     if (deps.isLocked(chat.chatId)) continue;
     if (decideFlush(chat, now) !== 'flush') continue;
     toRun.push({ ...chat, entries: chat.entries });

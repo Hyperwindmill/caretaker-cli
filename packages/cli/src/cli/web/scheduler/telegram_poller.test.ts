@@ -8,7 +8,9 @@ import { join } from 'node:path';
 process.env.CARETAKER_HOME = mkdtempSync(join(tmpdir(), 'ct-tgpoll-'));
 
 const { accumulateAndFlush } = await import('./telegram.js');
-const { loadPendingState, HOLD_MS, MAX_ENTRIES } = await import('./telegram_window.js');
+const { loadPendingState, savePendingState, pendingStatePath, HOLD_MS, MAX_ENTRIES, MAX_IMAGES } =
+  await import('./telegram_window.js');
+const { writeFile } = await import('node:fs/promises');
 const { FileTooLargeError } = await import('./telegram_media.js');
 
 const T0 = 1_700_000_000_000;
@@ -196,4 +198,74 @@ test('entries beyond MAX_ENTRIES are refused without losing the buffered ones', 
   await accumulateAndFlush('t_cap', many, ALL, r.deps);
   assert.equal((await loadPendingState('t_cap')).chats['7']!.entries.length, MAX_ENTRIES);
   assert.equal(r.notices.length, 2);
+});
+
+test('a full ten-photo album is delivered whole', async () => {
+  const r = recorder();
+  const album = [photo('eccole'), ...Array.from({ length: 9 }, () => photo())];
+  await accumulateAndFlush('t_album', album, ALL, r.deps);
+  assert.equal(r.runs.length, 1);
+  assert.equal(r.runs[0].entries.flatMap((e: any) => e.attachments).length, 10);
+  assert.deepEqual(r.notices, []);
+});
+
+test('a text message still enters a window whose image cap is full', async () => {
+  const r = recorder({ locked: true });
+  const many = [...Array.from({ length: MAX_IMAGES }, () => photo()), text('che ne pensi?')];
+  await accumulateAndFlush('t_capmix', many, ALL, r.deps);
+  const held = (await loadPendingState('t_capmix')).chats['7']!;
+  assert.equal(held.entries.length, MAX_IMAGES + 1);
+  assert.equal(held.entries[held.entries.length - 1]!.text, 'che ne pensi?');
+  assert.deepEqual(r.notices, []);
+});
+
+test('an image beyond the image cap is refused while the buffered ones stay', async () => {
+  const r = recorder({ locked: true });
+  const many = Array.from({ length: MAX_IMAGES + 1 }, () => photo());
+  await accumulateAndFlush('t_capimg', many, ALL, r.deps);
+  assert.equal((await loadPendingState('t_capimg')).chats['7']!.entries.length, MAX_IMAGES);
+  assert.equal(r.notices.length, 1);
+});
+
+test('the over-capacity notice does not claim a run is in progress', async () => {
+  const r = recorder({ locked: true });
+  await accumulateAndFlush(
+    't_notice',
+    Array.from({ length: MAX_ENTRIES + 1 }, (_, i) => text(`m${i}`)),
+    ALL,
+    r.deps,
+  );
+  assert.equal(r.notices.length, 1);
+  assert.doesNotMatch(r.notices[0]!.text, /still working|in progress/i);
+});
+
+test('a malformed chat record does not wedge the tick', async () => {
+  // Offset is committed before the tick, so a throw here loses every incoming
+  // message, forever, with no chat-side signal.
+  await savePendingState('t_wedge', { v: 1, chats: {} });
+  await writeFile(
+    pendingStatePath('t_wedge'),
+    JSON.stringify({
+      v: 1,
+      chats: { '7': { chatId: 7, chatLabel: 'x', chatType: 'private', firstAt: 1 } },
+    }),
+    'utf8',
+  );
+  const r = recorder();
+  await accumulateAndFlush('t_wedge', [text('ciao')], ALL, r.deps);
+  assert.equal(r.runs.length, 1);
+  assert.equal(r.runs[0].entries[0].text, 'ciao');
+});
+
+test('revoking a chat drops its buffered window instead of flushing it', async () => {
+  // The allowlist is the only access boundary, so it has to hold on the
+  // flush path too, not only on the way in.
+  const locked = recorder({ locked: true });
+  await accumulateAndFlush('t_revoke', [text('ciao')], new Set(['7']), locked.deps);
+  assert.equal((await loadPendingState('t_revoke')).chats['7']!.entries.length, 1);
+
+  const revoked = recorder();
+  await accumulateAndFlush('t_revoke', [], new Set(['999']), revoked.deps);
+  assert.equal(revoked.runs.length, 0);
+  assert.deepEqual((await loadPendingState('t_revoke')).chats, {});
 });

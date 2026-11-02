@@ -71,16 +71,24 @@ test('decideFlush returns idle for an empty buffer', () => {
   assert.equal(decideFlush(chat(), 9_999_999), 'idle');
 });
 
-test('isAtCapacity is true at MAX_ENTRIES entries', () => {
+test('isAtCapacity is true at MAX_ENTRIES entries, whatever arrives', () => {
   const entries = Array.from({ length: MAX_ENTRIES }, () => entry({ text: 'x' }));
-  assert.equal(isAtCapacity(chat({ entries })), true);
-  assert.equal(isAtCapacity(chat({ entries: entries.slice(0, -1) })), false);
+  assert.equal(isAtCapacity(chat({ entries }), false), true);
+  assert.equal(isAtCapacity(chat({ entries }), true), true);
+  assert.equal(isAtCapacity(chat({ entries: entries.slice(0, -1) }), false), false);
 });
 
-test('isAtCapacity is true at MAX_IMAGES attachments spread over entries', () => {
+test('isAtCapacity stops an incoming image at MAX_IMAGES but still lets text in', () => {
+  // The image cap must not refuse the very message that would flush the
+  // window — a question typed under a full album is the common case.
   const entries = Array.from({ length: MAX_IMAGES }, () => entry({ attachments: [image] }));
-  assert.equal(isAtCapacity(chat({ entries })), true);
-  assert.equal(isAtCapacity(chat({ entries: entries.slice(0, -1) })), false);
+  assert.equal(isAtCapacity(chat({ entries }), true), true);
+  assert.equal(isAtCapacity(chat({ entries }), false), false);
+  assert.equal(isAtCapacity(chat({ entries: entries.slice(0, -1) }), true), false);
+});
+
+test('MAX_IMAGES covers a full Telegram album', () => {
+  assert.ok(MAX_IMAGES >= 10, 'a media group holds up to 10 items');
 });
 
 test('noTextLine is singular for one image and plural above', () => {
@@ -154,4 +162,21 @@ test('loadPendingState returns empty state on corrupt JSON', async () => {
 test('loadPendingState returns empty state on an unknown version', async () => {
   await writeFile(pendingStatePath('task_v2'), JSON.stringify({ v: 2, chats: {} }), 'utf8');
   assert.deepEqual(await loadPendingState('task_v2'), { v: 1, chats: {} });
+});
+
+test('loadPendingState drops a malformed chat record and keeps the good ones', async () => {
+  // Structurally valid JSON with a broken record used to pass the guard and
+  // then throw on chat.entries.length at every tick.
+  const good = chat({ entries: [entry({ text: 'ok' })] });
+  await writeFile(
+    pendingStatePath('task_badchat'),
+    JSON.stringify({
+      v: 1,
+      chats: { '7': good, '8': { chatId: 8, chatLabel: 'x', chatType: 'private', firstAt: 1 } },
+    }),
+    'utf8',
+  );
+  const state = await loadPendingState('task_badchat');
+  assert.deepEqual(Object.keys(state.chats), ['7']);
+  assert.deepEqual(state.chats['7'], good);
 });

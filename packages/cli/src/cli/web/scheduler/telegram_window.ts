@@ -10,7 +10,8 @@ export const HOLD_MS = 180_000;
 /** How recently the chat must have flushed to count as warm. */
 export const WARM_MS = 120_000;
 export const MAX_ENTRIES = 20;
-export const MAX_IMAGES = 8;
+/** A Telegram media group holds up to 10 items; a full album must survive. */
+export const MAX_IMAGES = 10;
 
 /** One received Telegram message, with its images already on disk. */
 export interface PendingEntry {
@@ -64,8 +65,14 @@ function imageCount(chat: PendingChat): number {
   return chat.entries.reduce((n, e) => n + e.attachments.length, 0);
 }
 
-export function isAtCapacity(chat: PendingChat): boolean {
-  return chat.entries.length >= MAX_ENTRIES || imageCount(chat) >= MAX_IMAGES;
+/**
+ * Whether one more message would overflow the window. The image cap applies
+ * only to a message that carries an image: refusing the text typed under a
+ * full album would drop the very question that flushes the window.
+ */
+export function isAtCapacity(chat: PendingChat, incomingHasImage: boolean): boolean {
+  if (chat.entries.length >= MAX_ENTRIES) return true;
+  return incomingHasImage && imageCount(chat) >= MAX_IMAGES;
 }
 
 export function noTextLine(count: number): string {
@@ -127,6 +134,18 @@ export async function atomicWriteFile(path: string, contents: string): Promise<v
   throw lastErr;
 }
 
+function isUsableChat(chat: unknown): chat is PendingChat {
+  const c = chat as PendingChat | null;
+  return (
+    !!c &&
+    typeof c === 'object' &&
+    typeof c.chatId === 'number' &&
+    typeof c.firstAt === 'number' &&
+    Array.isArray(c.entries) &&
+    c.entries.every((e) => !!e && Array.isArray(e.attachments))
+  );
+}
+
 /**
  * The buffer must survive a restart: the Telegram offset is committed before
  * an entry is buffered, so losing the file loses the message. Anything
@@ -141,7 +160,19 @@ export async function loadPendingState(taskId: string): Promise<PendingState> {
       console.error(`[scheduler/telegram] Unusable pending state at ${path}, starting empty`);
       return { v: 1, chats: {} };
     }
-    return parsed as PendingState;
+    // A structurally valid file can still hold a broken chat record. Dropping
+    // the bad ones self-heals on the next save; letting one through throws on
+    // every tick, and since the offset is already committed that loses every
+    // incoming message silently and forever.
+    const chats: Record<string, PendingChat> = {};
+    for (const [key, chat] of Object.entries(parsed.chats as Record<string, unknown>)) {
+      if (isUsableChat(chat)) {
+        chats[key] = chat;
+      } else {
+        console.error(`[scheduler/telegram] Dropping malformed chat record ${key} in ${path}`);
+      }
+    }
+    return { v: 1, chats };
   } catch (err) {
     console.error(`[scheduler/telegram] Failed to read pending state ${path}:`, err);
     return { v: 1, chats: {} };
