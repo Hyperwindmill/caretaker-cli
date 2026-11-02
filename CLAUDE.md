@@ -17,7 +17,7 @@ All commands below run from the repo root unless noted.
 ## Commands
 
 ```bash
-pnpm install                            # bootstrap the workspace
+pnpm install                            # bootstrap the workspace (its `prepare` also builds caretaker-types)
 pnpm -F @hyperwindmill/caretaker-cli dev               # launch the TUI (tsx packages/cli/src/index.ts)
 pnpm -F @hyperwindmill/caretaker-cli dev web           # launch the local web GUI on http://127.0.0.1:3000
 pnpm -F @hyperwindmill/caretaker-cli build             # tsc → packages/cli/dist/
@@ -40,7 +40,7 @@ Run a single test by name: `pnpm -F @hyperwindmill/caretaker-cli exec tsx --test
 
 Isolated environment for manual TUI / web work: `CARETAKER_HOME=/tmp/ct pnpm -F @hyperwindmill/caretaker-cli dev`. All on-disk state (providers, agents, sessions, plugins, MCP, scheduler logs) lives under `CARETAKER_HOME` (default `~/.caretaker/`).
 
-Package manager: **pnpm** (≥10). The root has `pnpm-workspace.yaml`; `package-lock.json` and `npm install` are not supported.
+Package manager: **pnpm** (≥10). The root has `pnpm-workspace.yaml`; `package-lock.json` and `npm install` are not supported. The root `prepare` script runs `husky && pnpm -F caretaker-types build`: `caretaker-types` is a type-only workspace devDependency whose `exports` point at `dist/`, so without that build every sibling's `typecheck` fails with scores of phantom "has no exported member" errors that look like real breakage. pnpm skips lifecycle scripts when an install is a no-op, so after pulling a change to `packages/types` you may still need `pnpm -F caretaker-types build` by hand.
 
 ## Architecture
 

@@ -30,7 +30,7 @@
     "vscode:package": "pnpm build && pnpm -F caretaker-vscode package",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "prepare": "husky"
+    "prepare": "husky && pnpm -F caretaker-types build"
   },
   "devDependencies": {
     "@changesets/cli": "^3.0.3",
