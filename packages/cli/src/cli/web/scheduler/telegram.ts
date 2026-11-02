@@ -17,8 +17,13 @@ import type { ServiceConfig } from '../../../types.js';
 import { decrypt, isEncrypted } from '../../../lib/encryption.js';
 import { schedulerLogsDir, ensureSchedulerLogsDir } from './logs.js';
 import { runningTasks } from './locks.js';
-import { atomicWriteFile } from './telegram_window.js';
-import type { TgMessage, TgUpdate } from './telegram_media.js';
+import {
+  atomicWriteFile,
+  buildMergedPrompt,
+  telegramSessionId,
+  type PendingChat,
+} from './telegram_window.js';
+import { senderLabel, messageText, type TgMessage, type TgUpdate } from './telegram_media.js';
 import type { SchedulerStrategy } from './strategy.js';
 
 export async function saveTelegramOffset(taskId: string, updateId: number): Promise<void> {
@@ -137,36 +142,29 @@ const pollingTasks = new Set<string>();
 /**
  * Background loop step execution run specifically formatted for interactive Telegram conversations.
  */
-async function executeTelegramTaskRun(
+export async function executeTelegramTaskRun(
   task: ServiceConfig,
-  msg: TgMessage,
-  updateId: number,
+  chat: PendingChat,
 ): Promise<void> {
   let token = task.telegramBotToken?.trim() || '';
   if (token && isEncrypted(token)) {
     token = decrypt(token);
   }
 
-  const compoundLockKey = `${task.id}:${msg.chat.id}`;
-  if (runningTasks.has(compoundLockKey)) {
-    await tgApi(token, 'sendMessage', {
-      chat_id: msg.chat.id,
-      text: '⚠️ A session is already in progress in this chat. Please wait for it to complete.',
-    }).catch((err) => {
-      console.warn(`[scheduler/telegram] Failed to send busy notice to chat ${msg.chat.id}:`, err);
-    });
-    return;
-  }
+  // No busy check here: the caller never flushes a window whose chat is
+  // locked, it holds the entries for the next tick instead.
+  const compoundLockKey = `${task.id}:${chat.chatId}`;
   runningTasks.add(compoundLockKey);
 
   const runId = `run_${randomUUID().slice(0, 8)}`;
-  const fromUser = msg.from?.username ? `@${msg.from.username}` : msg.from?.first_name || 'User';
+  const fromUser = chat.entries[0]?.fromLabel ?? 'User';
   console.log(
-    `[scheduler/telegram] Starting run ${runId} for user ${fromUser} in chat ${msg.chat.id}`,
+    `[scheduler/telegram] Starting run ${runId} for user ${fromUser} in chat ${chat.chatId}`,
   );
 
   const runMessages: MessageRecord[] = [];
-  const chatId = msg.chat.id;
+  const chatId = chat.chatId;
+  const promptAttachments = chat.entries.flatMap((e) => e.attachments);
 
   let typingInterval: NodeJS.Timeout | null = null;
   const sendTyping = () => {
@@ -223,12 +221,8 @@ async function executeTelegramTaskRun(
     const workingDir = task.workingDir || agent.workingDir || process.cwd();
 
     // Resolve the prompt format exactly as in the previous repository
-    const from = msg.from?.username
-      ? `@${msg.from.username}`
-      : (msg.from?.first_name ?? 'unknown');
-
     // Reconstruct conversation history using standard stable Chat Sessions
-    const sessionId = `telegram_${chatId}`;
+    const sessionId = telegramSessionId(chatId);
     let sessionMeta: any;
     let historyMessages: MessageRecord[] = [];
 
@@ -246,12 +240,13 @@ async function executeTelegramTaskRun(
     }
 
     const isNewSession = historyMessages.length === 0;
-    const effectivePrompt = isNewSession
-      ? `From: ${from}\nChat: ${msg.chat.title ?? msg.chat.username ?? String(msg.chat.id)} (id: ${msg.chat.id}, type: ${msg.chat.type})\n\n${msg.text ?? ''}`
-      : `From: ${from}\n\n${msg.text ?? ''}`;
+    const effectivePrompt = buildMergedPrompt(chat, isNewSession);
 
-    // Persist the user prompt in the stable session history
-    const startMsg = userMessage(effectivePrompt);
+    // Persist the user prompt in the stable session history. The attachments
+    // ride the record too, so later turns replay the images.
+    const startMsg = userMessage(effectivePrompt, {
+      attachments: promptAttachments.length > 0 ? promptAttachments : undefined,
+    });
     await appendMessage(sessionMeta, startMsg);
     runMessages.push(startMsg);
 
@@ -261,6 +256,7 @@ async function executeTelegramTaskRun(
         provider,
         tools,
         prompt: effectivePrompt,
+        promptAttachments: promptAttachments.length > 0 ? promptAttachments : undefined,
         history: historyMessages,
         workingDir,
       },
@@ -383,6 +379,21 @@ async function executeTelegramPoller(task: ServiceConfig): Promise<void> {
     // Group updates by chat.id so messages from the same chat are processed
     // sequentially (preserves order, avoids "session already in progress" drops),
     // while different chats progress in parallel.
+    // Scaffolding: Task 6 replaces this grouping with the accumulation window.
+    const toChat = (msg: TgMessage, now: number): PendingChat => ({
+      chatId: msg.chat.id,
+      chatLabel: msg.chat.title ?? msg.chat.username ?? String(msg.chat.id),
+      chatType: msg.chat.type,
+      entries: [
+        {
+          updateId: msg.message_id,
+          fromLabel: senderLabel(msg),
+          text: messageText(msg),
+          attachments: [],
+        },
+      ],
+      firstAt: now,
+    });
     const byChat = new Map<number, Array<{ update: TgUpdate; msg: TgMessage }>>();
     for (const update of updates) {
       const msg = update.message;
@@ -403,7 +414,7 @@ async function executeTelegramPoller(task: ServiceConfig): Promise<void> {
       Array.from(byChat.values()).map(async (group) => {
         for (const { update, msg } of group) {
           try {
-            await executeTelegramTaskRun(task, msg, update.update_id);
+            await executeTelegramTaskRun(task, toChat(msg, Date.now()));
           } catch (err) {
             console.error(
               `[scheduler/telegram] Failed to execute task run for update ${update.update_id}:`,
