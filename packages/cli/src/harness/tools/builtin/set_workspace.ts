@@ -18,14 +18,19 @@ import type { Tool, ToolResult } from '../types.js';
 export const setWorkspaceTool: Tool = {
   name: 'set_workspace',
   description:
-    "Switch this chat session's working directory to one of the configured projects for the rest of the session. " +
-    'Call mcp__task__project_list first to get the project_id.',
+    "Switch this chat session's working directory to one of the configured projects for the rest of the session, " +
+    "or pass agent_default: true to go back to the agent's own working directory (use it when leaving a project). " +
+    'Pass exactly one of project_id / agent_default. Call mcp__task__project_list first to get a project_id.',
   parameters: {
     type: 'object',
     properties: {
       project_id: { type: 'string', description: 'Id of the project to switch to (from project_list).' },
+      agent_default: {
+        type: 'boolean',
+        description: "true = return to this agent's own working directory (alternative to project_id).",
+      },
     },
-    required: ['project_id'],
+    required: [],
   },
   dangerous: true,
   execute: async (args, ctx): Promise<ToolResult> => {
@@ -33,7 +38,25 @@ export const setWorkspaceTool: Tool = {
     if (!ctx.sessionId || !agentId) {
       return { content: 'Error: no chat session to switch — set_workspace only works inside a saved chat session.' };
     }
-    const projectId = String((args as { project_id?: unknown }).project_id ?? '');
+    const a = args as { project_id?: unknown; agent_default?: unknown };
+    const wantDefault = a.agent_default === true;
+    const projectId = String(a.project_id ?? '');
+    if (wantDefault === !!projectId) {
+      return { content: 'Error: pass exactly one of project_id or agent_default: true.' };
+    }
+    if (wantDefault) {
+      const own = ctx.callerAgent?.workingDir;
+      if (!own) {
+        return { content: "Error: this agent has no working directory of its own to return to." };
+      }
+      ctx.workingDir = own;
+      await updateSessionWorkspace({ agentId, id: ctx.sessionId }, null);
+      return {
+        content:
+          `Back to the agent's own working directory (${own}). File and shell tools already use it; ` +
+          'project context files (AGENTS.md) and memories follow from the next turn.',
+      };
+    }
     const project = ((await loadConfig()).projects ?? []).find((p) => p.id === projectId);
     if (!project) {
       return { content: `Error: unknown project "${projectId}". Call mcp__task__project_list for the valid ids.` };

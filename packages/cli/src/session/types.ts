@@ -42,7 +42,8 @@ export interface SessionMetaRecord {
   taskRole?: 'developer' | 'planner' | 'reviewer';
   /** Session-level working-dir override written by the `set_workspace` tool
    *  (together with `projectId`). Honoured per turn by the web server's chat
-   *  controller; absent ⇒ the agent's own workingDir. */
+   *  controller; absent ⇒ the agent's own workingDir (clearing it appends a
+   *  record without the key). */
   workingDir?: string;
 }
 

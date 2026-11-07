@@ -71,3 +71,34 @@ test('no session errors and leaves ctx untouched', async () => {
   assert.match(res.content, /^Error:.*session/);
   assert.equal(c.workingDir, '/elsewhere');
 });
+
+test('agent_default restores ctx.workingDir and clears the override', async () => {
+  const s2 = await createSession({ agentId: 'a1', title: 't2' });
+  const c = ctx({ sessionId: s2.id, callerAgent: { id: 'a1', workingDir: '/agent/own' } as any });
+  await setWorkspaceTool.execute({ project_id: 'p1' }, c);
+  assert.equal(c.workingDir, p1Dir);
+  const res = await setWorkspaceTool.execute({ agent_default: true }, c);
+  assert.doesNotMatch(res.content, /^Error:/);
+  assert.equal(c.workingDir, '/agent/own');
+  const meta = (await readSession('a1', s2.id)).meta;
+  assert.equal(meta.workingDir, undefined);
+  assert.equal(meta.projectId, undefined);
+  const { sessionRunScope } = await import('../../../cli/web/session_scope.js');
+  assert.deepEqual(sessionRunScope(meta, '/agent/own'), { workingDir: '/agent/own' });
+});
+
+test('both or neither of project_id / agent_default is an error', async () => {
+  for (const args of [{ project_id: 'p1', agent_default: true }, {}]) {
+    const c = ctx();
+    const res = await setWorkspaceTool.execute(args, c);
+    assert.match(res.content, /^Error:.*exactly one/);
+    assert.equal(c.workingDir, '/elsewhere');
+  }
+});
+
+test('agent_default with no agent workingDir errors', async () => {
+  const c = ctx();
+  const res = await setWorkspaceTool.execute({ agent_default: true }, c);
+  assert.match(res.content, /^Error:/);
+  assert.equal(c.workingDir, '/elsewhere');
+});

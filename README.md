@@ -339,7 +339,7 @@ Auto-injected by the resolver when their preconditions hold (so a fresh agent's 
 Standard opt-in (tri-state in the agent's tool picker, like every other tool):
 
 - `list_agents`, `invoke_agent` — sub-agent dispatch. `[x]` allowed or `[!]` confirm. `invoke_agent` is dual-mode (named + anonymous) — see _Sub-agent dispatch_.
-- `set_workspace` — moves the current chat session into one of the configured projects for the rest of the session (web GUI / desktop). See _Desktop assistant_.
+- `set_workspace` — moves the current chat session into one of the configured projects for the rest of the session (or back to the agent's own directory with `agent_default: true`) (web GUI / desktop). See _Desktop assistant_.
 
 ## Layout
 

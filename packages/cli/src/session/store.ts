@@ -275,14 +275,17 @@ export async function updateClaudeSessionId(
   await appendFile(path, serialize(record), { mode: 0o600 });
 }
 
-/** Persist a session-level workspace override (`set_workspace`). Appends a
+/** Persist a session-level workspace override (`set_workspace`; `null` clears it). Appends a
  *  new session_meta record, latest wins — same pattern as claudeSessionId. */
 export async function updateSessionWorkspace(
   meta: Pick<SessionMetaRecord, 'agentId' | 'id'>,
-  ws: { workingDir: string; projectId: string },
+  ws: { workingDir: string; projectId: string } | null,
 ): Promise<void> {
   const current = await readSession(meta.agentId, meta.id);
-  const record: SessionMetaRecord = { ...current.meta, workingDir: ws.workingDir, projectId: ws.projectId };
+  // null clears the override: the appended record simply omits both keys
+  // (the latest record replaces the whole meta, so old files need no migration).
+  const { workingDir: _w, projectId: _p, ...rest } = current.meta;
+  const record: SessionMetaRecord = ws ? { ...rest, workingDir: ws.workingDir, projectId: ws.projectId } : rest;
   const path = sessionPath(meta.agentId, meta.id);
   await appendFile(path, serialize(record), { mode: 0o600 });
 }
