@@ -629,6 +629,18 @@ export function maybeAutoStartBackend(): void {
   void runAutoStart();
 }
 
+/** Containers auto-start should bring up. STT serves endpoint transcription and,
+ *  absent a separate ttsEndpoint, endpoint synthesis; the TTS container exists only
+ *  with a separate ttsEndpoint. Built-in engines need neither. */
+export function autoStartTargets(voice: VoiceConfig): Array<'stt' | 'tts'> {
+  const endpointTts = voice.ttsEngine !== 'builtin';
+  const separateTts = !!voice.ttsEndpoint?.trim();
+  const out: Array<'stt' | 'tts'> = [];
+  if (voice.sttEngine !== 'builtin' || (endpointTts && !separateTts)) out.push('stt');
+  if (endpointTts && separateTts) out.push('tts');
+  return out;
+}
+
 async function runAutoStart(): Promise<void> {
   let voice: VoiceConfig | undefined;
   try {
@@ -651,8 +663,7 @@ async function runAutoStart(): Promise<void> {
   // target is only auto-started when a *separate* ttsEndpoint is configured —
   // without one, synthesis goes to `endpoint` (the single-server Speaches case)
   // and there is no second container to manage.
-  for (const target of ['stt', 'tts'] as const) {
-    if (target === 'tts' && !voice.ttsEndpoint?.trim()) continue;
+  for (const target of autoStartTargets(voice)) {
     const endpoint = targetEndpoint(voice, target);
     if (loopbackPort(endpoint) == null) continue;
 

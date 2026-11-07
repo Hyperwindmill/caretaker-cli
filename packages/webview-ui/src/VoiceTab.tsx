@@ -298,7 +298,8 @@ export function VoiceTab({ config, onSave, postMessage, sttCatalogResult, ttsCat
     const buf = parsedBufferMs(bufferMs);
     if (buf !== undefined) voice.playbackBufferMs = buf;
     if (autoStartBackend) voice.autoStartBackend = true;
-    if (sttBuiltin) {
+    // Not gated on the status having loaded: saving early must not drop the engine.
+    if (sttEngine === 'builtin') {
       voice.sttEngine = 'builtin';
       voice.sttBuiltinModel = sttBuiltinModel as 'tiny' | 'base' | 'small';
     }

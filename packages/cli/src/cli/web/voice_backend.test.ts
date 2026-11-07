@@ -15,6 +15,7 @@ import {
   deleteBackend,
   registerVoiceBackend,
   maybeAutoStartBackend,
+  autoStartTargets,
   isBackendStartInFlightForTest,
   setVoiceBackendDepsForTest,
   type StartProgress,
@@ -931,4 +932,18 @@ test('POST /api/voice/backend/delete?target=tts answers 409 while tts start is i
     await waitFor(() => !isBackendStartInFlightForTest('tts'));
     await ttsReady.close();
   }
+});
+
+test('autoStartTargets: built-in engines need no container', () => {
+  const base = { enabled: true, endpoint: 'http://127.0.0.1:8000/v1', sttModel: 'm' } as VoiceConfig;
+  assert.deepEqual(autoStartTargets(base), ['stt']);
+  assert.deepEqual(autoStartTargets({ ...base, ttsEndpoint: 'http://127.0.0.1:5050/v1' }), ['stt', 'tts']);
+  assert.deepEqual(autoStartTargets({ ...base, sttEngine: 'builtin', ttsEngine: 'builtin' }), []);
+  // Built-in transcription, endpoint synthesis on the same server: still needed.
+  assert.deepEqual(autoStartTargets({ ...base, sttEngine: 'builtin' }), ['stt']);
+  assert.deepEqual(
+    autoStartTargets({ ...base, sttEngine: 'builtin', ttsEndpoint: 'http://127.0.0.1:5050/v1' }),
+    ['tts'],
+  );
+  assert.deepEqual(autoStartTargets({ ...base, ttsEngine: 'builtin', ttsEndpoint: 'http://127.0.0.1:5050/v1' }), ['stt']);
 });
