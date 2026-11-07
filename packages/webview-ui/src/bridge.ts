@@ -111,6 +111,8 @@ export type HostToView =
   | { type: 'ready' }
   | { type: 'agentsLoaded'; agents: AgentSummary[] }
   | { type: 'sessionsLoaded'; sessions: SessionSummary[] }
+  /** Agent switch finished server-side (tools resolved, sessions sent). Web server only. */
+  | { type: 'agentSelected'; agentId: string }
   | { type: 'sessionLoaded'; messages: ChatMessage[] }
   | { type: 'chunk'; text: string }
   | { type: 'thinking'; text: string }

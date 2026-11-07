@@ -52,6 +52,7 @@ import {
   type ToolAttachmentRecord,
 } from '../../session/index.js';
 
+import { sessionRunScope } from './session_scope.js';
 import type { AgentConfig, ProviderConfig, PluginsFile, McpServerConfig } from '../../types.js';
 import type { ChatMessage, ConfirmDecision, HostToView, ViewToHost } from 'webview-ui/bridge';
 import { watchCycleStream } from './scheduler/cycle_events.js';
@@ -149,9 +150,14 @@ export class WebSessionController {
           cb.onSessionCreated?.(metaRec.id);
           this.history = [];
         }
+      } else {
+        // Re-read the latest session_meta every turn: `set_workspace` may have
+        // appended a workspace override during the previous turn.
+        this.metaRecord = (await readSession(this.opts.agent.id, this.metaRecord.id)).meta;
       }
 
       const meta = this.metaRecord!;
+      const scope = sessionRunScope(meta, this.opts.workingDir);
 
       const attachmentRecords: ToolAttachmentRecord[] = [];
       if (rawAttachments && rawAttachments.length > 0) {
@@ -178,7 +184,8 @@ export class WebSessionController {
           prompt,
           history: priorHistory,
           signal: ac.signal,
-          workingDir: this.opts.workingDir,
+          workingDir: scope.workingDir,
+          memoryProjectId: scope.memoryProjectId,
           sessionId: meta.id,
           promptAttachments: attachmentRecords.length > 0 ? attachmentRecords : undefined,
           voiceConversation,
@@ -980,6 +987,10 @@ export async function startServer(port: number, host: string): Promise<void> {
       post({ type: 'contextUsage', usage: null });
 
       await loadSessionsAndSend(agent.id);
+      // Ack: the switch is complete server-side. The desktop assistant waits
+      // for it before opening the mic, so a `start` cannot reach the previous
+      // agent while this one's MCP servers are still connecting.
+      post({ type: 'agentSelected', agentId: agent.id });
     };
 
     const loadSessionsAndSend = async (agentId: string) => {
