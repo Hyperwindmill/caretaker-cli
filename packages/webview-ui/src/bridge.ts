@@ -66,7 +66,7 @@ export interface ContextUsage {
   percent: number | null;
 }
 
-import type { AcpAgentPreset } from 'caretaker-types';
+import type { AcpAgentPreset, PronunciationEntry } from 'caretaker-types';
 
 export type ModelsResult = { ok: true; ids: string[] } | { ok: false; error: string };
 
@@ -97,11 +97,24 @@ export type VoiceCatalogResult =
   | { ok: true; catalog: VoiceCatalog }
   | { ok: false; error: string };
 
+export type BuiltinVoiceStatus = {
+  runtime: { installed: boolean; version: string; loadError?: string };
+  languages: Array<{ id: string; code: string; nativeVoice: string; installed: boolean; bytes: number }>;
+  voices: string[];
+  /** Shipped dictionary defaults by ISO code (the view cannot import the CLI). */
+  defaults: Record<string, PronunciationEntry[]>;
+};
+
+export type BuiltinInstallProgress =
+  | { step: 'runtime' | 'bundle'; file: string; received: number; total: number }
+  | { step: 'done'; status: BuiltinVoiceStatus }
+  | { step: 'error'; message: string };
+
 export type VoiceClientConfig = {
   enabled: boolean;
   /** An endpoint is configured. The URL itself is not needed client-side. */
   configured: boolean;
-  /** A synthesis model is configured; conversation mode requires it. */
+  /** Synthesis is configured for the selected engine; conversation mode requires it. */
   canSpeak: boolean;
   lang?: string;
 };

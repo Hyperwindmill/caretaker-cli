@@ -62,6 +62,7 @@ import { fsRouter } from './fs.js';
 import { activationStatus, resolvePlanningEnabled } from './scheduler/task_roles.js';
 import { registerVoiceProxy, voiceClientConfig, fetchVoiceCatalog } from './voice_proxy.js';
 import { registerVoiceBackend, maybeAutoStartBackend } from './voice_backend.js';
+import { registerVoiceBuiltin } from './voice_builtin.js';
 import { fetchAcpRegistry, installAcpAgent } from '../../acp/index.js';
 
 
@@ -228,6 +229,7 @@ export async function startServer(port: number, host: string): Promise<void> {
   registerTaskBridge(app);
   registerVoiceProxy(app);
   registerVoiceBackend(app);
+  registerVoiceBuiltin(app);
 
 
   // Pure-Node static serving with absolute path validation and fallback

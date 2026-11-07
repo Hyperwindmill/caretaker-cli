@@ -1,0 +1,44 @@
+// Routes for the built-in voice installer. The in-flight guard is per language so a
+// second install of the same language cannot start a parallel download.
+
+import type { Hono } from 'hono';
+import { stream } from 'hono/streaming';
+import { POCKET_LANGUAGES, type PocketLanguage } from '../../voice/pocket/catalog.js';
+import {
+  builtinVoiceStatus,
+  deleteBuiltinVoice,
+  installBuiltinVoice,
+} from '../../voice/pocket/install.js';
+
+const installing = new Set<PocketLanguage>();
+
+function reqLanguage(q: string | undefined): PocketLanguage | null {
+  return q && Object.hasOwn(POCKET_LANGUAGES, q) ? (q as PocketLanguage) : null;
+}
+
+export function registerVoiceBuiltin(app: Hono): void {
+  app.get('/api/voice/builtin', async (c) => c.json(await builtinVoiceStatus()));
+
+  app.post('/api/voice/builtin/install', async (c) => {
+    const lang = reqLanguage(c.req.query('language'));
+    if (!lang) return c.text('Unknown language.', 400);
+    if (installing.has(lang)) return c.text(`An install of ${lang} is already in progress.`, 409);
+    installing.add(lang);
+    c.header('Content-Type', 'application/x-ndjson');
+    return stream(c, async (s) => {
+      try {
+        for await (const p of installBuiltinVoice(lang)) await s.writeln(JSON.stringify(p));
+      } finally {
+        installing.delete(lang);
+      }
+    });
+  });
+
+  app.post('/api/voice/builtin/delete', async (c) => {
+    const lang = reqLanguage(c.req.query('language'));
+    if (!lang) return c.text('Unknown language.', 400);
+    if (installing.has(lang)) return c.text('An install is in progress; wait for it to finish.', 409);
+    await deleteBuiltinVoice(lang);
+    return c.json(await builtinVoiceStatus());
+  });
+}
