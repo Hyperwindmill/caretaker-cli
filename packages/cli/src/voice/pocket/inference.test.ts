@@ -133,8 +133,8 @@ type Log = {
   options: unknown[];
 };
 
-// `eosAt`: first generation step whose EOS logit crosses the threshold (null = never).
-function fakeOrt(eosAt: number | null): { ort: OrtModule; log: Log } {
+// `eosAt`: first generation step whose EOS logit is `eosLogit` (null = never).
+function fakeOrt(eosAt: number | null, eosLogit = 5): { ort: OrtModule; log: Log } {
   const log: Log = { main: [], mimi: [], released: [], options: [] };
   const t = (type: string, data: any, dims: number[]) => new FakeTensor(type, data, dims);
   let step = -1;
@@ -150,7 +150,7 @@ function fakeOrt(eosAt: number | null): { ort: OrtModule; log: Log } {
       log.main.push(f);
       if (f.sequence.dims[1] === 0) step = -1;
       else step++;
-      const eos = eosAt !== null && step >= eosAt ? 0 : -10;
+      const eos = eosAt !== null && step >= eosAt ? eosLogit : -10;
       return {
         conditioning: t('float32', new Float32Array(CDIM), [1, CDIM]),
         eos_logit: t('float32', Float32Array.of(eos), [1, 1]),
@@ -207,11 +207,11 @@ test('stops framesAfterEos frames after EOS, decoding in groups and threading st
     executionMode: 'sequential',
   });
 
-  // "ciao" is one word: frames after EOS = 3 + 2. EOS at step 3 -> steps 0..7 emitted.
+  // "ciao" is one word: frames after EOS = 3 + 2, plus 4 extra. EOS at step 3 -> steps 0..11 emitted.
   const frames = await collect(model.synthesize('ciao', 'alba', new AbortController().signal));
   assert.deepEqual(
     frames.map((f) => f.length),
-    [3 * SPF, 3 * SPF, 2 * SPF],
+    [3 * SPF, 3 * SPF, 3 * SPF, 3 * SPF],
   );
 
   // The prompt starts from the voice: offset 2, cache rows padded with zeros per kv slice.
@@ -231,12 +231,20 @@ test('stops framesAfterEos frames after EOS, decoding in groups and threading st
     [
       [1, 3, LDIM],
       [1, 3, LDIM],
-      [1, 2, LDIM],
+      [1, 3, LDIM],
+      [1, 3, LDIM],
     ],
   );
 
   await model.close();
   assert.equal(log.released.length, 4);
+});
+
+test('a marginal EOS crossing (above the bundle threshold, below 0) does not end the chunk', async () => {
+  const { ort } = fakeOrt(3, -2);
+  const model = await createPocketModel(ort, writeBundle(), { threads: 1, framesPerDecode: 1 });
+  const frames = await collect(model.synthesize('ciao', 'alba', new AbortController().signal));
+  assert.equal(frames.length, 50); // runs to the max length, like no EOS at all
 });
 
 test('without EOS, generation stops at the max length estimate', async () => {

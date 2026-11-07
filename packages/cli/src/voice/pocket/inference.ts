@@ -81,6 +81,15 @@ type BundleJson = TextPrepConfig & {
 
 // upstream TTSModel._TOKENS_PER_SECOND_ESTIMATE / _GEN_SECONDS_PADDING
 const TOKENS_PER_SECOND = 3;
+
+// The bundle's eos_threshold (-4, upstream's float default) is crossed by these int8
+// graphs at random points mid-sentence, cutting the rest of it. Measured on the Italian
+// bundle: real ends score 1.9..28, spurious crossings -3.9..-0.9 (as early as 2 s into a
+// 6 s sentence). Only a confident crossing ends a chunk; maxGen still bounds it.
+const CONFIDENT_EOS_LOGIT = 0;
+// Some voices still signal the end a moment before the last syllable is out; a few
+// more frames (80 ms each) keep it, at the cost of a slightly longer pause.
+const EXTRA_FRAMES_AFTER_EOS = 4;
 const GEN_SECONDS_PADDING = 2;
 
 type Feeds = Record<string, OrtTensor>;
@@ -158,7 +167,8 @@ class Model implements PocketModel {
     const voiceState = this.voiceState(voice);
     for (const chunk of prepareChunks(text, this.tokenizer, this.bundle)) {
       if (signal.aborted) return;
-      const framesAfterEos = this.bundle.model_recommended_frames_after_eos ?? chunk.framesAfterEos;
+      const framesAfterEos =
+        (this.bundle.model_recommended_frames_after_eos ?? chunk.framesAfterEos) + EXTRA_FRAMES_AFTER_EOS;
       for await (const frame of this.chunk(chunk.tokenIds, voiceState, framesAfterEos, signal)) {
         yield frame;
         if (signal.aborted) return;
@@ -202,6 +212,7 @@ class Model implements PocketModel {
         (bundle.sample_rate / bundle.samples_per_frame),
     );
     let eosStep: number | null = null;
+    const eosThreshold = Math.max(bundle.eos_threshold, CONFIDENT_EOS_LOGIT);
     const pending: Float32Array[] = [];
     const decode = async (): Promise<Float32Array> => {
       const latents = new Float32Array(pending.length * ldim);
@@ -217,13 +228,8 @@ class Model implements PocketModel {
       out = await this.s.flowMain.run({ sequence, text_embeddings: noText, ...flowState });
       flowState = nextState(out, bundle.flow_lm_state_manifest);
       const eosLogit = out.eos_logit.data as Float32Array;
-      if (
-        eosStep === null &&
-        step >= bundle.min_frames_before_eos &&
-        eosLogit[eosLogit.length - 1] > bundle.eos_threshold
-      ) {
-        eosStep = step;
-      }
+      const logit = eosLogit[eosLogit.length - 1];
+      if (eosStep === null && step >= bundle.min_frames_before_eos && logit > eosThreshold) eosStep = step;
       // This step's latent is not emitted.
       if (eosStep !== null && step >= eosStep + framesAfterEos) break;
 
