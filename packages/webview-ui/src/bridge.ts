@@ -113,6 +113,9 @@ export type HostToView =
   | { type: 'sessionsLoaded'; sessions: SessionSummary[] }
   /** Agent switch finished server-side (tools resolved, sessions sent). Web server only. */
   | { type: 'agentSelected'; agentId: string }
+  /** Desktop assistant trigger. Injected into the page by the Electron main
+   *  process (`executeJavaScript`), never sent by a server. */
+  | { type: 'assistantActivate'; agentId: string }
   | { type: 'sessionLoaded'; messages: ChatMessage[] }
   | { type: 'chunk'; text: string }
   | { type: 'thinking'; text: string }

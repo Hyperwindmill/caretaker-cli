@@ -10,6 +10,7 @@
 // ConfirmCard rows at the tail until the user resolves them.
 
 import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
+import { beginActivation, onAgentSelected, type Activation } from './assistant_activation.js';
 
 import type { 
   AgentSummary, 
@@ -104,6 +105,9 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
   const [sttCatalogResult, setSttCatalogResult] = useState<VoiceCatalogResult | null>(null);
   const [ttsCatalogResult, setTtsCatalogResult] = useState<VoiceCatalogResult | null>(null);
   const [composerDraft, setComposerDraft] = useState('');
+  // Desktop assistant activation in flight (see assistant_activation.ts).
+  const [activation, setActivation] = useState<Activation>(null);
+  const [composerFocusToken, setComposerFocusToken] = useState(0);
 
 
   useEffect(() => {
@@ -207,11 +211,22 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
         case 'voiceConfig':
           setVoiceConfig(msg.voice);
           return;
+        case 'assistantActivate': {
+          const a = beginActivation(msg.agentId, selectedAgentId, agents.map((x) => x.id));
+          if (!a) return;
+          setActiveScreen('chat');
+          if (a.step === 'awaiting-agent') onSelectAgent(a.agentId);
+          setActivation(a);
+          return;
+        }
+        case 'agentSelected':
+          setActivation((cur) => onAgentSelected(cur, msg.agentId));
+          return;
       }
     }
     window.addEventListener('message', handle);
     return () => window.removeEventListener('message', handle);
-  }, [selectedAgentId]);
+  }, [selectedAgentId, agents]);
 
   const voice = useVoice({
     voice: voiceConfig,
@@ -340,6 +355,29 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showSessions]);
+
+  // Desktop assistant: once the agent is current, start a fresh session and
+  // either open the mic in conversation mode or focus the composer.
+  useEffect(() => {
+    if (activation?.step !== 'open') return;
+    onCreateSession();
+    if (voice.available) {
+      voice.setMode('conversation');
+      setActivation({ ...activation, step: 'mic' });
+    } else {
+      setComposerFocusToken((t) => t + 1);
+      setActivation(null);
+    }
+  }, [activation]);
+
+  // Toggle only after the mode change has landed and capture is idle — two
+  // synchronous calls would race the hook's state.
+  useEffect(() => {
+    if (activation?.step !== 'mic') return;
+    if (voice.mode !== 'conversation' || voice.phase !== 'idle') return;
+    voice.toggle();
+    setActivation(null);
+  }, [activation, voice.mode, voice.phase]);
 
   const composerDisabled =
     chatState.status === 'streaming' || chatState.pendingConfirms.length > 0 || !selectedAgentId;
@@ -558,6 +596,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
               )}
               <Composer
                 disabled={composerDisabled}
+                focusToken={composerFocusToken}
                 onSend={onSend}
                 canAbort={chatState.status === 'streaming'}
                 onAbort={onAbort}
@@ -696,6 +735,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
       )}
       <Composer
         disabled={composerDisabled}
+        focusToken={composerFocusToken}
         onSend={onSend}
         canAbort={chatState.status === 'streaming'}
         onAbort={onAbort}

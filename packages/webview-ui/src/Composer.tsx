@@ -22,6 +22,9 @@ export interface ComposerProps {
   /** false hides the attach control and ignores files (drop, paste, picker);
    *  sends never carry attachments. Default true. */
   allowAttachments?: boolean;
+  /** Bump to focus the input explicitly (desktop assistant activation without
+   *  voice). 0/undefined never focuses; only a change does. */
+  focusToken?: number;
 }
 
 export function Composer({
@@ -34,6 +37,7 @@ export function Composer({
   value: propValue,
   onValueChange: propOnValueChange,
   allowAttachments = true,
+  focusToken,
 }: ComposerProps) {
   const [internalValue, setInternalValue] = useState('');
   const value = propValue !== undefined ? propValue : internalValue;
@@ -68,6 +72,10 @@ export function Composer({
     }
     prevDisabled.current = disabled;
   }, [disabled]);
+
+  useEffect(() => {
+    if (focusToken) inputRef.current?.focus();
+  }, [focusToken]);
 
   const send = (): void => {
     onSend(value, attachments.length > 0 ? attachments : undefined);
