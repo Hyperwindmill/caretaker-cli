@@ -9,6 +9,8 @@ import {
   deleteBuiltinVoice,
   installBuiltinVoice,
 } from '../../voice/pocket/install.js';
+import { releasePocketModels, runtimeLoadError, speakBuiltin } from '../../voice/pocket/engine.js';
+import { setBuiltinSpeaker } from './voice_proxy.js';
 
 const installing = new Set<PocketLanguage>();
 
@@ -16,8 +18,15 @@ function reqLanguage(q: string | undefined): PocketLanguage | null {
   return q && Object.hasOwn(POCKET_LANGUAGES, q) ? (q as PocketLanguage) : null;
 }
 
+async function statusWithLoadError() {
+  const status = await builtinVoiceStatus();
+  const loadError = runtimeLoadError();
+  return loadError ? { ...status, runtime: { ...status.runtime, loadError } } : status;
+}
+
 export function registerVoiceBuiltin(app: Hono): void {
-  app.get('/api/voice/builtin', async (c) => c.json(await builtinVoiceStatus()));
+  setBuiltinSpeaker(speakBuiltin);
+  app.get('/api/voice/builtin', async (c) => c.json(await statusWithLoadError()));
 
   app.post('/api/voice/builtin/install', async (c) => {
     const lang = reqLanguage(c.req.query('language'));
@@ -38,7 +47,8 @@ export function registerVoiceBuiltin(app: Hono): void {
     const lang = reqLanguage(c.req.query('language'));
     if (!lang) return c.text('Unknown language.', 400);
     if (installing.has(lang)) return c.text('An install is in progress; wait for it to finish.', 409);
+    await releasePocketModels();
     await deleteBuiltinVoice(lang);
-    return c.json(await builtinVoiceStatus());
+    return c.json(await statusWithLoadError());
   });
 }
