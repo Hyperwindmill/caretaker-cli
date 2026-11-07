@@ -1,10 +1,11 @@
 import type { Hono } from 'hono';
-import type { CaretakerConfig, VoiceConfig } from 'caretaker-types';
+import type { CaretakerConfig, PronunciationEntry, VoiceConfig } from 'caretaker-types';
 // One definition, in the bridge — the CLI already imports types from there
 // (server.ts:51) and webview-ui is a workspace dependency.
 import type { VoiceCatalog, VoiceClientConfig } from 'webview-ui/bridge';
 import { loadConfig } from '../../store/json.js';
 import { decrypt, isEncrypted } from '../../lib/encryption.js';
+import { applyPronunciation, dictionaryFor, synthesisLanguage } from '../../voice/pronunciation.js';
 
 export function voiceClientConfig(config: CaretakerConfig): VoiceClientConfig | null {
   const voice = config.voice;
@@ -12,7 +13,10 @@ export function voiceClientConfig(config: CaretakerConfig): VoiceClientConfig | 
   const out: VoiceClientConfig = {
     enabled: voice.enabled === true,
     configured: typeof voice.endpoint === 'string' && voice.endpoint.trim().length > 0,
-    canSpeak: typeof voice.ttsModel === 'string' && voice.ttsModel.trim().length > 0,
+    canSpeak:
+      voice.ttsEngine === 'builtin'
+        ? typeof voice.ttsLanguage === 'string' && voice.ttsLanguage.length > 0
+        : typeof voice.ttsModel === 'string' && voice.ttsModel.trim().length > 0,
   };
   if (voice.lang) out.lang = voice.lang;
   return out;
@@ -105,40 +109,178 @@ export function registerVoiceProxy(app: Hono): void {
   });
 
   app.post('/api/voice/speak', async (c) => {
-    const resolved = await resolveVoice();
+    const resolved = await resolveSynthesis();
     if ('error' in resolved) return c.text(resolved.error, 503);
-    const { voice } = resolved;
-    if (!voice.ttsModel) return c.text('No synthesis model configured.', 400);
 
-    const { text } = await c.req.json<{ text?: string }>();
-    if (!text || text.trim().length === 0) return c.text('No text to speak.', 400);
+    const body = await c.req.json<{ text?: unknown }>().catch(() => ({}) as { text?: unknown });
+    const text = body.text;
+    if (typeof text !== 'string' || text.trim().length === 0) return c.text('No text to speak.', 400);
+    if (text.length > MAX_SPEAK_CHARS) return c.text('Text is too long to speak.', 400);
 
-    const payload: Record<string, unknown> = { model: voice.ttsModel, input: text };
-    if (voice.ttsVoice) payload.voice = voice.ttsVoice;
-    if (Number.isFinite(voice.ttsSpeed) && (voice.ttsSpeed as number) > 0) {
-      payload.speed = voice.ttsSpeed;
+    return synthesize(resolved.voice, text, c.req.raw.signal);
+  });
+
+  // Listen: synthesize with the form's unsaved settings. Credentials never
+  // come from the view; mergePreview keeps the saved ones (see its comment).
+  app.post('/api/voice/preview', async (c) => {
+    const resolved = await resolveSynthesis();
+    if ('error' in resolved) return c.text(resolved.error, 503);
+
+    const body = await c.req.json().catch(() => null);
+    const parsed = parsePreviewBody(body);
+    if (typeof parsed === 'string') return c.text(parsed, 400);
+
+    const voice = mergePreview(resolved.voice, parsed.settings);
+    return synthesize(voice, parsed.text, c.req.raw.signal);
+  });
+}
+
+const MAX_SPEAK_CHARS = 20_000;
+const MAX_PREVIEW_CHARS = 2_000;
+const MAX_DICTIONARY_ROWS = 500;
+
+export type SynthesisSettings = Pick<
+  VoiceConfig,
+  | 'ttsEngine'
+  | 'ttsLanguage'
+  | 'ttsVoice'
+  | 'ttsModel'
+  | 'ttsSpeed'
+  | 'ttsEndpoint'
+  | 'pronunciationEnabled'
+> & { pronunciation?: PronunciationEntry[] };
+
+/** Validate the preview body; returns the parsed request or an error message. */
+function parsePreviewBody(body: unknown): { text: string; settings: SynthesisSettings } | string {
+  if (!body || typeof body !== 'object') return 'Expected a JSON body.';
+  const { text, settings } = body as { text?: unknown; settings?: unknown };
+  if (typeof text !== 'string' || text.trim().length === 0) return 'No text to speak.';
+  if (text.length > MAX_PREVIEW_CHARS) return 'Text is too long for a preview.';
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+    return 'Expected a "settings" object.';
+  }
+  const s = settings as Record<string, unknown>;
+  const optString = (k: string) => s[k] === undefined || typeof s[k] === 'string';
+  for (const k of ['ttsLanguage', 'ttsVoice', 'ttsModel', 'ttsEndpoint']) {
+    if (!optString(k)) return `"${k}" must be a string.`;
+  }
+  if (s.ttsEngine !== undefined && s.ttsEngine !== 'endpoint' && s.ttsEngine !== 'builtin') {
+    return '"ttsEngine" must be "endpoint" or "builtin".';
+  }
+  if (s.ttsSpeed !== undefined && (typeof s.ttsSpeed !== 'number' || !Number.isFinite(s.ttsSpeed))) {
+    return '"ttsSpeed" must be a number.';
+  }
+  if (s.pronunciationEnabled !== undefined && typeof s.pronunciationEnabled !== 'boolean') {
+    return '"pronunciationEnabled" must be a boolean.';
+  }
+  if (s.pronunciation !== undefined) {
+    if (!Array.isArray(s.pronunciation) || s.pronunciation.length > MAX_DICTIONARY_ROWS) {
+      return '"pronunciation" must be a list of at most 500 entries.';
     }
+    const ok = s.pronunciation.every(
+      (e) => e && typeof e.term === 'string' && typeof e.say === 'string',
+    );
+    if (!ok) return 'Each pronunciation entry needs a string "term" and "say".';
+  }
+  return { text, settings: s as SynthesisSettings };
+}
 
-    let upstream: Response;
-    try {
-      const target = ttsTarget(voice);
-      upstream = await fetch(url(target.endpoint, '/audio/speech'), {
-        method: 'POST',
-        headers: { ...authHeaders(target.apiKey), 'content-type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-    } catch (err) {
-      return c.text(`Could not reach the voice endpoint: ${err}`, 502);
-    }
+/** The saved voice config if synthesis can run: voice enabled, and (for the
+ *  endpoint engine) some endpoint to talk to. The built-in engine needs none. */
+export async function resolveSynthesis(): Promise<{ voice: VoiceConfig } | { error: string }> {
+  const voice = (await loadConfig()).voice;
+  if (!voice || voice.enabled !== true) {
+    return { error: 'Voice mode is disabled. Enable it in Settings → Voice.' };
+  }
+  if (voice.ttsEngine !== 'builtin' && !voice.endpoint?.trim() && !voice.ttsEndpoint?.trim()) {
+    return { error: 'No voice endpoint configured. Set one in Settings → Voice.' };
+  }
+  return { voice };
+}
 
-    if (!upstream.ok) {
-      return c.body(await upstream.arrayBuffer(), upstream.status as any, {
-        'content-type': upstream.headers.get('content-type') ?? 'text/plain',
-      });
+const sameEndpoint = (a?: string, b?: string) =>
+  (a ?? '').trim().replace(/\/+$/, '') === (b ?? '').trim().replace(/\/+$/, '');
+
+/** Overlay the form's unsaved synthesis settings on the saved config. The saved
+ *  `ttsApiKey` is dropped when the previewed `ttsEndpoint` differs from the saved
+ *  one, so editing the URL can never send the stored key to a new host. */
+export function mergePreview(saved: VoiceConfig, s: SynthesisSettings): VoiceConfig {
+  const merged: VoiceConfig = {
+    ...saved,
+    ttsEngine: s.ttsEngine,
+    ttsLanguage: s.ttsLanguage,
+    ttsVoice: s.ttsVoice,
+    ttsModel: s.ttsModel,
+    ttsSpeed: s.ttsSpeed,
+    ttsEndpoint: s.ttsEndpoint,
+    pronunciationEnabled: s.pronunciationEnabled,
+  };
+  if (!sameEndpoint(s.ttsEndpoint, saved.ttsEndpoint)) delete merged.ttsApiKey;
+  if (s.pronunciation) {
+    const code = synthesisLanguage(merged);
+    if (code) merged.pronunciation = { ...saved.pronunciation, [code]: s.pronunciation };
+  }
+  return merged;
+}
+
+export type BuiltinSpeaker = (
+  voice: VoiceConfig,
+  text: string,
+  signal: AbortSignal,
+) => Promise<Response>;
+
+let builtinSpeaker: BuiltinSpeaker | null = null;
+/** The built-in engine registers itself here; null unregisters. */
+export function setBuiltinSpeaker(fn: BuiltinSpeaker | null): void {
+  builtinSpeaker = fn;
+}
+
+/** Synthesize `text` with the configured engine, dictionary applied, streaming
+ *  the audio back. Failures are Responses (status + readable body), not throws. */
+export async function synthesize(
+  voice: VoiceConfig,
+  text: string,
+  signal: AbortSignal,
+): Promise<Response> {
+  const code = voice.pronunciationEnabled ? synthesisLanguage(voice) : null;
+  const input = code ? applyPronunciation(text, dictionaryFor(voice, code)) : text;
+
+  if (voice.ttsEngine === 'builtin') {
+    if (!builtinSpeaker) {
+      return new Response('The built-in voice engine is not available.', { status: 503 });
     }
-    return c.body(await upstream.arrayBuffer(), 200, {
-      'content-type': upstream.headers.get('content-type') ?? 'audio/mpeg',
+    return builtinSpeaker(voice, input, signal);
+  }
+
+  if (!voice.ttsModel) return new Response('No synthesis model configured.', { status: 400 });
+
+  const payload: Record<string, unknown> = { model: voice.ttsModel, input };
+  if (voice.ttsVoice) payload.voice = voice.ttsVoice;
+  if (Number.isFinite(voice.ttsSpeed) && (voice.ttsSpeed as number) > 0) {
+    payload.speed = voice.ttsSpeed;
+  }
+
+  let upstream: Response;
+  try {
+    const target = ttsTarget(voice);
+    upstream = await fetch(url(target.endpoint, '/audio/speech'), {
+      method: 'POST',
+      headers: { ...authHeaders(target.apiKey), 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal,
     });
+  } catch (err) {
+    return new Response(`Could not reach the voice endpoint: ${err}`, { status: 502 });
+  }
+
+  // Stream through; failures are propagated verbatim (a wrong model id must
+  // surface as the provider's own message).
+  return new Response(upstream.body, {
+    status: upstream.status,
+    headers: {
+      'content-type':
+        upstream.headers.get('content-type') ?? (upstream.ok ? 'audio/mpeg' : 'text/plain'),
+    },
   });
 }
 

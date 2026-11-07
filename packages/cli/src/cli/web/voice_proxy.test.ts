@@ -8,7 +8,12 @@ import assert from 'node:assert/strict';
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import type { CaretakerConfig, VoiceConfig } from 'caretaker-types';
-import { registerVoiceProxy, voiceClientConfig, fetchVoiceCatalog } from './voice_proxy.js';
+import {
+  registerVoiceProxy,
+  voiceClientConfig,
+  fetchVoiceCatalog,
+  setBuiltinSpeaker,
+} from './voice_proxy.js';
 import { saveConfig } from '../../store/json.js';
 
 let server: ReturnType<typeof serve>;
@@ -517,4 +522,171 @@ test('fetchVoiceCatalog ignores a failing or unparseable /voices/all and degrade
   const badVoices = await fetchVoiceCatalog(badVoicesUrl);
   assert.equal(badVoices.tts.length, 1);
   assert.deepEqual(badVoices.tts[0].voices, []);
+});
+
+const post = (path: string, body: unknown) =>
+  fetch(`${baseUrl}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+test('speak streams: the first chunk reaches the client before upstream finishes', async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const slow = new Hono();
+  slow.post('/v1/audio/speech', () => {
+    const enc = new TextEncoder();
+    const body = new ReadableStream({
+      async start(ctrl) {
+        ctrl.enqueue(enc.encode('first'));
+        await gate;
+        ctrl.enqueue(enc.encode('second'));
+        ctrl.close();
+      },
+    });
+    return new Response(body, { headers: { 'content-type': 'audio/mpeg' } });
+  });
+  const slowServer = serve({ fetch: slow.fetch, port: 0 });
+  try {
+    await saveConfig({
+      port: 3000,
+      providers: [],
+      voice: {
+        enabled: true,
+        endpoint: `http://127.0.0.1:${(slowServer.address() as any).port}/v1`,
+        ttsModel: 'm',
+      },
+    });
+    const res = await post('/api/voice/speak', { text: 'ciao' });
+    const reader = res.body!.getReader();
+    const first = await reader.read();
+    assert.equal(new TextDecoder().decode(first.value), 'first');
+    release();
+    let rest = '';
+    for (;;) {
+      const r = await reader.read();
+      if (r.done) break;
+      rest += new TextDecoder().decode(r.value);
+    }
+    assert.equal(rest, 'second');
+  } finally {
+    release();
+    slowServer.close();
+  }
+});
+
+test('speak applies the dictionary when enabled and the language matches', async () => {
+  await saveConfig({
+    port: 3000,
+    providers: [],
+    voice: {
+      enabled: true,
+      endpoint: upstreamUrl,
+      ttsModel: 'kokoro',
+      lang: 'it-IT',
+      pronunciationEnabled: true,
+    },
+  });
+  upstreamBody = new Uint8Array([1]);
+  await post('/api/voice/speak', { text: 'la pipeline' });
+  assert.ok(String(lastRequest?.body.input).includes('pàiplain'));
+});
+
+test('speak leaves text alone when pronunciationEnabled is false', async () => {
+  await saveConfig({
+    port: 3000,
+    providers: [],
+    voice: { enabled: true, endpoint: upstreamUrl, ttsModel: 'kokoro', lang: 'it-IT' },
+  });
+  upstreamBody = new Uint8Array([1]);
+  await post('/api/voice/speak', { text: 'la pipeline' });
+  assert.equal(lastRequest?.body.input, 'la pipeline');
+});
+
+test('preview with a different ttsEndpoint does not send the saved ttsApiKey', async () => {
+  await saveConfig({
+    port: 3000,
+    providers: [],
+    voice: {
+      enabled: true,
+      endpoint: upstreamUrl,
+      ttsModel: 'm',
+      ttsEndpoint: upstreamUrl,
+      ttsApiKey: 'k',
+    },
+  });
+  upstreamBody = new Uint8Array([1]);
+  const settings = { ttsModel: 'm', ttsEndpoint: ttsUpstreamUrl };
+  await post('/api/voice/preview', { text: 'ciao', settings });
+  assert.equal(ttsLastRequest?.auth, null);
+
+  await post('/api/voice/preview', { text: 'ciao', settings: { ...settings, ttsEndpoint: upstreamUrl } });
+  assert.equal(lastRequest?.auth, 'Bearer k');
+});
+
+test('preview uses unsaved dictionary rows', async () => {
+  await saveConfig({
+    port: 3000,
+    providers: [],
+    voice: { enabled: true, endpoint: upstreamUrl, lang: 'it-IT' },
+  });
+  upstreamBody = new Uint8Array([1]);
+  await post('/api/voice/preview', {
+    text: 'il stage',
+    settings: {
+      ttsModel: 'm',
+      pronunciationEnabled: true,
+      pronunciation: [{ term: 'stage', say: 'stèij' }],
+    },
+  });
+  assert.ok(String(lastRequest?.body.input).includes('stèij'));
+});
+
+test('preview rejects malformed bodies with 400', async () => {
+  await saveConfig({ port: 3000, providers: [], voice: { enabled: true, endpoint: upstreamUrl } });
+  assert.equal((await post('/api/voice/preview', { text: '', settings: {} })).status, 400);
+  assert.equal((await post('/api/voice/preview', { text: 'x' })).status, 400);
+  assert.equal((await post('/api/voice/preview', { text: 'x', settings: { ttsSpeed: 'fast' } })).status, 400);
+  assert.equal((await post('/api/voice/preview', { text: 'x'.repeat(5000), settings: {} })).status, 400);
+});
+
+test('builtin engine works without a transcription endpoint', async () => {
+  await saveConfig({
+    port: 3000,
+    providers: [],
+    voice: { enabled: true, endpoint: '', sttModel: '', ttsEngine: 'builtin', ttsLanguage: 'italian' },
+  });
+  setBuiltinSpeaker(async () => new Response('PCM'));
+  try {
+    const res = await post('/api/voice/speak', { text: 'ciao' });
+    assert.equal(res.status, 200);
+    assert.equal(await res.text(), 'PCM');
+  } finally {
+    setBuiltinSpeaker(null);
+  }
+});
+
+test('builtin engine without a registered speaker answers 503 with a message', async () => {
+  await saveConfig({
+    port: 3000,
+    providers: [],
+    voice: { enabled: true, endpoint: '', sttModel: '', ttsEngine: 'builtin', ttsLanguage: 'italian' },
+  });
+  setBuiltinSpeaker(null);
+  const res = await post('/api/voice/speak', { text: 'ciao' });
+  assert.equal(res.status, 503);
+  assert.match(await res.text(), /built-in/i);
+});
+
+test('canSpeak for the builtin engine follows ttsLanguage', () => {
+  const cfg = (voice: VoiceConfig): CaretakerConfig => ({ port: 3000, providers: [], voice }) as any;
+  assert.equal(
+    voiceClientConfig(cfg({ enabled: true, endpoint: '', sttModel: '', ttsEngine: 'builtin', ttsLanguage: 'italian' }))?.canSpeak,
+    true,
+  );
+  assert.equal(
+    voiceClientConfig(cfg({ enabled: true, endpoint: '', sttModel: '', ttsEngine: 'builtin', ttsModel: 'x' }))?.canSpeak,
+    false,
+  );
 });
