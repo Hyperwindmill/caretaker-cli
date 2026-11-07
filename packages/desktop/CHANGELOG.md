@@ -1,5 +1,20 @@
 # caretaker-desktop
 
+## 0.31.0
+
+### Minor Changes
+
+- 619924c: Built-in local transcription (Whisper on ONNX, `sttEngine: 'builtin'`): voice mode can run with no Docker and no transcription endpoint. Model and runtime are downloaded on demand from Settings → Voice.
+- 23ad367: `set_workspace` accepts `agent_default: true` to return the chat session to the agent's own working directory.
+
+### Patch Changes
+
+- Updated dependencies [619924c]
+- Updated dependencies [3cfdcb9]
+- Updated dependencies [23ad367]
+  - @hyperwindmill/caretaker-cli@0.31.0
+  - webview-ui@0.31.0
+
 ## 0.30.0
 
 ### Minor Changes

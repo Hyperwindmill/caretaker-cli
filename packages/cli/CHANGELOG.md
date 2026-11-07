@@ -1,5 +1,16 @@
 # caretaker-cli
 
+## 0.31.0
+
+### Minor Changes
+
+- 619924c: Built-in local transcription (Whisper on ONNX, `sttEngine: 'builtin'`): voice mode can run with no Docker and no transcription endpoint. Model and runtime are downloaded on demand from Settings → Voice.
+- 23ad367: `set_workspace` accepts `agent_default: true` to return the chat session to the agent's own working directory.
+
+### Patch Changes
+
+- 3cfdcb9: Memory sweep: Telegram chat sessions (`telegram_<chatId>`) no longer fail to save their digest. The store's id guard rejected the underscore, so every sweep re-ran the model on the same chunk and logged `Invalid session id`.
+
 ## 0.30.0
 
 ### Minor Changes
