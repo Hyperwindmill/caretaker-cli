@@ -10,6 +10,13 @@ import { VoiceBackendBlock } from './VoiceBackendBlock.js';
 import { BuiltinVoiceBlock } from './BuiltinVoiceBlock.js';
 import { PronunciationTable } from './PronunciationTable.js';
 import { playSpeech } from './speech_player.js';
+import { DEFAULT_PLAYBACK_BUFFER_MS, MAX_PLAYBACK_BUFFER_MS } from './voice_stream.js';
+
+/** The form's buffer field as a whole number of ms, clamped; blank ⇒ undefined (default). */
+function parsedBufferMs(v: string): number | undefined {
+  const n = Number.parseInt(v, 10);
+  return Number.isFinite(n) ? Math.min(Math.max(n, 0), MAX_PLAYBACK_BUFFER_MS) : undefined;
+}
 import { builtinPreset, edgePreset, localDefaultsPreset } from './voice_tab_presets.js';
 
 const BACKEND_POLL_MS = 10_000;
@@ -58,6 +65,9 @@ export function VoiceTab({ config, onSave, postMessage, sttCatalogResult, ttsCat
     current.ttsSpeed === undefined ? '' : String(current.ttsSpeed),
   );
   const [lang, setLang] = useState(current.lang ?? '');
+  const [bufferMs, setBufferMs] = useState(
+    current.playbackBufferMs === undefined ? '' : String(current.playbackBufferMs),
+  );
   const [ttsEngine, setTtsEngine] = useState<'endpoint' | 'builtin'>(current.ttsEngine ?? 'endpoint');
   const [ttsLanguage, setTtsLanguage] = useState(current.ttsLanguage ?? '');
   const [pronEnabled, setPronEnabled] = useState(current.pronunciationEnabled ?? false);
@@ -254,7 +264,7 @@ export function VoiceTab({ config, onSave, postMessage, sttCatalogResult, ttsCat
         setListenError((await res.text().catch(() => '')) || `HTTP ${res.status}`);
         return;
       }
-      await playSpeech(res, ac.signal);
+      await playSpeech(res, ac.signal, { bufferMs: parsedBufferMs(bufferMs) });
     } catch (err) {
       if (!ac.signal.aborted) setListenError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -276,6 +286,8 @@ export function VoiceTab({ config, onSave, postMessage, sttCatalogResult, ttsCat
       voice.ttsSpeed = Math.min(Math.max(speed, 0.5), 2);
     }
     if (lang.trim()) voice.lang = lang.trim();
+    const buf = parsedBufferMs(bufferMs);
+    if (buf !== undefined) voice.playbackBufferMs = buf;
     if (autoStartBackend) voice.autoStartBackend = true;
     if (builtin) {
       voice.ttsEngine = 'builtin';
@@ -615,6 +627,25 @@ export function VoiceTab({ config, onSave, postMessage, sttCatalogResult, ttsCat
 
           </>
         )}
+
+        <div className="form-group">
+          <label htmlFor="voice-buffer">Playback buffer, ms (optional)</label>
+          <input
+            id="voice-buffer"
+            type="number"
+            min="0"
+            max={MAX_PLAYBACK_BUFFER_MS}
+            step="100"
+            placeholder={`${DEFAULT_PLAYBACK_BUFFER_MS} — default`}
+            value={bufferMs}
+            onChange={(e) => setBufferMs(e.target.value)}
+          />
+          <small>
+            Audio collected before speech starts, and again if it runs dry. Raise it if
+            speech stutters (a slower machine or endpoint); lower it for a quicker start.
+            Listen uses the value in the form, so you can try it before saving.
+          </small>
+        </div>
 
         <div className="form-group">
           <label htmlFor="voice-lang">Language (optional)</label>

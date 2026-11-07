@@ -73,6 +73,8 @@ export function useVoice(opts: {
   const [error, setError] = useState<string | null>(null);
 
   // Latest-value refs so async callbacks never read stale state.
+  const bufferMsRef = useRef(voice?.playbackBufferMs);
+  bufferMsRef.current = voice?.playbackBufferMs;
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
   const modeRef = useRef(mode);
@@ -261,7 +263,7 @@ export function useVoice(opts: {
       });
       if (!res.ok) return fail(await res.text());
       // Resolves after the last sample has played (or immediately on abort).
-      await playSpeech(res, ac.signal);
+      await playSpeech(res, ac.signal, { bufferMs: bufferMsRef.current });
       if (ac.signal.aborted) return;
       speechAbortRef.current = null;
       // Chain the next queued bubble or, when the queue is empty, emit

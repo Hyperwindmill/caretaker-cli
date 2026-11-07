@@ -42,8 +42,22 @@ export function pcm16Chunk(
 }
 
 /** When to start the next scheduled buffer: never in the past, never before the previous one ends. */
-export function nextStart(now: number, cursor: number, leadSeconds: number): number {
-  return Math.max(cursor, now + leadSeconds);
+export function nextStart(now: number, cursor: number, bufferSeconds: number): number {
+  // Still playing (or queued ahead): append seamlessly. Otherwise this is the first
+  // chunk or the audio ran dry: wait one buffer's worth before resuming.
+  return cursor > now + MIN_AHEAD_SECONDS ? cursor : now + bufferSeconds;
+}
+
+/** Ahead-of-time margin below which a chunk could not be scheduled in time. */
+const MIN_AHEAD_SECONDS = 0.01;
+
+export const DEFAULT_PLAYBACK_BUFFER_MS = 500;
+export const MAX_PLAYBACK_BUFFER_MS = 5000;
+
+/** The configured buffer in seconds: default when unset, clamped to 0..MAX. */
+export function bufferSeconds(ms: number | undefined): number {
+  const v = Number.isFinite(ms) ? (ms as number) : DEFAULT_PLAYBACK_BUFFER_MS;
+  return Math.min(Math.max(v, 0), MAX_PLAYBACK_BUFFER_MS) / 1000;
 }
 
 export function choosePath(contentType: string | null, mseSupports: (t: string) => boolean): PlaybackPath {

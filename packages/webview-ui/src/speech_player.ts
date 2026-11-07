@@ -1,16 +1,19 @@
-import { choosePath, nextStart, parsePcmType, pcm16Chunk } from './voice_stream.js';
-
-const LEAD_SECONDS = 0.05;
+import { bufferSeconds, choosePath, nextStart, parsePcmType, pcm16Chunk } from './voice_stream.js';
 
 /** Play a `/api/voice/speak` response as it arrives. Resolves after the last
  *  sample has played; rejects on a decode/playback error; on abort stops the
  *  audio immediately and resolves. A fully buffered body is just one big chunk. */
-export async function playSpeech(res: Response, signal: AbortSignal): Promise<void> {
+export async function playSpeech(
+  res: Response,
+  signal: AbortSignal,
+  opts: { bufferMs?: number } = {},
+): Promise<void> {
   if (signal.aborted) return;
+  const buffer = bufferSeconds(opts.bufferMs);
   const contentType = res.headers.get('content-type');
   const path = choosePath(contentType, (t) => typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported(t));
-  if (path === 'pcm' && res.body) return playPcm(res, signal, parsePcmType(contentType)!);
-  if (path === 'mse' && res.body) return playMse(res, signal);
+  if (path === 'pcm' && res.body) return playPcm(res, signal, parsePcmType(contentType)!, buffer);
+  if (path === 'mse' && res.body) return playMse(res, signal, buffer);
   return playBuffered(res, signal);
 }
 
@@ -18,6 +21,7 @@ async function playPcm(
   res: Response,
   signal: AbortSignal,
   fmt: { rate: number; channels: number },
+  buffer: number,
 ): Promise<void> {
   const ctx = new AudioContext();
   const reader = res.body!.getReader();
@@ -64,7 +68,7 @@ async function playPcm(
       const src = ctx.createBufferSource();
       src.buffer = buf;
       src.connect(ctx.destination);
-      const at = nextStart(ctx.currentTime, cursor, LEAD_SECONDS);
+      const at = nextStart(ctx.currentTime, cursor, buffer);
       src.start(at);
       cursor = at + buf.duration;
       sources.push(src);
@@ -85,7 +89,7 @@ async function playPcm(
   }
 }
 
-async function playMse(res: Response, signal: AbortSignal): Promise<void> {
+async function playMse(res: Response, signal: AbortSignal, buffer: number): Promise<void> {
   const ms = new MediaSource();
   const url = URL.createObjectURL(ms);
   const audio = new Audio(url);
@@ -113,19 +117,21 @@ async function playMse(res: Response, signal: AbortSignal): Promise<void> {
     });
     ended.catch(() => {}); // observed below; avoids an unhandled rejection while appending
     let started = false;
+    const start = () => {
+      started = true;
+      // Not awaited: play() settles only once enough audio is buffered, which may
+      // need later chunks — awaiting it here would stop appending them.
+      audio.play().catch((e) => !signal.aborted && failPlayback(e));
+    };
     for (;;) {
       const { done, value } = await reader.read();
       if (signal.aborted) return;
       if (done) break;
       await append(value as Uint8Array<ArrayBuffer>);
       if (signal.aborted) return;
-      if (!started) {
-        started = true;
-        // Not awaited: play() settles only once enough audio is buffered, which may
-        // need later chunks — awaiting it here would stop appending them.
-        audio.play().catch((e) => !signal.aborted && failPlayback(e));
-      }
+      if (!started && bufferedEnd(sb) >= buffer) start();
     }
+    if (!started && bufferedEnd(sb) > 0) start();
     if (!started) return;
     if (ms.readyState === 'open') ms.endOfStream();
     await ended;
@@ -158,4 +164,9 @@ async function playBuffered(res: Response, signal: AbortSignal): Promise<void> {
     audio.removeAttribute('src');
     URL.revokeObjectURL(url);
   }
+}
+
+/** Seconds of audio appended so far (the end of the last buffered range). */
+function bufferedEnd(sb: SourceBuffer): number {
+  return sb.buffered.length ? sb.buffered.end(sb.buffered.length - 1) : 0;
 }

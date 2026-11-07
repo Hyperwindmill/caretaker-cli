@@ -19,6 +19,7 @@ export function voiceClientConfig(config: CaretakerConfig): VoiceClientConfig | 
         : typeof voice.ttsModel === 'string' && voice.ttsModel.trim().length > 0,
   };
   if (voice.lang) out.lang = voice.lang;
+  if (Number.isFinite(voice.playbackBufferMs)) out.playbackBufferMs = voice.playbackBufferMs;
   return out;
 }
 

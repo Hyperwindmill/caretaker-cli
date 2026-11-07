@@ -117,6 +117,8 @@ export type VoiceClientConfig = {
   /** Synthesis is configured for the selected engine; conversation mode requires it. */
   canSpeak: boolean;
   lang?: string;
+  /** See VoiceConfig.playbackBufferMs. */
+  playbackBufferMs?: number;
 };
 
 

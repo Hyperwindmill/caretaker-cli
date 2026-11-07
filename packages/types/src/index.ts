@@ -213,6 +213,10 @@ export type VoiceConfig = {
   pronunciation?: Record<string, PronunciationEntry[]>;
   /** Apply the dictionary of the synthesis language before synthesis. */
   pronunciationEnabled?: boolean;
+  /** Audio buffered before streamed speech starts playing, and again after a
+   *  stall, in milliseconds. Unset ⇒ 500. Raise it if speech stutters (a slow
+   *  machine or a slow endpoint); lower it for a quicker start. */
+  playbackBufferMs?: number;
 };
 
 /** One respelling: `term` (literal, matched whole-word, case-insensitive) is

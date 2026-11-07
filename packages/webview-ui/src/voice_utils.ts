@@ -188,5 +188,6 @@ export function voiceSignature(v: Record<string, unknown> | undefined | null): s
     v.ttsLanguage ?? '',
     v.pronunciationEnabled === true,
     v.pronunciation ?? null,
+    v.playbackBufferMs ?? '',
   ]);
 }
