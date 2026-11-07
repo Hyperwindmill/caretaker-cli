@@ -10,6 +10,7 @@ import { McpTab } from './McpTab.js';
 import { ServicesTab } from './ServicesTab.js';
 import { VoiceTab } from './VoiceTab.js';
 import { MemoryTab } from './MemoryTab.js';
+import { DesktopTab } from './DesktopTab.js';
 import { BackIcon } from './icons.js';
 
 interface SettingsPanelProps {
@@ -40,7 +41,7 @@ interface SettingsPanelProps {
 }
 
 
-export type TabId = 'providers' | 'projects' | 'agents' | 'plugins' | 'mcp' | 'services' | 'voice' | 'memory';
+export type TabId = 'providers' | 'projects' | 'agents' | 'plugins' | 'mcp' | 'services' | 'voice' | 'memory' | 'desktop';
 
 export function SettingsPanel({
   layout = 'compact',
@@ -164,6 +165,15 @@ export function SettingsPanel({
             onSave={(updatedConfig) => postMessage({ type: 'saveConfig', config: updatedConfig })}
           />
         );
+
+      case 'desktop':
+        return (
+          <DesktopTab
+            config={config}
+            agents={agents}
+            onSave={(updatedConfig) => postMessage({ type: 'saveConfig', config: updatedConfig })}
+          />
+        );
     }
   };
 
@@ -239,6 +249,16 @@ export function SettingsPanel({
             onClick={() => setActiveTab('memory')}
           >
             Memory
+          </button>
+        )}
+        {/* Only the Electron desktop app acts on the assistant shortcut; the
+            desktop app runs the web server, so it shares the sidebar layout. */}
+        {layout === 'sidebar' && (
+          <button
+            className={`settings-panel__tab-btn ${activeTab === 'desktop' ? 'settings-panel__tab-btn--active' : ''}`}
+            onClick={() => setActiveTab('desktop')}
+          >
+            Desktop
           </button>
         )}
       </nav>
