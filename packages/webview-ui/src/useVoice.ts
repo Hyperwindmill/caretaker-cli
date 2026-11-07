@@ -12,6 +12,7 @@ import {
   type VoiceMode,
   type VoicePhase,
 } from './voice_utils.js';
+import { playSpeech } from './speech_player.js';
 
 export type UseVoiceResult = {
   available: boolean;
@@ -87,7 +88,8 @@ export function useVoice(opts: {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const vadRef = useRef<VadInstance | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  /** Aborts the in-flight synthesis fetch and its playback. */
+  const speechAbortRef = useRef<AbortController | null>(null);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heardSpeechRef = useRef(false);
   /** Secondary guard only. The primary one is `turnComplete` — see the awaiting
@@ -99,7 +101,7 @@ export function useVoice(opts: {
    *  invariant 3 was protecting, expressed once instead of via a baseline. */
   const cursorRef = useRef(0);
   /** Assistant texts finalized but not yet played. Drained by `speakReply`,
-   *  one item per synthesis+playback cycle, chaining inside `audio.onended`. */
+   *  one item per synthesis+playback cycle, chaining once `playSpeech` resolves. */
   const queueRef = useRef<string[]>([]);
 
   const apply = useCallback((event: Parameters<typeof nextPhase>[1]) => {
@@ -131,11 +133,8 @@ export function useVoice(opts: {
   }, []);
 
   const stopPlayback = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = '';
-      audioRef.current = null;
-    }
+    speechAbortRef.current?.abort();
+    speechAbortRef.current = null;
   }, []);
 
   const fail = useCallback(
@@ -251,41 +250,37 @@ export function useVoice(opts: {
       });
       return;
     }
+    const ac = new AbortController();
+    speechAbortRef.current = ac;
     try {
       const res = await fetch('/api/voice/speak', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ text: stripMarkdownForSpeech(text) }),
+        signal: ac.signal,
       });
       if (!res.ok) return fail(await res.text());
-      const url = URL.createObjectURL(await res.blob());
-      const audio = new Audio(url);
-      audioRef.current = audio;
-      audio.onended = () => {
-        URL.revokeObjectURL(url);
-        audioRef.current = null;
-        // Chain the next queued bubble or, when the queue is empty, emit
-        // playbackEnded. INVARIANT 1: the mic reopens only here, and only when
-        // the harness turn is also over — a queue drained mid-turn returns to
-        // awaiting, not recording.
-        setTimeout(() => {
-          if (queueRef.current.length > 0) {
-            void speakReply();
-          } else {
-            apply({
-              kind: 'playbackEnded',
-              mode: 'conversation',
-              turnComplete: chatStatusRef.current === 'idle',
-            });
-          }
-        }, POST_PLAYBACK_MS);
-      };
-      audio.onerror = () => {
-        URL.revokeObjectURL(url);
-        fail('Could not play the synthesized reply.');
-      };
-      await audio.play();
+      // Resolves after the last sample has played (or immediately on abort).
+      await playSpeech(res, ac.signal);
+      if (ac.signal.aborted) return;
+      speechAbortRef.current = null;
+      // Chain the next queued bubble or, when the queue is empty, emit
+      // playbackEnded. INVARIANT 1: the mic reopens only here, and only when
+      // the harness turn is also over — a queue drained mid-turn returns to
+      // awaiting, not recording.
+      setTimeout(() => {
+        if (queueRef.current.length > 0) {
+          void speakReply();
+        } else {
+          apply({
+            kind: 'playbackEnded',
+            mode: 'conversation',
+            turnComplete: chatStatusRef.current === 'idle',
+          });
+        }
+      }, POST_PLAYBACK_MS);
     } catch (err) {
+      if (ac.signal.aborted) return;
       fail(`Synthesis failed: ${err}`);
     }
   }, [apply, fail]);
