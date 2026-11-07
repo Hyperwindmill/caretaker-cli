@@ -31,6 +31,7 @@ function stub(release: Promise<void>) {
       node: { url: 'https://t/node', integrity: 'sha512-' + createHash('sha512').update(empty).digest('base64') },
       common: { url: 'https://t/common', integrity: 'sha512-' + createHash('sha512').update(empty).digest('base64') },
     },
+    whisper: { base: { repo: 'o/whisper-base', revision: 'r', files: [{ name: 'onnx/a', sha256: createHash('sha256').update(data).digest('hex'), bytes: 1 }] } } as any,
     languages: { italian: { code: 'it', dir: 'it', nativeVoice: 'alba', files: [{ name: 'a', sha256: createHash('sha256').update(data).digest('hex'), bytes: 1 }] } } as any,
   });
   __setFetch((async (url: any) => {
@@ -53,4 +54,26 @@ test('install streams ndjson ending with done; a concurrent install → 409', as
   const del = await post('/api/voice/builtin/delete?language=italian');
   assert.equal(del.status, 200);
   assert.equal((await del.json()).languages[0].installed, false);
+});
+
+test('stt: bad size, neither, both → 400', async () => {
+  assert.equal((await post('/api/voice/builtin/install?stt=huge')).status, 400);
+  assert.equal((await post('/api/voice/builtin/install?stt=base&language=italian')).status, 400);
+  assert.equal((await post('/api/voice/builtin/delete?stt=huge')).status, 400);
+  assert.equal((await post('/api/voice/builtin/delete')).status, 400);
+});
+
+test('stt install streams ndjson ending done; a concurrent voice install → 409; delete works', async () => {
+  let go!: () => void;
+  stub(new Promise<void>((r) => (go = r)));
+  const res1 = await post('/api/voice/builtin/install?stt=base');
+  assert.equal((await post('/api/voice/builtin/install?language=italian')).status, 409);
+  assert.equal((await post('/api/voice/builtin/delete?stt=base')).status, 409);
+  go();
+  const lines = (await res1.text()).trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(lines.at(-1).step, 'done');
+  assert.deepEqual(lines.at(-1).status.stt, [{ id: 'base', installed: true, bytes: 1 }]);
+  const del = await post('/api/voice/builtin/delete?stt=base');
+  assert.equal(del.status, 200);
+  assert.equal((await del.json()).stt[0].installed, false);
 });

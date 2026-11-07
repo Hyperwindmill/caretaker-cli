@@ -100,13 +100,14 @@ export type VoiceCatalogResult =
 export type BuiltinVoiceStatus = {
   runtime: { installed: boolean; version: string; loadError?: string };
   languages: Array<{ id: string; code: string; nativeVoice: string; installed: boolean; bytes: number }>;
+  stt: Array<{ id: 'tiny' | 'base' | 'small'; installed: boolean; bytes: number }>;
   voices: string[];
   /** Shipped dictionary defaults by ISO code (the view cannot import the CLI). */
   defaults: Record<string, PronunciationEntry[]>;
 };
 
 export type BuiltinInstallProgress =
-  | { step: 'runtime' | 'bundle'; file: string; received: number; total: number }
+  | { step: 'runtime' | 'bundle' | 'model'; file: string; received: number; total: number }
   | { step: 'done'; status: BuiltinVoiceStatus }
   | { step: 'error'; message: string };
 

@@ -25,16 +25,18 @@ import {
   POCKET_VOICES,
   type PocketLanguage,
 } from './catalog.js';
+import { WHISPER_BASE_URL, WHISPER_MODELS, type WhisperSize } from '../whisper/catalog.js';
 
 // Mirrors webview-ui/src/bridge.ts (the CLI cannot import the view's source).
 export type BuiltinVoiceStatus = {
   runtime: { installed: boolean; version: string; loadError?: string };
   languages: Array<{ id: string; code: string; nativeVoice: string; installed: boolean; bytes: number }>;
+  stt: Array<{ id: WhisperSize; installed: boolean; bytes: number }>;
   voices: string[];
   defaults: Record<string, PronunciationEntry[]>;
 };
 export type BuiltinInstallProgress =
-  | { step: 'runtime' | 'bundle'; file: string; received: number; total: number }
+  | { step: 'runtime' | 'bundle' | 'model'; file: string; received: number; total: number }
   | { step: 'done'; status: BuiltinVoiceStatus }
   | { step: 'error'; message: string };
 
@@ -44,6 +46,8 @@ type Catalog = {
   ortVersion: string;
   revision: string;
   baseUrl: string;
+  whisper: typeof WHISPER_MODELS;
+  whisperBaseUrl: string;
 };
 const REAL_CATALOG: Catalog = {
   languages: POCKET_LANGUAGES,
@@ -51,6 +55,8 @@ const REAL_CATALOG: Catalog = {
   ortVersion: ORT_VERSION,
   revision: POCKET_REVISION,
   baseUrl: POCKET_BASE_URL,
+  whisper: WHISPER_MODELS,
+  whisperBaseUrl: WHISPER_BASE_URL,
 };
 let cat: Catalog = REAL_CATALOG;
 export function __setCatalogForTest(c: Partial<Catalog>): void {
@@ -75,6 +81,10 @@ export function runtimeEntry(): string {
 }
 export function bundleDir(lang: PocketLanguage): string {
   return join(dataDir(), 'voice', 'pocket', cat.languages[lang].dir, cat.revision);
+}
+/** `<dataDir>/voice/whisper/<size>/<revision>`; the repo's `onnx/` subdirectory is kept. */
+export function whisperDir(size: WhisperSize): string {
+  return join(dataDir(), 'voice', 'whisper', size, cat.whisper[size].revision);
 }
 
 const tmpName = (p: string) => `${p}.tmp-${process.pid}`;
@@ -267,6 +277,37 @@ async function* installBundle(lang: PocketLanguage): AsyncGenerator<BuiltinInsta
   }
 }
 
+async function* installModel(size: WhisperSize): AsyncGenerator<BuiltinInstallProgress> {
+  const dir = whisperDir(size);
+  if (existsSync(dir)) return;
+  const spec = cat.whisper[size];
+  const tmp = tmpName(dir);
+  await rm(tmp, { recursive: true, force: true });
+  try {
+    for (const f of spec.files) {
+      const url = `${cat.whisperBaseUrl}/${spec.repo}/resolve/${spec.revision}/${f.name}`;
+      for await (const g of download(url, join(tmp, f.name), f.sha256, f.name, f.bytes)) {
+        yield { step: 'model', file: f.name, ...g };
+      }
+    }
+    await rename(tmp, dir);
+  } catch (e) {
+    await rm(tmp, { recursive: true, force: true });
+    throw e;
+  }
+}
+
+export async function* installBuiltinStt(size: WhisperSize): AsyncGenerator<BuiltinInstallProgress> {
+  try {
+    if (!cat.whisper[size]) throw new Error(`Unknown model size: ${size}`);
+    yield* installRuntime();
+    yield* installModel(size);
+    yield { step: 'done', status: await builtinVoiceStatus() };
+  } catch (e) {
+    yield { step: 'error', message: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export async function* installBuiltinVoice(lang: PocketLanguage): AsyncGenerator<BuiltinInstallProgress> {
   try {
     if (!cat.languages[lang]) throw new Error(`Unknown language: ${lang}`);
@@ -278,16 +319,29 @@ export async function* installBuiltinVoice(lang: PocketLanguage): AsyncGenerator
   }
 }
 
-async function anyBundleInstalled(): Promise<boolean> {
-  return (Object.keys(cat.languages) as PocketLanguage[]).some((l) => existsSync(bundleDir(l)));
+/** The runtime is shared: it stays while any Pocket bundle or Whisper model remains. */
+async function anyModelInstalled(): Promise<boolean> {
+  return (
+    (Object.keys(cat.languages) as PocketLanguage[]).some((l) => existsSync(bundleDir(l))) ||
+    (Object.keys(cat.whisper) as WhisperSize[]).some((z) => existsSync(whisperDir(z)))
+  );
 }
 
-/** Removes the language's bundle(s); removes the runtime too once no bundle remains,
+async function dropRuntimeIfUnused(keepRuntime?: boolean): Promise<void> {
+  if (!keepRuntime && !(await anyModelInstalled())) await rm(runtimeRoot(), { recursive: true, force: true });
+}
+
+/** Removes the language's bundle(s); removes the runtime too once nothing else needs it,
  *  unless `keepRuntime` (the native binding is loaded in this process: Windows refuses
  *  to delete it, and a half-deleted runtime would break reinstalling). */
 export async function deleteBuiltinVoice(lang: PocketLanguage, opts: { keepRuntime?: boolean } = {}): Promise<void> {
   await rm(dirname(bundleDir(lang)), { recursive: true, force: true });
-  if (!opts.keepRuntime && !(await anyBundleInstalled())) await rm(runtimeRoot(), { recursive: true, force: true });
+  await dropRuntimeIfUnused(opts.keepRuntime);
+}
+
+export async function deleteBuiltinStt(size: WhisperSize, opts: { keepRuntime?: boolean } = {}): Promise<void> {
+  await rm(dirname(whisperDir(size)), { recursive: true, force: true });
+  await dropRuntimeIfUnused(opts.keepRuntime);
 }
 
 export async function builtinVoiceStatus(): Promise<BuiltinVoiceStatus> {
@@ -306,6 +360,11 @@ export async function builtinVoiceStatus(): Promise<BuiltinVoiceStatus> {
         bytes: s.files.reduce((n, f) => n + f.bytes, 0),
       }),
     ),
+    stt: (Object.keys(cat.whisper) as WhisperSize[]).map((id) => ({
+      id,
+      installed: existsSync(whisperDir(id)),
+      bytes: cat.whisper[id].files.reduce((n, f) => n + f.bytes, 0),
+    })),
     voices: [...POCKET_VOICES],
     defaults,
   };

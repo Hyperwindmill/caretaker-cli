@@ -9,6 +9,7 @@ const status = (loadError?: string): BuiltinVoiceStatus => ({
     { id: 'english', code: 'en', nativeVoice: 'alba', installed: false, bytes: 1 },
     { id: 'italian', code: 'it', nativeVoice: 'alba', installed: true, bytes: 1 },
   ],
+  stt: [],
   voices: ['alba', 'jean'],
   defaults: {},
 });

@@ -4,16 +4,31 @@
 import type { Hono } from 'hono';
 import { stream } from 'hono/streaming';
 import { POCKET_LANGUAGES, type PocketLanguage } from '../../voice/pocket/catalog.js';
+import { WHISPER_MODELS, type WhisperSize } from '../../voice/whisper/catalog.js';
 import {
   builtinVoiceStatus,
+  deleteBuiltinStt,
   deleteBuiltinVoice,
+  installBuiltinStt,
   installBuiltinVoice,
 } from '../../voice/pocket/install.js';
 import { releasePocketModels, runtimeLoadError, runtimeLoaded, speakBuiltin } from '../../voice/pocket/engine.js';
 import { setBuiltinSpeaker } from './voice_proxy.js';
 
-// One install or delete at a time: languages share the runtime directory.
-let busy: PocketLanguage | null = null;
+// One install or delete at a time: voices and models share the runtime directory.
+let busy: string | null = null;
+
+type Target = { kind: 'voice'; lang: PocketLanguage } | { kind: 'stt'; size: WhisperSize };
+
+/** Exactly one of `?language=` / `?stt=`, both known; otherwise a 400 message. */
+function reqTarget(language: string | undefined, stt: string | undefined): Target | string {
+  if ((language === undefined) === (stt === undefined)) return 'Pass exactly one of language or stt.';
+  if (stt !== undefined) {
+    return Object.hasOwn(WHISPER_MODELS, stt) ? { kind: 'stt', size: stt as WhisperSize } : 'Unknown model size.';
+  }
+  const lang = reqLanguage(language);
+  return lang ? { kind: 'voice', lang } : 'Unknown language.';
+}
 
 function reqLanguage(q: string | undefined): PocketLanguage | null {
   return q && Object.hasOwn(POCKET_LANGUAGES, q) ? (q as PocketLanguage) : null;
@@ -30,14 +45,15 @@ export function registerVoiceBuiltin(app: Hono): void {
   app.get('/api/voice/builtin', async (c) => c.json(await statusWithLoadError()));
 
   app.post('/api/voice/builtin/install', async (c) => {
-    const lang = reqLanguage(c.req.query('language'));
-    if (!lang) return c.text('Unknown language.', 400);
+    const t = reqTarget(c.req.query('language'), c.req.query('stt'));
+    if (typeof t === 'string') return c.text(t, 400);
+    const name = t.kind === 'voice' ? t.lang : t.size;
     if (busy) return c.text(`An install of ${busy} is already in progress.`, 409);
-    busy = lang;
+    busy = name;
     c.header('Content-Type', 'application/x-ndjson');
     return stream(c, async (s) => {
       try {
-        for await (const p of installBuiltinVoice(lang)) await s.writeln(JSON.stringify(p));
+        for await (const p of t.kind === 'voice' ? installBuiltinVoice(t.lang) : installBuiltinStt(t.size)) await s.writeln(JSON.stringify(p));
       } finally {
         busy = null;
       }
@@ -45,13 +61,16 @@ export function registerVoiceBuiltin(app: Hono): void {
   });
 
   app.post('/api/voice/builtin/delete', async (c) => {
-    const lang = reqLanguage(c.req.query('language'));
-    if (!lang) return c.text('Unknown language.', 400);
+    const t = reqTarget(c.req.query('language'), c.req.query('stt'));
+    if (typeof t === 'string') return c.text(t, 400);
     if (busy) return c.text('An install is in progress; wait for it to finish.', 409);
-    busy = lang;
+    busy = t.kind === 'voice' ? t.lang : t.size;
     try {
       await releasePocketModels();
-      await deleteBuiltinVoice(lang, { keepRuntime: runtimeLoaded() });
+      // Task 5: await releaseWhisperModels() here too, before the runtimeLoaded() check.
+      const keepRuntime = runtimeLoaded();
+      if (t.kind === 'voice') await deleteBuiltinVoice(t.lang, { keepRuntime });
+      else await deleteBuiltinStt(t.size, { keepRuntime });
     } finally {
       busy = null;
     }

@@ -10,7 +10,7 @@ import { existsSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import {
   __resetFetch, __setCatalogForTest, __setFetch, builtinVoiceStatus, bundleDir,
-  deleteBuiltinVoice, installBuiltinVoice, runtimeDir, runtimeEntry,
+  deleteBuiltinStt, deleteBuiltinVoice, installBuiltinStt, installBuiltinVoice, runtimeDir, runtimeEntry, whisperDir,
 } from './install.js';
 
 function tarEntry(name: string, data: Buffer): Buffer {
@@ -60,6 +60,14 @@ function setup(opts: { brokenBundle?: boolean; brokenRuntime?: boolean; missing?
       italian: { code: 'it', dir: 'it', nativeVoice: 'alba', files: files('it') },
       french: { code: 'fr', dir: 'fr', nativeVoice: 'alba', files: [{ name: 'c.bin', sha256: sha256(fileC), bytes: fileC.length }] },
     } as any,
+    whisper: {
+      tiny: { repo: 'o/whisper-tiny', revision: 'wrev', files: [
+        { name: 'onnx/enc.onnx', sha256: sha256(fileA), bytes: fileA.length },
+        { name: 'vocab.json', sha256: sha256(fileB), bytes: fileB.length },
+      ] },
+      base: { repo: 'o/whisper-base', revision: 'wrev', files: [{ name: 'onnx/enc.onnx', sha256: sha256(fileC), bytes: fileC.length }] },
+    } as any,
+    whisperBaseUrl: 'https://hf.test',
   });
   __setFetch((async (url: any) => {
     const u = String(url);
@@ -67,7 +75,7 @@ function setup(opts: { brokenBundle?: boolean; brokenRuntime?: boolean; missing?
     if (opts.missing && u.includes(opts.missing)) return new Response('nope', { status: 404 });
     const body: Buffer | undefined =
       u.endsWith('node.tgz') ? nodeTgz : u.endsWith('common.tgz') ? commonTgz
-      : u.endsWith('a.bin') ? fileA : u.endsWith('b.bin') ? fileB : u.endsWith('c.bin') ? fileC : undefined;
+      : u.endsWith('a.bin') || u.endsWith('whisper-tiny/resolve/wrev/onnx/enc.onnx') ? fileA : u.endsWith('whisper-base/resolve/wrev/onnx/enc.onnx') ? fileC : u.endsWith('vocab.json') ? fileB : u.endsWith('a.bin') ? fileA : u.endsWith('b.bin') ? fileB : u.endsWith('c.bin') ? fileC : undefined;
     return body ? new Response(new Uint8Array(body)) : new Response('', { status: 404 });
   }) as typeof fetch);
 }
@@ -144,5 +152,56 @@ test('delete keeps the runtime while another bundle remains, removes it with the
   assert.ok(!existsSync(bundleDir('italian')));
   assert.ok(existsSync(runtimeEntry()));
   await deleteBuiltinVoice('french');
+  assert.ok(!existsSync(runtimeDir()));
+});
+
+const runStt = async (size: any) => { const ev: any[] = []; for await (const e of installBuiltinStt(size)) ev.push(e); return ev; };
+
+test('installs a Whisper model keeping onnx/, the runtime once, status lists stt', async () => {
+  setup();
+  const ev = await runStt('tiny');
+  assert.equal(ev.at(-1)!.step, 'done');
+  assert.ok(ev.some((e) => e.step === 'model'));
+  assert.ok(whisperDir('tiny').endsWith(path.join('voice', 'whisper', 'tiny', 'wrev')));
+  assert.ok(existsSync(path.join(whisperDir('tiny'), 'onnx', 'enc.onnx')));
+  assert.ok(existsSync(path.join(whisperDir('tiny'), 'vocab.json')));
+  assert.ok(existsSync(runtimeEntry()));
+  const rt = calls.filter((u) => u.includes('npm.test')).length;
+  assert.equal(rt, 2);
+  await runStt('base');
+  assert.equal(calls.filter((u) => u.includes('npm.test')).length, rt);
+  const st = await builtinVoiceStatus();
+  assert.deepEqual(st.stt.map((m) => [m.id, m.installed]), [['tiny', true], ['base', true]]);
+});
+
+test('Whisper sha mismatch names the file and leaves no model dir', async () => {
+  setup({ missing: 'vocab.json' });
+  const last: any = (await runStt('tiny')).at(-1);
+  assert.equal(last.step, 'error');
+  assert.match(last.message, /vocab\.json/);
+  assert.ok(!existsSync(whisperDir('tiny')));
+  assert.ok(!existsSync(whisperDir('tiny') + `.tmp-${process.pid}`));
+});
+
+test('runtime outlives the last Pocket bundle while a Whisper model remains, and the reverse', async () => {
+  setup();
+  await run('italian');
+  await runStt('tiny');
+  await deleteBuiltinVoice('italian');
+  assert.ok(existsSync(runtimeEntry()));
+  await run('italian');
+  await deleteBuiltinStt('tiny');
+  assert.ok(!existsSync(whisperDir('tiny')));
+  assert.ok(existsSync(runtimeEntry()));
+  await deleteBuiltinVoice('italian');
+  assert.ok(!existsSync(runtimeDir()));
+});
+
+test('deleting the last Whisper model removes the runtime unless keepRuntime', async () => {
+  setup();
+  await runStt('tiny');
+  await deleteBuiltinStt('tiny', { keepRuntime: true });
+  assert.ok(existsSync(runtimeEntry()));
+  await deleteBuiltinStt('tiny');
   assert.ok(!existsSync(runtimeDir()));
 });
