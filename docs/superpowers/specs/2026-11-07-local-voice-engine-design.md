@@ -40,7 +40,8 @@ Pocket does not pronounce English words inside an Italian sentence well
    existing HTTP engines (Edge, Speaches, any OpenAI-compatible endpoint)
    whenever the upstream streams.
 2. **A built-in local synthesis engine: Pocket TTS on ONNX**, running inside
-   the web server process. Only the model has to be installed.
+   the web server process. Only the runtime and the model are downloaded,
+   both from the Voice tab.
 3. **Language and voice are selectable**, English included. Built-in voices
    only.
 4. **A pronunciation dictionary per language.** It is applied host-side to the
@@ -71,7 +72,7 @@ Pocket does not pronounce English words inside an Italian sentence well
   the mic reopens only after the last queued bubble has *finished playing*
   and the turn is over.
 - **Bloating the default install for people who never use voice.** See
-  Constraints → dependency footprint.
+  Constraints → ONNX runtime.
 - **Product or company names in shipped defaults.** caretaker is open source;
   the default dictionary contains generic terms only.
 
