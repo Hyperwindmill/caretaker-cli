@@ -23,7 +23,10 @@ async function playPcm(
   fmt: { rate: number; channels: number },
   buffer: number,
 ): Promise<void> {
-  const ctx = new AudioContext();
+  // At the stream's own rate: chunks play back to back with no per-chunk resampling
+  // (a 24 kHz chunk on a 48 kHz context is resampled on its own, which can click at
+  // every chunk boundary); the context resamples once, at the output.
+  const ctx = new AudioContext({ sampleRate: fmt.rate });
   const reader = res.body!.getReader();
   const sources: AudioBufferSourceNode[] = [];
   const onAbort = () => {
@@ -44,6 +47,8 @@ async function playPcm(
     let rest = new Float32Array(0); // samples short of a whole frame (multi-channel only)
     let cursor = 0;
     let last: AudioBufferSourceNode | null = null;
+    let chunks = 0;
+    let dry = 0;
     for (;;) {
       const { done, value } = await reader.read();
       if (signal.aborted) return;
@@ -68,13 +73,24 @@ async function playPcm(
       const src = ctx.createBufferSource();
       src.buffer = buf;
       src.connect(ctx.destination);
-      const at = nextStart(ctx.currentTime, cursor, buffer);
+      const now = ctx.currentTime;
+      const at = nextStart(now, cursor, buffer);
+      // Diagnostics for stutter reports: a chunk that arrives after the queued audio
+      // ran out means playback paused (and re-buffered) here.
+      if (chunks > 0 && at !== cursor) {
+        dry++;
+        console.warn(
+          `[voice] playback ran dry before chunk ${chunks}: ${Math.round((now - cursor) * 1000)} ms late, re-buffering ${Math.round(buffer * 1000)} ms`,
+        );
+      }
+      chunks++;
       src.start(at);
       cursor = at + buf.duration;
       sources.push(src);
       last = src;
     }
     if (!last) return;
+    if (dry > 0) console.warn(`[voice] ${dry} of ${chunks} chunks arrived after the audio ran dry`);
     // Wait for the scheduled end, not the last source's `onended`: the stream
     // may close after that source already finished, and the event would never
     // fire again.
