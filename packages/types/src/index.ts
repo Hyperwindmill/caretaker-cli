@@ -208,6 +208,11 @@ export type VoiceConfig = {
   ttsEngine?: 'endpoint' | 'builtin';
   /** Built-in engine only: Pocket language bundle, e.g. 'italian', 'english'. */
   ttsLanguage?: string;
+  /** Transcription engine. Unset or 'endpoint' ⇒ POST <endpoint>/audio/transcriptions
+   *  (today). 'builtin' ⇒ in-process Whisper; endpoint/sttModel unused for it. */
+  sttEngine?: 'endpoint' | 'builtin';
+  /** Built-in transcription only: Whisper size. Unset ⇒ 'base'. */
+  sttBuiltinModel?: 'tiny' | 'base' | 'small';
   /** Pronunciation dictionary, keyed by lowercase ISO 639-1 code ('it', 'en', …).
    *  Absent ⇒ the shipped defaults for that language. Present ⇒ replaces them. */
   pronunciation?: Record<string, PronunciationEntry[]>;

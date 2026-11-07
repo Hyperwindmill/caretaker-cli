@@ -13,10 +13,12 @@ import {
   voiceClientConfig,
   fetchVoiceCatalog,
   setBuiltinSpeaker,
+  setBuiltinTranscriber,
   formKeyFor,
   sameHost,
   mergePreview,
 } from './voice_proxy.js';
+import { makeWav } from '../../voice/whisper/wav.test.js';
 import { encrypt } from '../../lib/encryption.js';
 import { saveConfig } from '../../store/json.js';
 
@@ -719,4 +721,62 @@ test('preview keeps the saved ttsApiKey when only the path changes', () => {
   const saved = { enabled: true, endpoint: '', sttModel: '', ttsEndpoint: 'http://t.example:5050/v1', ttsApiKey: 'k' } as VoiceConfig;
   assert.equal(mergePreview(saved, { ttsEndpoint: 'http://t.example:5050/v1/' }).ttsApiKey, 'k');
   assert.equal(mergePreview(saved, { ttsEndpoint: 'http://t.example:5051/v1' }).ttsApiKey, undefined);
+});
+
+async function postWav(bytes: Uint8Array): Promise<Response> {
+  const form = new FormData();
+  form.set('file', new Blob([bytes as any], { type: 'audio/wav' }), 'audio.wav');
+  return fetch(`${baseUrl}/api/voice/transcribe`, { method: 'POST', body: form });
+}
+
+const builtinSttConfig = () =>
+  saveConfig({ port: 3000, providers: [], voice: { enabled: true, endpoint: '', sttModel: '', sttEngine: 'builtin' } });
+
+test('builtin transcription works with no endpoint and no synthesis', async () => {
+  await builtinSttConfig();
+  let got = 0;
+  setBuiltinTranscriber(async (_v, audio) => {
+    got = audio.length;
+    return new Response(JSON.stringify({ text: 'ciao' }), { headers: { 'content-type': 'application/json' } });
+  });
+  try {
+    const res = await postWav(makeWav([1, 2, 3]));
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { text: 'ciao' });
+    assert.equal(got, 3);
+  } finally {
+    setBuiltinTranscriber(null);
+  }
+});
+
+test('builtin transcription without a registered transcriber answers 503', async () => {
+  await builtinSttConfig();
+  setBuiltinTranscriber(null);
+  const res = await postWav(makeWav([1]));
+  assert.equal(res.status, 503);
+  assert.match(await res.text(), /built-in/i);
+});
+
+test('builtin transcription answers 400 for a WAV that is not 16 kHz mono PCM16', async () => {
+  await builtinSttConfig();
+  setBuiltinTranscriber(async () => new Response('{}'));
+  try {
+    const rate = await postWav(makeWav([1], { rate: 44100 }));
+    assert.equal(rate.status, 400);
+    assert.match(await rate.text(), /44100/);
+    assert.equal((await postWav(makeWav([1, 2], { channels: 2 }))).status, 400);
+    assert.equal((await postWav(new Uint8Array([1, 2, 3]))).status, 400);
+  } finally {
+    setBuiltinTranscriber(null);
+  }
+});
+
+test('voiceClientConfig: builtin transcription is configured without an endpoint', () => {
+  const cfg = (voice: VoiceConfig): CaretakerConfig => ({ port: 3000, providers: [], voice }) as any;
+  const b = voiceClientConfig(cfg({ enabled: true, endpoint: '', sttModel: '', sttEngine: 'builtin' }));
+  assert.equal(b?.configured, true);
+  assert.equal(b?.sttEngine, 'builtin');
+  const e = voiceClientConfig(cfg({ enabled: true, endpoint: '', sttModel: '' }));
+  assert.equal(e?.configured, false);
+  assert.equal(e?.sttEngine, undefined);
 });

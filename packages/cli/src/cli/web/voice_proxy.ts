@@ -5,6 +5,7 @@ import type { CaretakerConfig, PronunciationEntry, VoiceConfig } from 'caretaker
 import type { VoiceCatalog, VoiceClientConfig } from 'webview-ui/bridge';
 import { loadConfig } from '../../store/json.js';
 import { decrypt, isEncrypted } from '../../lib/encryption.js';
+import { parseWav16kMono } from '../../voice/whisper/wav.js';
 import { applyPronunciation, dictionaryFor, synthesisLanguage } from '../../voice/pronunciation.js';
 
 export function voiceClientConfig(config: CaretakerConfig): VoiceClientConfig | null {
@@ -12,12 +13,15 @@ export function voiceClientConfig(config: CaretakerConfig): VoiceClientConfig | 
   if (!voice) return null;
   const out: VoiceClientConfig = {
     enabled: voice.enabled === true,
-    configured: typeof voice.endpoint === 'string' && voice.endpoint.trim().length > 0,
+    configured:
+      voice.sttEngine === 'builtin' ||
+      (typeof voice.endpoint === 'string' && voice.endpoint.trim().length > 0),
     canSpeak:
       voice.ttsEngine === 'builtin'
         ? typeof voice.ttsLanguage === 'string' && voice.ttsLanguage.length > 0
         : typeof voice.ttsModel === 'string' && voice.ttsModel.trim().length > 0,
   };
+  if (voice.sttEngine) out.sttEngine = voice.sttEngine;
   if (voice.lang) out.lang = voice.lang;
   if (Number.isFinite(voice.playbackBufferMs)) out.playbackBufferMs = voice.playbackBufferMs;
   return out;
@@ -32,7 +36,7 @@ export async function resolveVoice(): Promise<{ voice: VoiceConfig } | { error: 
   if (!voice || voice.enabled !== true) {
     return { error: 'Voice mode is disabled. Enable it in Settings → Voice.' };
   }
-  if (!voice.endpoint || voice.endpoint.trim().length === 0) {
+  if (voice.sttEngine !== 'builtin' && (!voice.endpoint || voice.endpoint.trim().length === 0)) {
     return { error: 'No voice endpoint configured. Set one in Settings → Voice.' };
   }
   return { voice };
@@ -75,11 +79,27 @@ export function registerVoiceProxy(app: Hono): void {
     const resolved = await resolveVoice();
     if ('error' in resolved) return c.text(resolved.error, 503);
     const { voice } = resolved;
-    if (!voice.sttModel) return c.text('No transcription model configured.', 400);
+    if (voice.sttEngine !== 'builtin' && !voice.sttModel) {
+      return c.text('No transcription model configured.', 400);
+    }
 
     const incoming = await c.req.formData();
     const file = incoming.get('file');
     if (!file) return c.text('No audio uploaded (expected a "file" part).', 400);
+
+    if (voice.sttEngine === 'builtin') {
+      if (!builtinTranscriber) {
+        return c.text('The built-in transcription engine is not available.', 503);
+      }
+      if (typeof file === 'string') return c.text('Expected an audio file in the "file" part.', 400);
+      let samples: Float32Array;
+      try {
+        samples = parseWav16kMono(new Uint8Array(await file.arrayBuffer()));
+      } catch (err) {
+        return c.text(err instanceof Error ? err.message : String(err), 400);
+      }
+      return builtinTranscriber(voice, samples, c.req.raw.signal);
+    }
 
     const form = new FormData();
     form.set('file', file);
@@ -263,6 +283,18 @@ export type BuiltinSpeaker = (
   text: string,
   signal: AbortSignal,
 ) => Promise<Response>;
+
+export type BuiltinTranscriber = (
+  voice: VoiceConfig,
+  audio: Float32Array,
+  signal: AbortSignal,
+) => Promise<Response>;
+
+let builtinTranscriber: BuiltinTranscriber | null = null;
+/** The built-in transcription engine registers itself here; null unregisters. */
+export function setBuiltinTranscriber(fn: BuiltinTranscriber | null): void {
+  builtinTranscriber = fn;
+}
 
 let builtinSpeaker: BuiltinSpeaker | null = null;
 /** The built-in engine registers itself here; null unregisters. */

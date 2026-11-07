@@ -117,6 +117,8 @@ export type VoiceClientConfig = {
   /** Synthesis is configured for the selected engine; conversation mode requires it. */
   canSpeak: boolean;
   lang?: string;
+  /** See VoiceConfig.sttEngine. Set only when configured; the renderer sends PCM WAV for 'builtin'. */
+  sttEngine?: 'endpoint' | 'builtin';
   /** See VoiceConfig.playbackBufferMs. */
   playbackBufferMs?: number;
 };
