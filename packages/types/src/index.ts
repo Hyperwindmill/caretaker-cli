@@ -202,7 +202,22 @@ export type VoiceConfig = {
   /** Start the managed local speech container when the web server boots.
    *  Off by default; manual start/stop needs no flag, it is a button. */
   autoStartBackend?: boolean;
+  /** Synthesis engine. Unset or 'endpoint' ⇒ POST
+   *  <ttsEndpoint ?? endpoint>/audio/speech. 'builtin' ⇒ the in-process Pocket
+   *  TTS engine; ttsEndpoint/ttsApiKey are then ignored for synthesis. */
+  ttsEngine?: 'endpoint' | 'builtin';
+  /** Built-in engine only: Pocket language bundle, e.g. 'italian', 'english'. */
+  ttsLanguage?: string;
+  /** Pronunciation dictionary, keyed by lowercase ISO 639-1 code ('it', 'en', …).
+   *  Absent ⇒ the shipped defaults for that language. Present ⇒ replaces them. */
+  pronunciation?: Record<string, PronunciationEntry[]>;
+  /** Apply the dictionary of the synthesis language before synthesis. */
+  pronunciationEnabled?: boolean;
 };
+
+/** One respelling: `term` (literal, matched whole-word, case-insensitive) is
+ *  spoken as `say`. */
+export type PronunciationEntry = { term: string; say: string };
 
 /** Memory subsystem configuration — step 1: the session-digest sweep daemon
  *  (web-server scheduler only). Unset ⇒ subsystem off, zero cost.
