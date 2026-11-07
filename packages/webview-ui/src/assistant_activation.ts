@@ -42,3 +42,13 @@ export function resolvePending(
   if (knownAgentIds.length === 0) return { activation: current, pending: pendingId };
   return { activation: beginActivation(pendingId, confirmedAgentId, knownAgentIds, current), pending: null };
 }
+
+/** Agent the view must show when the activation opens, or null when it
+ *  already does. The server can be on the agent while the view shows none:
+ *  at boot it auto-selects agents[0] and acks it, but the client never
+ *  auto-selects. Adopting it is local only — re-posting `selectAgent` would
+ *  re-run the server switch and drop the session being opened. */
+export function localSelectionFor(a: Activation, selectedAgentId: string | null): string | null {
+  if (a?.step !== 'open' || a.agentId === selectedAgentId) return null;
+  return a.agentId;
+}

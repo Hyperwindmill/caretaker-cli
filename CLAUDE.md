@@ -236,7 +236,7 @@ purpose. What keeps that affordable on a 200k-token session:
   under the previous agent. The gate is the agent the server last confirmed
   (`confirmedAgentId`), never the one the client shows: a refused switch (missing
   provider) leaves the server on the old agent, and an `error` cancels the wait. A repeat
-  press while waiting does not re-post; a manual agent pick cancels the activation. Then it creates a session and either sets voice
+  press while waiting does not re-post; a manual agent pick cancels the activation. When the server is already on the agent but the view shows none (at boot the server auto-selects `agents[0]` and acks it, the client never auto-selects), `localSelectionFor` adopts it **locally** — re-posting `selectAgent` would re-run the server switch and drop the session being opened. Then it creates a session and either sets voice
   `conversation` mode and toggles the mic once the mode has landed and capture is idle, or
   bumps the `Composer` `focusToken`. An unknown agent id is ignored.
 - **The composer autofocuses when it re-enables.** The composer `<textarea>` is

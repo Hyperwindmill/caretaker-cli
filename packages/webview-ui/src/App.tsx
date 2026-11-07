@@ -10,7 +10,7 @@
 // ConfirmCard rows at the tail until the user resolves them.
 
 import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
-import { onAgentSelected, onSelectFailed, resolvePending, type Activation } from './assistant_activation.js';
+import { localSelectionFor, onAgentSelected, onSelectFailed, resolvePending, type Activation } from './assistant_activation.js';
 
 import type { 
   AgentSummary, 
@@ -388,6 +388,13 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
   // either open the mic in conversation mode or focus the composer.
   useEffect(() => {
     if (activation?.step !== 'open') return;
+    // Show the agent the server is already on (boot auto-select) without
+    // re-posting selectAgent.
+    const adopt = localSelectionFor(activation, selectedAgentId);
+    if (adopt) {
+      setSelectedAgentId(adopt);
+      setShowAllAgents(false);
+    }
     onCreateSession();
     if (voice.available) {
       voice.setMode('conversation');
