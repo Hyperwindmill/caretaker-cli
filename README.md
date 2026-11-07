@@ -220,6 +220,20 @@ voices are simply slow: for one Italian sentence, Kokoro's `im_nicola` produced 
 
 **Better Italian voices with Microsoft Edge Neural TTS.** Kokoro and Piper's Italian voices are functional but not natural. [openai-edge-tts](https://github.com/travisvn/openai-edge-tts) wraps Microsoft Edge's Neural voices (`it-IT-ElsaNeural`, `it-IT-DiegoNeural`, `it-IT-IsabellaNeural`, …) behind an OpenAI-compatible `POST /v1/audio/speech` — TTS only, no transcription, so it complements Speaches rather than replacing it. On the **Settings → Voice** tab, fill the top half as above (Speaches for transcription), then press **Use Microsoft Edge voices** next to the **Synthesis Endpoint** field — it fills `http://127.0.0.1:5050/v1`, model `tts-1`, voice `it-IT-ElsaNeural`. Press Save, then **Start** on the **Synthesis backend (edge-tts)** block that appears. The container is small (a few hundred MB) and needs no model-install step — it fetches voices from Microsoft's online service at runtime. Stop and Delete work per backend, so removing the edge-tts container does not touch Speaches or its model cache. The edge-tts container is GPL-3.0; caretaker talks to it over HTTP and redistributes none of its code, so this is arms-length use, not a derivative work.
 
+### Desktop assistant (hands busy)
+
+The desktop app can open straight onto a conversation from anywhere: press a global shortcut and caretaker comes to the front on a **new session with a chosen agent**, in voice conversation mode with the mic already open when voice is configured (otherwise the composer is focused and you type or dictate). Enable it in **Settings → Desktop**: pick the assistant agent and the shortcut (default `CommandOrControl+Shift+Space`).
+
+On Linux under **Wayland** (e.g. recent GNOME) application-level global shortcuts do not fire. Bind this command to a key in your desktop environment instead (GNOME: Settings → Keyboard → Custom Shortcuts):
+
+```bash
+caretaker-desktop --assistant
+```
+
+It reaches the running app (single instance) and does exactly what the shortcut does.
+
+**Switching project by voice.** Enable the `set_workspace` tool on the assistant agent (and `mcp__task__*` so it can list projects). Then say "switch to the backend project, then …": the agent picks the project, and the rest of that conversation works in the project's directory, with its `AGENTS.md` and project memories from the next turn. Each new activation starts again from the agent's own working directory. The switch needs a native agent — Claude Code and ACP agents have no caretaker tools.
+
 ## Install
 
 
@@ -319,6 +333,7 @@ Auto-injected by the resolver when their preconditions hold (so a fresh agent's 
 Standard opt-in (tri-state in the agent's tool picker, like every other tool):
 
 - `list_agents`, `invoke_agent` — sub-agent dispatch. `[x]` allowed or `[!]` confirm. `invoke_agent` is dual-mode (named + anonymous) — see _Sub-agent dispatch_.
+- `set_workspace` — moves the current chat session into one of the configured projects for the rest of the session (web GUI / desktop). See _Desktop assistant_.
 
 ## Layout
 
