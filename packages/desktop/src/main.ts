@@ -8,13 +8,14 @@
  * 4. Implement a clean System Tray experience matching the old sister repository
  */
 
-import { app, BrowserWindow, Menu, Tray, nativeImage, shell, utilityProcess } from "electron";
+import { app, BrowserWindow, Menu, Tray, globalShortcut, nativeImage, shell, utilityProcess } from "electron";
 import type { UtilityProcess } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
 import fs from "node:fs";
 import net from "node:net";
+import { activationScript, hasAssistantFlag, readAssistantConfig } from "./assistant.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -260,13 +261,52 @@ if (!gotTheLock) {
   }
 
   const PORT_FILE = path.join(DATA_DIR, "port");
+  const CONFIG_FILE = path.join(DATA_DIR, "caretaker.json");
 
-  app.on("second-instance", () => {
+  /** Single entry point for every assistant trigger (global shortcut,
+   *  `--assistant` launch, a future wake word): bring the window up and hand
+   *  the page an `assistantActivate` message. Feature off ⇒ no-op. */
+  function activateAssistant() {
+    if (!mainWindow) return;
+    const cfg = readAssistantConfig(DATA_DIR);
+    if (!cfg) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.webContents.executeJavaScript(activationScript(cfg.agentId)).catch((err) => {
+      console.warn(`[assistant] activation failed: ${err}`);
+    });
+  }
+
+  /** (Re)register the global shortcut from caretaker.json. One accelerator is
+   *  ever registered, so unregisterAll is exact. A bad accelerator logs and
+   *  moves on — it must never stop the app. Under Wayland the X11 grab never
+   *  fires; the `--assistant` launch is the path there. */
+  let registeredShortcut = "";
+  function registerAssistantShortcut() {
+    const cfg = readAssistantConfig(DATA_DIR);
+    const next = cfg?.shortcut ?? "";
+    if (next === registeredShortcut) return;
+    globalShortcut.unregisterAll();
+    registeredShortcut = "";
+    if (!next) return;
+    try {
+      if (globalShortcut.register(next, activateAssistant)) registeredShortcut = next;
+      else console.warn(`[assistant] shortcut "${next}" is taken by another application`);
+    } catch (err) {
+      console.warn(`[assistant] invalid shortcut "${next}": ${err}`);
+    }
+  }
+
+  app.on("second-instance", (_event, argv) => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       if (!mainWindow.isVisible()) mainWindow.show();
       mainWindow.focus();
     }
+    // A desktop-environment keybinding launching `<app> --assistant` lands
+    // here (the Wayland path: the DE launch carries the activation token).
+    if (hasAssistantFlag(argv)) activateAssistant();
   });
 
   app.whenReady().then(async () => {
@@ -289,6 +329,15 @@ if (!gotTheLock) {
     // 3. Create the BrowserWindow
     createWindow();
 
+    // 4. Desktop assistant: shortcut from config, re-read when the settings
+    //    form saves. watchFile polls, so it survives the store's tmp+rename.
+    // ponytail: 2 s poll of one file; fs.watch if latency ever matters.
+    registerAssistantShortcut();
+    fs.watchFile(CONFIG_FILE, { interval: 2000 }, registerAssistantShortcut);
+    if (hasAssistantFlag(process.argv)) {
+      mainWindow!.webContents.once("did-finish-load", activateAssistant);
+    }
+
     app.on("activate", () => {
       if (mainWindow) {
         mainWindow.show();
@@ -302,6 +351,11 @@ if (!gotTheLock) {
       backendProc?.kill();
       backendProc = null;
     }
+  });
+
+  app.on("will-quit", () => {
+    globalShortcut.unregisterAll();
+    fs.unwatchFile(CONFIG_FILE);
   });
 
   app.on("before-quit", () => {
