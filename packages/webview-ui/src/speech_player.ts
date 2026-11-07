@@ -71,9 +71,13 @@ async function playPcm(
       last = src;
     }
     if (!last) return;
+    // Wait for the scheduled end, not the last source's `onended`: the stream
+    // may close after that source already finished, and the event would never
+    // fire again.
+    const remainingMs = Math.max(0, (cursor - ctx.currentTime) * 1000);
     await new Promise<void>((resolve) => {
-      last!.onended = () => resolve();
-      signal.addEventListener('abort', () => resolve(), { once: true });
+      const timer = setTimeout(resolve, remainingMs);
+      signal.addEventListener('abort', () => (clearTimeout(timer), resolve()), { once: true });
     });
   } finally {
     signal.removeEventListener('abort', onAbort);
