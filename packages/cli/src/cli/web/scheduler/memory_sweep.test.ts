@@ -471,7 +471,7 @@ describe('memory sweep', () => {
 
     it('a session whose digest save throws (non-safeId filename) is skipped, not fatal', async () => {
       // A hand-copied/restored file the session store itself would never
-      // create: its name fails safeId, so saveSessionDigest throws. The sweep
+      // create: its name fails safeId (uppercase), so saveSessionDigest throws. The sweep
       // must warn + skip it and still process every other session.
       const { writeFile, mkdir } = await import('node:fs/promises');
       const dir = join(testHome, 'sessions', 'ag-sweep-8');

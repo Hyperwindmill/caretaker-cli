@@ -155,7 +155,9 @@ export function tryNormalizeChecklistStatus(status: any): 'pending' | 'in_progre
 /** Ids are validated slugs/composites; anything else never matches a record.
  *  Also keeps quotes/backslashes out of interpolated queries. */
 function safeId(id: string): boolean {
-  return /^[a-z0-9][a-z0-9-]*$/.test(id);
+  // `_` is needed for Telegram session ids (`telegram_<chatId>`); it is inert in
+  // both the interpolated `= '…'` SQL and a filename.
+  return /^[a-z0-9][a-z0-9_-]*$/.test(id);
 }
 
 export async function runQuery(sql: string): Promise<any> {

@@ -49,6 +49,14 @@ describe('session digest store', () => {
     assert.equal(mine[0]!.summary, 'v2');
   });
 
+  it('accepts Telegram session ids (underscore, negative group chat id)', async () => {
+    for (const id of ['telegram_7108000368', 'telegram_-1001234567890']) {
+      await db.saveSessionDigest(digest({ id }));
+      assert.equal((await db.getSessionDigest(id))?.id, id);
+      await db.deleteSessionDigest(id);
+    }
+  });
+
   it('get of a missing or invalid id returns null', async () => {
     assert.equal(await db.getSessionDigest('a1b2c3d4-0000-0000-0000-00000000ffff'), null);
     assert.equal(await db.getSessionDigest("bad'id"), null);
