@@ -1,12 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
-import type { CaretakerConfig, VoiceConfig } from 'caretaker-types';
-import type { ViewToHost, VoiceCatalog, VoiceCatalogResult } from './bridge.js';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { CaretakerConfig, PronunciationEntry, VoiceConfig } from 'caretaker-types';
+import type { BuiltinVoiceStatus, ViewToHost, VoiceCatalog, VoiceCatalogResult } from './bridge.js';
 import { voiceSignature } from './voice_utils.js';
 import {
   type BackendStatus,
   type BackendStatuses,
 } from './voice_backend_utils.js';
 import { VoiceBackendBlock } from './VoiceBackendBlock.js';
+import { BuiltinVoiceBlock } from './BuiltinVoiceBlock.js';
+import { PronunciationTable } from './PronunciationTable.js';
+import { playSpeech } from './speech_player.js';
+import { builtinPreset, edgePreset, localDefaultsPreset } from './voice_tab_presets.js';
 
 const BACKEND_POLL_MS = 10_000;
 
@@ -22,25 +26,9 @@ export interface VoiceTabProps {
 
 const EMPTY: VoiceConfig = { enabled: false, endpoint: '', sttModel: '' };
 
-/** The README's canonical local setup — what the managed Speaches backend runs
- *  with zero decisions. Prefilled into the form, never saved directly: the user
- *  still reviews (the endpoint's port is where a busy 8969 gets changed) and
- *  presses Save themselves. */
-const LOCAL_DEFAULTS = {
-  endpoint: 'http://127.0.0.1:8969/v1',
-  sttModel: 'Systran/faster-whisper-small',
-  ttsModel: 'speaches-ai/Kokoro-82M-v1.0-ONNX',
-  ttsVoice: 'af_heart',
-};
-
-/** The openai-edge-tts local setup — Microsoft Neural voices (e.g.
- *  it-IT-ElsaNeural) for synthesis while Speaches handles transcription. Only
- *  prefills the synthesis fields; the transcription endpoint/model/voice stay
- *  as the user already set them (or the local defaults above). */
-const EDGE_TTS_DEFAULTS = {
-  ttsEndpoint: 'http://127.0.0.1:5050/v1',
-  ttsModel: 'tts-1',
-  ttsVoice: 'it-IT-ElsaNeural',
+const SAMPLES: Record<string, string> = {
+  it: 'Ciao, questa è una prova della voce.',
+  en: 'Hello, this is a test of the voice.',
 };
 
 /** Offer the fetched ids, but never drop a value the user already had: an endpoint
@@ -70,6 +58,19 @@ export function VoiceTab({ config, onSave, postMessage, sttCatalogResult, ttsCat
     current.ttsSpeed === undefined ? '' : String(current.ttsSpeed),
   );
   const [lang, setLang] = useState(current.lang ?? '');
+  const [ttsEngine, setTtsEngine] = useState<'endpoint' | 'builtin'>(current.ttsEngine ?? 'endpoint');
+  const [ttsLanguage, setTtsLanguage] = useState(current.ttsLanguage ?? '');
+  const [pronEnabled, setPronEnabled] = useState(current.pronunciationEnabled ?? false);
+  // Per ISO code; an absent key means "the shipped defaults for that language".
+  const [pronunciation, setPronunciation] = useState<Record<string, PronunciationEntry[]>>(
+    current.pronunciation ?? {},
+  );
+  // null until the fetch resolves — keeps the block hidden where the route
+  // does not exist (VSCode sidebar), like the backend block.
+  const [builtinStatus, setBuiltinStatus] = useState<BuiltinVoiceStatus | null>(null);
+  const [listening, setListening] = useState(false);
+  const [listenError, setListenError] = useState<string | null>(null);
+  const listenAbort = useRef<AbortController | null>(null);
   const [fetching, setFetching] = useState(false);
   const [fetchingTts, setFetchingTts] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
@@ -94,6 +95,14 @@ export function VoiceTab({ config, onSave, postMessage, sttCatalogResult, ttsCat
       // the correct outcome, not an error to surface.
     }
   };
+
+  useEffect(() => {
+    fetch('/api/voice/builtin')
+      .then((res) => (res.ok ? (res.json() as Promise<BuiltinVoiceStatus>) : null))
+      .then((st) => st && setBuiltinStatus(st))
+      .catch(() => {});
+    return () => listenAbort.current?.abort();
+  }, []);
 
   useEffect(() => {
     fetchBackendStatuses();
@@ -188,6 +197,71 @@ export function VoiceTab({ config, onSave, postMessage, sttCatalogResult, ttsCat
   // correctly per model — unlike the server's global voice catalogue.
   const voicesForModel = ttsCatalog?.tts.find((m) => m.id === ttsModel.trim())?.voices ?? [];
 
+  const applyPreset = (p: Partial<VoiceConfig>) => {
+    if (p.enabled !== undefined) setEnabled(p.enabled);
+    if (p.endpoint !== undefined) setEndpoint(p.endpoint);
+    if (p.sttModel !== undefined) setSttModel(p.sttModel);
+    if (p.ttsEngine !== undefined) setTtsEngine(p.ttsEngine);
+    if (p.ttsLanguage !== undefined) setTtsLanguage(p.ttsLanguage);
+    if (p.ttsEndpoint !== undefined) setTtsEndpoint(p.ttsEndpoint);
+    if (p.ttsModel !== undefined) setTtsModel(p.ttsModel);
+    if (p.ttsVoice !== undefined) setTtsVoice(p.ttsVoice);
+    if (p.pronunciationEnabled !== undefined) setPronEnabled(p.pronunciationEnabled);
+  };
+
+  const builtin = ttsEngine === 'builtin';
+  // Dictionary language: the built-in language's code, else the primary subtag of `lang`.
+  const synthCode = useMemo<string | null>(() => {
+    if (builtin) return builtinStatus?.languages.find((l) => l.id === ttsLanguage)?.code ?? null;
+    return lang.trim().split(/[-_]/)[0].toLowerCase() || null;
+  }, [builtin, builtinStatus, ttsLanguage, lang]);
+  const pronEntries = synthCode
+    ? (pronunciation[synthCode] ?? builtinStatus?.defaults[synthCode] ?? [])
+    : [];
+
+  const stopListening = () => listenAbort.current?.abort();
+
+  // Speaks `text` with the form as it is now (unsaved) via the preview route.
+  // ttsEndpoint is always sent: the server treats absent as empty.
+  const listen = async (text?: string) => {
+    const code = synthCode ?? 'en';
+    const sample = text ? `${text}.` : (SAMPLES[code] ?? SAMPLES.en);
+    const speed = Number.parseFloat(ttsSpeed);
+    const ac = new AbortController();
+    listenAbort.current = ac;
+    setListening(true);
+    setListenError(null);
+    try {
+      const res = await fetch('/api/voice/preview', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        signal: ac.signal,
+        body: JSON.stringify({
+          text: sample,
+          settings: {
+            ttsEngine,
+            ttsLanguage,
+            ttsVoice: ttsVoice.trim(),
+            ttsModel: ttsModel.trim(),
+            ttsSpeed: Number.isFinite(speed) && speed > 0 ? speed : undefined,
+            ttsEndpoint: ttsEndpoint.trim(),
+            pronunciationEnabled: pronEnabled,
+            pronunciation: synthCode ? pronEntries.filter((e) => e.term.trim()) : undefined,
+          },
+        }),
+      });
+      if (!res.ok) {
+        setListenError((await res.text().catch(() => '')) || `HTTP ${res.status}`);
+        return;
+      }
+      await playSpeech(res, ac.signal);
+    } catch (err) {
+      if (!ac.signal.aborted) setListenError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setListening(false);
+    }
+  };
+
   const save = () => {
     const voice: VoiceConfig = { enabled, endpoint: endpoint.trim(), sttModel: sttModel.trim() };
     if (apiKey.trim()) voice.apiKey = apiKey.trim();
@@ -203,6 +277,16 @@ export function VoiceTab({ config, onSave, postMessage, sttCatalogResult, ttsCat
     }
     if (lang.trim()) voice.lang = lang.trim();
     if (autoStartBackend) voice.autoStartBackend = true;
+    if (builtin) {
+      voice.ttsEngine = 'builtin';
+      if (ttsLanguage) voice.ttsLanguage = ttsLanguage;
+    }
+    if (pronEnabled) voice.pronunciationEnabled = true;
+    const dict: Record<string, PronunciationEntry[]> = {};
+    for (const [code, entries] of Object.entries(pronunciation)) {
+      dict[code] = entries.filter((e) => e.term.trim());
+    }
+    if (Object.keys(dict).length) voice.pronunciation = dict;
     pendingSave.current = voiceSignature(voice as unknown as Record<string, unknown>);
     setSaveState('saving');
     onSave({ ...config, voice });
@@ -226,28 +310,26 @@ export function VoiceTab({ config, onSave, postMessage, sttCatalogResult, ttsCat
     <div className="glass-form">
       <h4>Voice</h4>
       <div className="glass-form__body">
-        {!endpoint.trim() && (
-          <div className="form-group">
-            <button
-              type="button"
-              onClick={() => {
-                setEnabled(true);
-                setEndpoint(LOCAL_DEFAULTS.endpoint);
-                setSttModel(LOCAL_DEFAULTS.sttModel);
-                setTtsModel(LOCAL_DEFAULTS.ttsModel);
-                setTtsVoice(LOCAL_DEFAULTS.ttsVoice);
-              }}
-            >
-              Use local defaults
+        <div className="form-group">
+          {builtinStatus && !builtinStatus.runtime.loadError && (
+            <button type="button" onClick={() => applyPreset(builtinPreset(lang, builtinStatus))}>
+              Use built-in voice (recommended)
             </button>
-            <small>
-              Fills the form for a fully local backend (a Speaches container on port
-              8969) that caretaker can run for you if Docker is installed. Nothing is
-              saved yet — adjust anything, including the port in the endpoint, then
-              press Save; a Start button appears below afterwards.
-            </small>
-          </div>
-        )}
+          )}{' '}
+          <button type="button" onClick={() => applyPreset(localDefaultsPreset(lang, builtinStatus))}>
+            Use local defaults
+          </button>{' '}
+          <button type="button" onClick={() => applyPreset(edgePreset())}>
+            Use Microsoft Edge voices
+          </button>
+          <small>
+            Presets only fill the form. The built-in voice runs inside caretaker; local
+            defaults add a Speaches container on port 8969 for transcription (caretaker
+            can run it for you if Docker is installed); Edge voices use an
+            openai-edge-tts container on port 5050. Nothing is saved yet — adjust
+            anything, then press Save.
+          </small>
+        </div>
 
         {showSttBackend && backendStatuses && (
           <VoiceBackendBlock
@@ -366,6 +448,31 @@ export function VoiceTab({ config, onSave, postMessage, sttCatalogResult, ttsCat
           )}
         </div>
 
+        <div className="form-group">
+          <label htmlFor="voice-engine">Synthesis engine</label>
+          <select
+            id="voice-engine"
+            value={ttsEngine}
+            onChange={(e) => setTtsEngine(e.target.value as 'endpoint' | 'builtin')}
+          >
+            <option value="endpoint">Speech endpoint (Speaches, edge-tts, OpenAI…)</option>
+            {builtinStatus && <option value="builtin">Built-in voice</option>}
+          </select>
+        </div>
+
+        {builtin && builtinStatus && (
+          <BuiltinVoiceBlock
+            status={builtinStatus}
+            onStatusChange={setBuiltinStatus}
+            language={ttsLanguage}
+            onLanguageChange={setTtsLanguage}
+            voice={ttsVoice}
+            onVoiceChange={setTtsVoice}
+          />
+        )}
+
+        {!builtin && (
+          <>
         {/* --- Separate synthesis endpoint (optional) --- */}
 
         <div className="form-group">
@@ -377,19 +484,6 @@ export function VoiceTab({ config, onSave, postMessage, sttCatalogResult, ttsCat
             value={ttsEndpoint}
             onChange={(e) => setTtsEndpoint(e.target.value)}
           />
-          {!ttsEndpoint.trim() && (
-            <button
-              type="button"
-              onClick={() => {
-                setTtsEndpoint(EDGE_TTS_DEFAULTS.ttsEndpoint);
-                setTtsModel(EDGE_TTS_DEFAULTS.ttsModel);
-                setTtsVoice(EDGE_TTS_DEFAULTS.ttsVoice);
-              }}
-              style={{ marginTop: '0.4em' }}
-            >
-              Use Microsoft Edge voices
-            </button>
-          )}
           <small>
             Leave empty when one server does both. A local openai-edge-tts container
             gives you Microsoft Neural voices such as{' '}
@@ -519,6 +613,9 @@ export function VoiceTab({ config, onSave, postMessage, sttCatalogResult, ttsCat
           </small>
         </div>
 
+          </>
+        )}
+
         <div className="form-group">
           <label htmlFor="voice-lang">Language (optional)</label>
           <input
@@ -528,6 +625,31 @@ export function VoiceTab({ config, onSave, postMessage, sttCatalogResult, ttsCat
             value={lang}
             onChange={(e) => setLang(e.target.value)}
           />
+        </div>
+
+        <PronunciationTable
+          code={synthCode}
+          entries={pronEntries}
+          enabled={pronEnabled}
+          onEnabledChange={setPronEnabled}
+          onChange={(entries) => synthCode && setPronunciation((p) => ({ ...p, [synthCode]: entries }))}
+          onRestoreDefaults={() =>
+            synthCode &&
+            setPronunciation((p) => {
+              const { [synthCode]: _drop, ...rest } = p;
+              return rest;
+            })
+          }
+          onListen={(t) => void listen(t)}
+          listening={listening}
+          listenError={listenError}
+        />
+
+        <div className="form-group">
+          <button type="button" onClick={listening ? stopListening : () => void listen()}>
+            {listening ? 'Stop' : 'Listen'}
+          </button>
+          <small>Speaks a sample sentence with the form as it is now, without saving.</small>
         </div>
       </div>
 
