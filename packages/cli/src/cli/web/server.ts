@@ -60,7 +60,13 @@ import { watchCycleStream } from './scheduler/cycle_events.js';
 import { startBackgroundScheduler, loadTaskRuns } from './scheduler.js';
 import { fsRouter } from './fs.js';
 import { activationStatus, resolvePlanningEnabled } from './scheduler/task_roles.js';
-import { registerVoiceProxy, voiceClientConfig, fetchVoiceCatalog } from './voice_proxy.js';
+import {
+  registerVoiceProxy,
+  voiceClientConfig,
+  fetchVoiceCatalog,
+  formKeyFor,
+  KEY_WITHHELD_HINT,
+} from './voice_proxy.js';
 import { registerVoiceBackend, maybeAutoStartBackend } from './voice_backend.js';
 import { registerVoiceBuiltin } from './voice_builtin.js';
 import { fetchAcpRegistry, installAcpAgent } from '../../acp/index.js';
@@ -1406,14 +1412,17 @@ export async function startServer(port: number, host: string): Promise<void> {
               post({ type: 'acpInstallResult', agentId: msg.agentId, ok: false, error: String(err) });
             }
             return;
-          case 'fetchVoiceModels':
+          case 'fetchVoiceModels': {
+            const { key, withheld } = formKeyFor(msg.endpoint, msg.apiKey, (await loadConfig()).voice);
             try {
-              const catalog = await fetchVoiceCatalog(msg.endpoint, msg.apiKey ?? null);
+              const catalog = await fetchVoiceCatalog(msg.endpoint, key);
               post({ type: 'voiceModelsFetched', result: { ok: true, catalog }, target: msg.target });
             } catch (err) {
-              post({ type: 'voiceModelsFetched', result: { ok: false, error: String(err) }, target: msg.target });
+              const error = withheld && /\b40[13]\b/.test(String(err)) ? `${KEY_WITHHELD_HINT} (${err})` : String(err);
+              post({ type: 'voiceModelsFetched', result: { ok: false, error }, target: msg.target });
             }
             return;
+          }
           case 'watchCycle': {
             // Ids name files on disk; the same rule as the bridge parser.
             if (!/^[A-Za-z0-9_-]+$/.test(msg.agentId) || !/^[A-Za-z0-9_-]+$/.test(msg.sessionId)) return;

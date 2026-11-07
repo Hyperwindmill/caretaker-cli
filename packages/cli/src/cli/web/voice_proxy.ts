@@ -198,12 +198,46 @@ export async function resolveSynthesis(): Promise<{ voice: VoiceConfig } | { err
   return { voice };
 }
 
-const sameEndpoint = (a?: string, b?: string) =>
-  (a ?? '').trim().replace(/\/+$/, '') === (b ?? '').trim().replace(/\/+$/, '');
+/** Same server: scheme, host and port. A different path or a trailing slash is
+ *  not a different host, so it keeps the saved key. */
+export function sameHost(a?: string, b?: string): boolean {
+  const origin = (u?: string) => {
+    const t = (u ?? '').trim();
+    try {
+      return new URL(t).origin;
+    } catch {
+      return t.replace(/\/+$/, '');
+    }
+  };
+  return origin(a) === origin(b);
+}
+
+export const KEY_WITHHELD_HINT =
+  'The endpoint changed: enter the API key again, or save first, to use it with the new endpoint.';
+
+/** The key to send to `endpoint` for a request built from the settings form. A key
+ *  typed in the form is the user's own, for that endpoint. The stored key (the form
+ *  round-trips its encrypted blob) goes only to the host it was saved for;
+ *  otherwise it is withheld and the request goes without a key. */
+export function formKeyFor(
+  endpoint: string,
+  formKey: string | null | undefined,
+  saved: VoiceConfig | undefined,
+): { key: string | null; withheld: boolean } {
+  if (!formKey) return { key: null, withheld: false };
+  if (!isEncrypted(formKey)) return { key: formKey, withheld: false };
+  const pairs: [string | undefined, string | undefined][] = [
+    [saved?.apiKey, saved?.endpoint],
+    [saved?.ttsApiKey, saved?.ttsEndpoint],
+  ];
+  return pairs.some(([k, ep]) => k === formKey && sameHost(ep, endpoint))
+    ? { key: formKey, withheld: false }
+    : { key: null, withheld: true };
+}
 
 /** Overlay the form's unsaved synthesis settings on the saved config. The saved
- *  `ttsApiKey` is dropped when the previewed `ttsEndpoint` differs from the saved
- *  one, so editing the URL can never send the stored key to a new host. */
+ *  `ttsApiKey` is dropped when the previewed `ttsEndpoint` is on another host than
+ *  the saved one, so editing the URL can never send the stored key to a new host. */
 export function mergePreview(saved: VoiceConfig, s: SynthesisSettings): VoiceConfig {
   const merged: VoiceConfig = {
     ...saved,
@@ -215,7 +249,7 @@ export function mergePreview(saved: VoiceConfig, s: SynthesisSettings): VoiceCon
     ttsEndpoint: s.ttsEndpoint,
     pronunciationEnabled: s.pronunciationEnabled,
   };
-  if (!sameEndpoint(s.ttsEndpoint, saved.ttsEndpoint)) delete merged.ttsApiKey;
+  if (!sameHost(s.ttsEndpoint, saved.ttsEndpoint)) delete merged.ttsApiKey;
   if (s.pronunciation) {
     const code = synthesisLanguage(merged);
     if (code) merged.pronunciation = { ...saved.pronunciation, [code]: s.pronunciation };

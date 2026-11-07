@@ -13,7 +13,11 @@ import {
   voiceClientConfig,
   fetchVoiceCatalog,
   setBuiltinSpeaker,
+  formKeyFor,
+  sameHost,
+  mergePreview,
 } from './voice_proxy.js';
+import { encrypt } from '../../lib/encryption.js';
 import { saveConfig } from '../../store/json.js';
 
 let server: ReturnType<typeof serve>;
@@ -692,4 +696,27 @@ test('canSpeak for the builtin engine follows ttsLanguage', () => {
     voiceClientConfig(cfg({ enabled: true, endpoint: '', sttModel: '', ttsEngine: 'builtin', ttsModel: 'x' }))?.canSpeak,
     false,
   );
+});
+
+test('sameHost compares scheme, host and port, not the path', () => {
+  assert.ok(sameHost('http://10.0.0.5:8000/v1', 'http://10.0.0.5:8000/v1/'));
+  assert.ok(sameHost('http://10.0.0.5:8000/v1', 'http://10.0.0.5:8000'));
+  assert.ok(!sameHost('http://10.0.0.5:8000/v1', 'http://10.0.0.5:8001/v1'));
+  assert.ok(!sameHost('http://a.example/v1', 'https://a.example/v1'));
+});
+
+test('formKeyFor: typed key goes anywhere, stored key only to its own host', () => {
+  const stored = encrypt('secret');
+  const saved = { enabled: true, endpoint: 'http://a.example:8000/v1', sttModel: '', apiKey: stored } as VoiceConfig;
+  assert.deepEqual(formKeyFor('http://b.example/v1', 'typed', saved), { key: 'typed', withheld: false });
+  assert.deepEqual(formKeyFor('http://a.example:8000/', stored, saved), { key: stored, withheld: false });
+  assert.deepEqual(formKeyFor('http://b.example/v1', stored, saved), { key: null, withheld: true });
+  assert.deepEqual(formKeyFor('http://b.example/v1', encrypt('other'), saved), { key: null, withheld: true });
+  assert.deepEqual(formKeyFor('http://b.example/v1', undefined, saved), { key: null, withheld: false });
+});
+
+test('preview keeps the saved ttsApiKey when only the path changes', () => {
+  const saved = { enabled: true, endpoint: '', sttModel: '', ttsEndpoint: 'http://t.example:5050/v1', ttsApiKey: 'k' } as VoiceConfig;
+  assert.equal(mergePreview(saved, { ttsEndpoint: 'http://t.example:5050/v1/' }).ttsApiKey, 'k');
+  assert.equal(mergePreview(saved, { ttsEndpoint: 'http://t.example:5051/v1' }).ttsApiKey, undefined);
 });
