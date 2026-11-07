@@ -3,8 +3,8 @@
 // — same model as skills. No separate store; the plugin record is the
 // source of truth.
 //
-// Names are scoped: a plugin named "docs-workflow" with
-// `commands/docs-writing.md` registers as `/docs-writing`. On a
+// Names are scoped: a plugin named "release-tools" with
+// `commands/changelog.md` registers as `/changelog`. On a
 // collision (two active plugins both define `/foo`), the first plugin
 // listed in `agent.plugins` wins; the duplicate is dropped silently and
 // the user can disambiguate by removing the conflicting plugin from the

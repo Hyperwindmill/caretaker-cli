@@ -7,7 +7,7 @@
 
 Caretaker manages MCP servers, but http servers only carry **static headers**
 (`Authorization: Bearer …`, encrypted at rest). Servers protected by OAuth —
-e.g. `gitlab-tools` (`https://gitlab.example.com/api/v4/mcp`), which uses
+e.g. a self-hosted GitLab's MCP endpoint (`https://gitlab.example.com/api/v4/mcp`), which uses
 OAuth with Dynamic Client Registration — cannot be used at all: there is no
 authorization flow and no token storage.
 

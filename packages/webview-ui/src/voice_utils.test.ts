@@ -252,7 +252,8 @@ test('timing constants match the spec', () => {
 // The reducer sets status 'streaming' in the same batch as the send, so reaching
 // 'awaiting' says nothing about the turn being over. Advancing there speaks the
 // last COMPLETED assistant item — the previous turn's answer, and nothing at all
-// on the first turn. Reported after the same bug appeared in another app.
+// on the first turn. Reported after the same bug appeared in another app
+// built on the same voice loop.
 
 test('REGRESSION: awaiting does not advance while the turn is still streaming', () => {
   assert.equal(
