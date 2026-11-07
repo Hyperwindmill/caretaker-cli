@@ -13,7 +13,8 @@ import {
   installBuiltinVoice,
 } from '../../voice/pocket/install.js';
 import { releasePocketModels, runtimeLoadError, runtimeLoaded, speakBuiltin } from '../../voice/pocket/engine.js';
-import { setBuiltinSpeaker } from './voice_proxy.js';
+import { releaseWhisperModels, transcribeBuiltin } from '../../voice/whisper/engine.js';
+import { setBuiltinSpeaker, setBuiltinTranscriber } from './voice_proxy.js';
 
 // One install or delete at a time: voices and models share the runtime directory.
 let busy: string | null = null;
@@ -42,6 +43,7 @@ async function statusWithLoadError() {
 
 export function registerVoiceBuiltin(app: Hono): void {
   setBuiltinSpeaker(speakBuiltin);
+  setBuiltinTranscriber(transcribeBuiltin);
   app.get('/api/voice/builtin', async (c) => c.json(await statusWithLoadError()));
 
   app.post('/api/voice/builtin/install', async (c) => {
@@ -67,7 +69,7 @@ export function registerVoiceBuiltin(app: Hono): void {
     busy = t.kind === 'voice' ? t.lang : t.size;
     try {
       await releasePocketModels();
-      // Task 5: await releaseWhisperModels() here too, before the runtimeLoaded() check.
+      await releaseWhisperModels();
       const keepRuntime = runtimeLoaded();
       if (t.kind === 'voice') await deleteBuiltinVoice(t.lang, { keepRuntime });
       else await deleteBuiltinStt(t.size, { keepRuntime });
