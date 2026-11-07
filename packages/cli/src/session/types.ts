@@ -40,6 +40,10 @@ export interface SessionMetaRecord {
   taskId?: string;
   projectId?: string;
   taskRole?: 'developer' | 'planner' | 'reviewer';
+  /** Session-level working-dir override written by the `set_workspace` tool
+   *  (together with `projectId`). Honoured per turn by the web server's chat
+   *  controller; absent ⇒ the agent's own workingDir. */
+  workingDir?: string;
 }
 
 export type Role = 'user' | 'assistant' | 'tool';

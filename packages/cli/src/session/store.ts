@@ -275,6 +275,18 @@ export async function updateClaudeSessionId(
   await appendFile(path, serialize(record), { mode: 0o600 });
 }
 
+/** Persist a session-level workspace override (`set_workspace`). Appends a
+ *  new session_meta record, latest wins — same pattern as claudeSessionId. */
+export async function updateSessionWorkspace(
+  meta: Pick<SessionMetaRecord, 'agentId' | 'id'>,
+  ws: { workingDir: string; projectId: string },
+): Promise<void> {
+  const current = await readSession(meta.agentId, meta.id);
+  const record: SessionMetaRecord = { ...current.meta, workingDir: ws.workingDir, projectId: ws.projectId };
+  const path = sessionPath(meta.agentId, meta.id);
+  await appendFile(path, serialize(record), { mode: 0o600 });
+}
+
 export async function updateAcpSessionId(
   meta: Pick<SessionMetaRecord, 'agentId' | 'id'>,
   acpSessionId: string,

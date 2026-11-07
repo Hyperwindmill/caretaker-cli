@@ -221,6 +221,16 @@ export type MemoryConfig = {
   minNewMessages?: number;
 };
 
+/** Desktop assistant (Electron desktop app only). Unset or blank `agentId`
+ *  ⇒ feature off: no global shortcut registered, `--assistant` ignored.
+ *  See docs/superpowers/specs/2026-11-07-desktop-assistant-design.md */
+export type DesktopAssistantConfig = {
+  /** Agent that answers the shortcut / `--assistant` launch. */
+  agentId: string;
+  /** Electron accelerator, e.g. "CommandOrControl+Shift+Space". */
+  shortcut: string;
+};
+
 export type CaretakerConfig = {
   port: number;
   providers: ProviderConfig[];
@@ -230,6 +240,7 @@ export type CaretakerConfig = {
   projects?: ProjectConfig[];
   voice?: VoiceConfig;
   memory?: MemoryConfig;
+  desktopAssistant?: DesktopAssistantConfig;
 };
 
 
