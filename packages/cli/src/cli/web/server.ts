@@ -53,6 +53,7 @@ import {
 } from '../../session/index.js';
 
 import { sessionRunScope } from './session_scope.js';
+import { guardTurnCallbacks } from './turn_guard.js';
 import type { AgentConfig, ProviderConfig, PluginsFile, McpServerConfig } from '../../types.js';
 import type { ChatMessage, ConfirmDecision, HostToView, ViewToHost } from 'webview-ui/bridge';
 import { watchCycleStream } from './scheduler/cycle_events.js';
@@ -1127,9 +1128,10 @@ export async function startServer(port: number, host: string): Promise<void> {
               });
             }
 
+            const turnController = controller;
             await controller.start(
               msg.prompt,
-              {
+              guardTurnCallbacks({
                 onChunk: (text) => post({ type: 'chunk', text }),
                 onThinking: (text) => post({ type: 'thinking', text }),
                 onToolCall: (id, name, args) => post({ type: 'tool_call', id, name, args }),
@@ -1155,7 +1157,7 @@ export async function startServer(port: number, host: string): Promise<void> {
                   currentSessionId = sessionId;
                   void loadSessionsAndSend(currentAgent!.id);
                 },
-              },
+              }, () => controller === turnController),
               msg.attachments,
               msg.voice,
             );
@@ -1190,6 +1192,9 @@ export async function startServer(port: number, host: string): Promise<void> {
             return;
           }
           case 'createSession': {
+            // A confirm card of the superseded turn can no longer be answered
+            // (the view was cleared); reject it so that run can wind down.
+            resolveAllPending('reject');
             currentSessionId = null;
             controller = null;
             post({ type: 'contextUsage', usage: null });
