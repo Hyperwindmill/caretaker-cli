@@ -1,0 +1,166 @@
+{
+ "source": "Alias-Alias/pocket-3-3-0-tts-onnx de/frontend-fixtures.json + bundle.json text-prep flags",
+ "textPrep": {
+  "replace_characters": {
+   "\"": "",
+   "“": "",
+   "”": "",
+   "„": "",
+   "«": "",
+   "»": "",
+   "’": "'",
+   "‘": "'",
+   "(": "",
+   ")": "",
+   "[": "",
+   "]": ""
+  },
+  "remove_semicolons": true,
+  "append_terminal_punctuation": true,
+  "capitalize_first_letter": true,
+  "pad_with_spaces_for_short_inputs": false,
+  "max_token_per_chunk": 50
+ },
+ "fixtures": [
+  {
+   "kind": "preview",
+   "input": "Deine Geschichte wartet, Wanderer.",
+   "chunks": [
+    {
+     "text": "Deine Geschichte wartet, Wanderer.",
+     "tokenIds": [
+      1775,
+      263,
+      669,
+      1032,
+      260,
+      1181,
+      261,
+      1581,
+      268,
+      268,
+      269
+     ],
+     "framesAfterEos": 5
+    }
+   ]
+  },
+  {
+   "kind": "long",
+   "input": "Der Wanderer blieb vor dem alten Tor stehen. Eine leise Stimme sagte: „Warte“; dann erklangen drei Glocken, und der Nebel gab langsam eine schmale Brücke, ein hölzernes Boot und eine Laterne im Regen frei.",
+   "chunks": [
+    {
+     "text": "Der Wanderer blieb vor dem alten Tor stehen.",
+     "tokenIds": [
+      359,
+      1581,
+      268,
+      268,
+      760,
+      315,
+      288,
+      784,
+      1580,
+      260,
+      571,
+      269
+     ],
+     "framesAfterEos": 3
+    },
+    {
+     "text": "Eine leise Stimme sagte: Warte, dann erklangen drei Glocken, und der Nebel gab langsam eine schmale Brücke, ein hölzernes Boot und eine Laterne im Regen frei.",
+     "tokenIds": [
+      1109,
+      1309,
+      260,
+      1162,
+      358,
+      323,
+      1238,
+      287,
+      261,
+      416,
+      272,
+      2393,
+      262,
+      675,
+      260,
+      3321,
+      270,
+      261,
+      264,
+      267,
+      2936,
+      637,
+      639,
+      496,
+      305,
+      260,
+      3452,
+      263,
+      260,
+      3353,
+      261,
+      280,
+      260,
+      3854,
+      270,
+      295,
+      2950,
+      264,
+      305,
+      937,
+      273,
+      389,
+      263,
+      332,
+      1998,
+      691,
+      269
+     ],
+     "framesAfterEos": 3
+    }
+   ]
+  },
+  {
+   "kind": "edge",
+   "input": "  grüße\n‘Freund’; (warte) [hier] für 3.14 Minuten... Dann frag: „Warum?“  ",
+   "chunks": [
+    {
+     "text": "Grüße 'Freund', warte hier für 3.14 Minuten... Dann frag: Warum?",
+     "tokenIds": [
+      1161,
+      401,
+      500,
+      263,
+      260,
+      386,
+      584,
+      386,
+      261,
+      291,
+      287,
+      458,
+      344,
+      260,
+      55,
+      269,
+      53,
+      56,
+      2216,
+      262,
+      269,
+      269,
+      269,
+      828,
+      2812,
+      323,
+      1778,
+      348
+     ],
+     "framesAfterEos": 3
+    }
+   ]
+  }
+ ]
+}

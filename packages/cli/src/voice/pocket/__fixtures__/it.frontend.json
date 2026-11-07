@@ -1,0 +1,169 @@
+{
+ "source": "Alias-Alias/pocket-3-3-0-tts-onnx it/frontend-fixtures.json + bundle.json text-prep flags",
+ "textPrep": {
+  "replace_characters": {
+   "\"": "",
+   "“": "",
+   "”": "",
+   "„": "",
+   "«": "",
+   "»": "",
+   "’": "'",
+   "‘": "'",
+   "(": "",
+   ")": "",
+   "[": "",
+   "]": ""
+  },
+  "remove_semicolons": false,
+  "append_terminal_punctuation": true,
+  "capitalize_first_letter": true,
+  "pad_with_spaces_for_short_inputs": false,
+  "max_token_per_chunk": 50
+ },
+ "fixtures": [
+  {
+   "kind": "preview",
+   "input": "La tua storia ti attende, viandante.",
+   "chunks": [
+    {
+     "text": "La tua storia ti attende, viandante.",
+     "tokenIds": [
+      352,
+      1023,
+      260,
+      1833,
+      511,
+      1299,
+      390,
+      261,
+      453,
+      636,
+      374,
+      262
+     ],
+     "framesAfterEos": 3
+    }
+   ]
+  },
+  {
+   "kind": "long",
+   "input": "Il viandante si fermò davanti alla vecchia porta. Una voce lieve disse: «Aspetta»; poi suonarono tre campane, e la nebbia rivelò lentamente un ponte stretto, una barca di legno e una lanterna accesa sotto la pioggia.",
+   "chunks": [
+    {
+     "text": "Il viandante si fermò davanti alla vecchia porta.",
+     "tokenIds": [
+      353,
+      453,
+      636,
+      374,
+      284,
+      260,
+      2484,
+      291,
+      653,
+      329,
+      406,
+      635,
+      494,
+      262
+     ],
+     "framesAfterEos": 3
+    },
+    {
+     "text": "Una voce lieve disse: Aspetta; poi suonarono tre campane, e la nebbia rivelò lentamente un ponte stretto, una barca di legno e una lanterna accesa sotto la pioggia.",
+     "tokenIds": [
+      1003,
+      659,
+      2295,
+      460,
+      299,
+      379,
+      748,
+      287,
+      419,
+      332,
+      308,
+      520,
+      496,
+      1069,
+      301,
+      261,
+      264,
+      268,
+      260,
+      3205,
+      3317,
+      387,
+      2645,
+      326,
+      277,
+      2537,
+      283,
+      2568,
+      261,
+      296,
+      3248,
+      263,
+      1852,
+      264,
+      296,
+      268,
+      322,
+      2077,
+      2712,
+      271,
+      465,
+      268,
+      2565,
+      427,
+      262
+     ],
+     "framesAfterEos": 3
+    }
+   ]
+  },
+  {
+   "kind": "edge",
+   "input": "  ciao\n‘amico’; (aspetta) [qui] per 3.14 minuti... Poi chiedi: «Perché?»  ",
+   "chunks": [
+    {
+     "text": "Ciao 'amico'; aspetta qui per 3.14 minuti... Poi chiedi: Perché?",
+     "tokenIds": [
+      801,
+      271,
+      273,
+      260,
+      265,
+      2490,
+      265,
+      287,
+      267,
+      748,
+      657,
+      275,
+      260,
+      55,
+      262,
+      53,
+      56,
+      260,
+      2461,
+      262,
+      262,
+      262,
+      993,
+      474,
+      278,
+      354,
+      299,
+      260,
+      1135,
+      306
+     ],
+     "framesAfterEos": 3
+    }
+   ]
+  }
+ ]
+}
