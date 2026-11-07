@@ -1,5 +1,23 @@
 # caretaker-desktop
 
+## 0.30.0
+
+### Minor Changes
+
+- 4302232: Desktop assistant: a global shortcut (or `caretaker-desktop --assistant`) opens the desktop app on a fresh conversation with a configured agent, in voice conversation mode when voice is available. New `set_workspace` builtin moves the current chat session into one of the configured projects for the rest of the session.
+- fb1a6af: Built-in local voice (Pocket TTS on ONNX, runtime and model downloaded from Settings → Voice), streaming playback for every synthesis engine, and a per-language pronunciation dictionary.
+  
+  Listing voice models from the settings form no longer sends the stored API key to an endpoint typed but not yet saved: the stored key only goes to the host it was saved for.
+  
+  Streamed speech waits for an adjustable playback buffer (Settings → Voice, default 500 ms) before starting and after a stall, instead of stuttering.
+
+### Patch Changes
+
+- Updated dependencies [4302232]
+- Updated dependencies [fb1a6af]
+  - @hyperwindmill/caretaker-cli@0.30.0
+  - webview-ui@0.30.0
+
 ## 0.29.0
 
 ### Patch Changes
