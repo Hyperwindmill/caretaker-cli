@@ -128,6 +128,14 @@ test('HTTP 404 surfaces the status and URL', async () => {
   assert.match(last.message, /404.*a\.bin/);
 });
 
+test('delete keeps a runtime that is loaded in-process', async () => {
+  setup();
+  await run('italian');
+  await deleteBuiltinVoice('italian', { keepRuntime: true });
+  assert.ok(!existsSync(bundleDir('italian')));
+  assert.ok(existsSync(runtimeEntry()));
+});
+
 test('delete keeps the runtime while another bundle remains, removes it with the last', async () => {
   setup();
   await run('italian');

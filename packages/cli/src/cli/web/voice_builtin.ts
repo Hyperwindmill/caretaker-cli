@@ -9,10 +9,11 @@ import {
   deleteBuiltinVoice,
   installBuiltinVoice,
 } from '../../voice/pocket/install.js';
-import { releasePocketModels, runtimeLoadError, speakBuiltin } from '../../voice/pocket/engine.js';
+import { releasePocketModels, runtimeLoadError, runtimeLoaded, speakBuiltin } from '../../voice/pocket/engine.js';
 import { setBuiltinSpeaker } from './voice_proxy.js';
 
-const installing = new Set<PocketLanguage>();
+// One install or delete at a time: languages share the runtime directory.
+let busy: PocketLanguage | null = null;
 
 function reqLanguage(q: string | undefined): PocketLanguage | null {
   return q && Object.hasOwn(POCKET_LANGUAGES, q) ? (q as PocketLanguage) : null;
@@ -31,14 +32,14 @@ export function registerVoiceBuiltin(app: Hono): void {
   app.post('/api/voice/builtin/install', async (c) => {
     const lang = reqLanguage(c.req.query('language'));
     if (!lang) return c.text('Unknown language.', 400);
-    if (installing.has(lang)) return c.text(`An install of ${lang} is already in progress.`, 409);
-    installing.add(lang);
+    if (busy) return c.text(`An install of ${busy} is already in progress.`, 409);
+    busy = lang;
     c.header('Content-Type', 'application/x-ndjson');
     return stream(c, async (s) => {
       try {
         for await (const p of installBuiltinVoice(lang)) await s.writeln(JSON.stringify(p));
       } finally {
-        installing.delete(lang);
+        busy = null;
       }
     });
   });
@@ -46,9 +47,14 @@ export function registerVoiceBuiltin(app: Hono): void {
   app.post('/api/voice/builtin/delete', async (c) => {
     const lang = reqLanguage(c.req.query('language'));
     if (!lang) return c.text('Unknown language.', 400);
-    if (installing.has(lang)) return c.text('An install is in progress; wait for it to finish.', 409);
-    await releasePocketModels();
-    await deleteBuiltinVoice(lang);
+    if (busy) return c.text('An install is in progress; wait for it to finish.', 409);
+    busy = lang;
+    try {
+      await releasePocketModels();
+      await deleteBuiltinVoice(lang, { keepRuntime: runtimeLoaded() });
+    } finally {
+      busy = null;
+    }
     return c.json(await statusWithLoadError());
   });
 }

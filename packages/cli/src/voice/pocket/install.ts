@@ -282,10 +282,12 @@ async function anyBundleInstalled(): Promise<boolean> {
   return (Object.keys(cat.languages) as PocketLanguage[]).some((l) => existsSync(bundleDir(l)));
 }
 
-/** Removes the language's bundle(s); removes the runtime too once no bundle remains. */
-export async function deleteBuiltinVoice(lang: PocketLanguage): Promise<void> {
+/** Removes the language's bundle(s); removes the runtime too once no bundle remains,
+ *  unless `keepRuntime` (the native binding is loaded in this process: Windows refuses
+ *  to delete it, and a half-deleted runtime would break reinstalling). */
+export async function deleteBuiltinVoice(lang: PocketLanguage, opts: { keepRuntime?: boolean } = {}): Promise<void> {
   await rm(dirname(bundleDir(lang)), { recursive: true, force: true });
-  if (!(await anyBundleInstalled())) await rm(runtimeRoot(), { recursive: true, force: true });
+  if (!opts.keepRuntime && !(await anyBundleInstalled())) await rm(runtimeRoot(), { recursive: true, force: true });
 }
 
 export async function builtinVoiceStatus(): Promise<BuiltinVoiceStatus> {

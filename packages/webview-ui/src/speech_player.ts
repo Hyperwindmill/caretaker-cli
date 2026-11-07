@@ -104,6 +104,14 @@ async function playMse(res: Response, signal: AbortSignal): Promise<void> {
         sb.addEventListener('error', () => reject(new Error('Could not decode the synthesized reply.')), { once: true });
         sb.appendBuffer(data);
       });
+    let failPlayback!: (e: unknown) => void;
+    const ended = new Promise<void>((resolve, reject) => {
+      failPlayback = reject;
+      audio.onended = () => resolve();
+      audio.onerror = () => reject(new Error('Could not play the synthesized reply.'));
+      signal.addEventListener('abort', () => resolve(), { once: true });
+    });
+    ended.catch(() => {}); // observed below; avoids an unhandled rejection while appending
     let started = false;
     for (;;) {
       const { done, value } = await reader.read();
@@ -113,15 +121,12 @@ async function playMse(res: Response, signal: AbortSignal): Promise<void> {
       if (signal.aborted) return;
       if (!started) {
         started = true;
-        await audio.play();
+        // Not awaited: play() settles only once enough audio is buffered, which may
+        // need later chunks — awaiting it here would stop appending them.
+        audio.play().catch((e) => !signal.aborted && failPlayback(e));
       }
     }
     if (!started) return;
-    const ended = new Promise<void>((resolve, reject) => {
-      audio.onended = () => resolve();
-      audio.onerror = () => reject(new Error('Could not play the synthesized reply.'));
-      signal.addEventListener('abort', () => resolve(), { once: true });
-    });
     if (ms.readyState === 'open') ms.endOfStream();
     await ended;
   } finally {

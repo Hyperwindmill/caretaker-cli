@@ -106,3 +106,10 @@ test('runtime load failure is reported as loadError', () => {
   assert.match(runtimeLoadError() ?? '', /broken binding/);
   assert.ok(runtimeDir());
 });
+
+test('an installed runtime that cannot load answers a readable 500', async () => {
+  installFakes();
+  const res = await speakBuiltin(voice, 'ciao', new AbortController().signal);
+  assert.equal(res.status, 500);
+  assert.match(await res.text(), /could not be loaded: broken binding/);
+});

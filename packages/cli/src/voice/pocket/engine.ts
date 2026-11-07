@@ -19,6 +19,9 @@ export const PCM_CONTENT_TYPE = `audio/pcm;rate=${POCKET_SAMPLE_RATE};channels=1
 let ort: OrtModule | null = null;
 let lastLoadError: string | undefined;
 
+/** True once the native runtime is loaded into this process (its files are then in use). */
+export const runtimeLoaded = () => ort !== null;
+
 /** onnxruntime-node from the downloaded runtime. Throws a readable error when it is
  *  missing or cannot load on this system (the reason is kept for `runtimeLoadError`). */
 export function loadOnnxRuntime(): OrtModule {
@@ -51,7 +54,7 @@ export function runtimeLoadError(): string | undefined {
 // slightly beat 6, 12 halved the speed. Make it a setting if other machines disagree.
 const threads = () => Math.min(4, Math.max(1, Math.floor(os.availableParallelism() / 2)));
 
-const defaultLoader: ModelLoader = (lang) =>
+const defaultLoader: ModelLoader = async (lang) =>
   createPocketModel(loadOnnxRuntime(), bundleDir(lang), { threads: threads() });
 let loader: ModelLoader = defaultLoader;
 export function setModelLoaderForTest(l: ModelLoader | null): void {
