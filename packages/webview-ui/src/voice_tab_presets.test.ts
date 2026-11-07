@@ -16,6 +16,8 @@ const status = (loadError?: string): BuiltinVoiceStatus => ({
 
 test('builtinPreset maps it-IT to italian with its default voice and enables the dictionary', () => {
   assert.deepEqual(builtinPreset('it-IT', status()), {
+    sttEngine: 'builtin',
+    sttBuiltinModel: 'base',
     ttsEngine: 'builtin',
     ttsLanguage: 'italian',
     ttsVoice: 'alba',
@@ -31,6 +33,7 @@ test('unknown lang falls back to english', () => {
 test('edgePreset selects the endpoint engine and disables the dictionary', () => {
   const p = edgePreset();
   assert.equal(p.ttsEngine, 'endpoint');
+  assert.equal(p.sttEngine, 'endpoint');
   assert.equal(p.pronunciationEnabled, false);
   assert.equal(p.ttsEndpoint, 'http://127.0.0.1:5050/v1');
 });
@@ -38,6 +41,7 @@ test('edgePreset selects the endpoint engine and disables the dictionary', () =>
 test('localDefaultsPreset uses the built-in engine when the runtime can load, Kokoro when status reports loadError', () => {
   const ok = localDefaultsPreset('it', status());
   assert.equal(ok.ttsEngine, 'builtin');
+  assert.equal(ok.sttEngine, 'endpoint');
   assert.equal(ok.sttModel, 'Systran/faster-whisper-small');
   const bad = localDefaultsPreset('it', status('no native'));
   assert.equal(bad.ttsEngine, 'endpoint');

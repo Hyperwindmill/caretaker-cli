@@ -312,5 +312,7 @@ test('voiceSignature distinguishes every field that is actually persisted', () =
   // Omitted at first: the checkbox is the one field a user can change alone, so
   // leaving it out made "Saved ✓" appear instantly without any round-trip.
   assert.notEqual(voiceSignature(base), voiceSignature({ ...base, autoStartBackend: true }));
+  assert.notEqual(voiceSignature(base), voiceSignature({ ...base, sttEngine: 'builtin' }));
+  assert.notEqual(voiceSignature(base), voiceSignature({ ...base, sttBuiltinModel: 'base' }));
   assert.equal(voiceSignature(undefined), '');
 });

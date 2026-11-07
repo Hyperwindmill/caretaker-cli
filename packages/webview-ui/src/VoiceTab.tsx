@@ -8,6 +8,7 @@ import {
 } from './voice_backend_utils.js';
 import { VoiceBackendBlock } from './VoiceBackendBlock.js';
 import { BuiltinVoiceBlock } from './BuiltinVoiceBlock.js';
+import { BuiltinSttBlock } from './BuiltinSttBlock.js';
 import { PronunciationTable } from './PronunciationTable.js';
 import { playSpeech } from './speech_player.js';
 import { DEFAULT_PLAYBACK_BUFFER_MS, MAX_PLAYBACK_BUFFER_MS } from './voice_stream.js';
@@ -69,6 +70,8 @@ export function VoiceTab({ config, onSave, postMessage, sttCatalogResult, ttsCat
     current.playbackBufferMs === undefined ? '' : String(current.playbackBufferMs),
   );
   const [ttsEngine, setTtsEngine] = useState<'endpoint' | 'builtin'>(current.ttsEngine ?? 'endpoint');
+  const [sttEngine, setSttEngine] = useState<'endpoint' | 'builtin'>(current.sttEngine ?? 'endpoint');
+  const [sttBuiltinModel, setSttBuiltinModel] = useState(current.sttBuiltinModel ?? 'base');
   const [ttsLanguage, setTtsLanguage] = useState(current.ttsLanguage ?? '');
   const [pronEnabled, setPronEnabled] = useState(current.pronunciationEnabled ?? false);
   // Per ISO code; an absent key means "the shipped defaults for that language".
@@ -211,6 +214,8 @@ export function VoiceTab({ config, onSave, postMessage, sttCatalogResult, ttsCat
     if (p.enabled !== undefined) setEnabled(p.enabled);
     if (p.endpoint !== undefined) setEndpoint(p.endpoint);
     if (p.sttModel !== undefined) setSttModel(p.sttModel);
+    if (p.sttEngine !== undefined) setSttEngine(p.sttEngine);
+    if (p.sttBuiltinModel !== undefined) setSttBuiltinModel(p.sttBuiltinModel);
     if (p.ttsEngine !== undefined) setTtsEngine(p.ttsEngine);
     if (p.ttsLanguage !== undefined) setTtsLanguage(p.ttsLanguage);
     if (p.ttsEndpoint !== undefined) setTtsEndpoint(p.ttsEndpoint);
@@ -220,6 +225,10 @@ export function VoiceTab({ config, onSave, postMessage, sttCatalogResult, ttsCat
   };
 
   const builtin = ttsEngine === 'builtin';
+  const sttBuiltin = sttEngine === 'builtin' && !!builtinStatus;
+  // The endpoint/key serve endpoint transcription and, absent a separate
+  // synthesis endpoint, endpoint synthesis; hide them only when neither is used.
+  const showEndpoint = !sttBuiltin || !builtin;
   // Dictionary language: the built-in language's code, else the primary subtag of `lang`.
   const synthCode = useMemo<string | null>(() => {
     if (builtin) return builtinStatus?.languages.find((l) => l.id === ttsLanguage)?.code ?? null;
@@ -289,6 +298,10 @@ export function VoiceTab({ config, onSave, postMessage, sttCatalogResult, ttsCat
     const buf = parsedBufferMs(bufferMs);
     if (buf !== undefined) voice.playbackBufferMs = buf;
     if (autoStartBackend) voice.autoStartBackend = true;
+    if (sttBuiltin) {
+      voice.sttEngine = 'builtin';
+      voice.sttBuiltinModel = sttBuiltinModel as 'tiny' | 'base' | 'small';
+    }
     if (builtin) {
       voice.ttsEngine = 'builtin';
       if (ttsLanguage) voice.ttsLanguage = ttsLanguage;
@@ -393,6 +406,31 @@ export function VoiceTab({ config, onSave, postMessage, sttCatalogResult, ttsCat
           </label>
         </div>
 
+        {builtinStatus && (
+          <div className="form-group">
+            <label htmlFor="voice-stt-engine">Transcription engine</label>
+            <select
+              id="voice-stt-engine"
+              value={sttEngine}
+              onChange={(e) => setSttEngine(e.target.value as 'endpoint' | 'builtin')}
+            >
+              <option value="endpoint">Speech endpoint (Speaches, OpenAI…)</option>
+              <option value="builtin">Built-in transcription (Whisper)</option>
+            </select>
+          </div>
+        )}
+
+        {sttBuiltin && builtinStatus && (
+          <BuiltinSttBlock
+            status={builtinStatus}
+            onStatusChange={setBuiltinStatus}
+            model={sttBuiltinModel}
+            onModelChange={setSttBuiltinModel}
+          />
+        )}
+
+        {showEndpoint && (
+          <>
         <div className="form-group">
           <label htmlFor="voice-endpoint">Speech Endpoint</label>
           <input
@@ -422,6 +460,11 @@ export function VoiceTab({ config, onSave, postMessage, sttCatalogResult, ttsCat
           <small>Stored encrypted. Never sent to the browser — requests are proxied.</small>
         </div>
 
+          </>
+        )}
+
+        {!sttBuiltin && (
+          <>
         <div className="form-group">
           <button type="button" onClick={fetchSttCatalog} disabled={fetching || !endpoint.trim()}>
             {fetching ? 'Fetching…' : 'Fetch models'}
@@ -459,6 +502,9 @@ export function VoiceTab({ config, onSave, postMessage, sttCatalogResult, ttsCat
             />
           )}
         </div>
+
+          </>
+        )}
 
         <div className="form-group">
           <label htmlFor="voice-engine">Synthesis engine</label>

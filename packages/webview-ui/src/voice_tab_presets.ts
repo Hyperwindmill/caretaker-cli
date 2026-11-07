@@ -29,6 +29,8 @@ export function builtinPreset(lang: string | undefined, status: BuiltinVoiceStat
   const id = pocketLanguageFor(lang, status);
   const entry = status.languages.find((l) => l.id === id);
   return {
+    sttEngine: 'builtin',
+    sttBuiltinModel: 'base',
     ttsEngine: 'builtin',
     ttsLanguage: id,
     ttsVoice: entry?.nativeVoice ?? status.voices[0] ?? '',
@@ -37,7 +39,7 @@ export function builtinPreset(lang: string | undefined, status: BuiltinVoiceStat
 }
 
 export function edgePreset(): Partial<VoiceConfig> {
-  return { ...EDGE_TTS_DEFAULTS, ttsEngine: 'endpoint', pronunciationEnabled: false };
+  return { ...EDGE_TTS_DEFAULTS, sttEngine: 'endpoint', ttsEngine: 'endpoint', pronunciationEnabled: false };
 }
 
 /** Speaches for transcription plus the built-in engine for synthesis when the
@@ -46,8 +48,8 @@ export function localDefaultsPreset(
   lang: string | undefined,
   status: BuiltinVoiceStatus | null,
 ): Partial<VoiceConfig> {
-  const stt = { enabled: true, endpoint: LOCAL_DEFAULTS.endpoint, sttModel: LOCAL_DEFAULTS.sttModel };
-  if (status && !status.runtime.loadError) return { ...stt, ...builtinPreset(lang, status) };
+  const stt = { enabled: true, sttEngine: 'endpoint' as const, endpoint: LOCAL_DEFAULTS.endpoint, sttModel: LOCAL_DEFAULTS.sttModel };
+  if (status && !status.runtime.loadError) return { ...stt, ...builtinPreset(lang, status), sttEngine: 'endpoint' };
   return {
     ...stt,
     ttsEngine: 'endpoint',

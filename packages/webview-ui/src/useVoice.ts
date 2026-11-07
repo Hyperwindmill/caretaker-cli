@@ -12,6 +12,7 @@ import {
   type VoiceMode,
   type VoicePhase,
 } from './voice_utils.js';
+import { toWav16k } from './pcm_wav.js';
 import { playSpeech } from './speech_player.js';
 
 export type UseVoiceResult = {
@@ -73,6 +74,8 @@ export function useVoice(opts: {
   const [error, setError] = useState<string | null>(null);
 
   // Latest-value refs so async callbacks never read stale state.
+  const voiceRef = useRef(voice);
+  voiceRef.current = voice;
   const bufferMsRef = useRef(voice?.playbackBufferMs);
   bufferMsRef.current = voice?.playbackBufferMs;
   const phaseRef = useRef(phase);
@@ -158,7 +161,8 @@ export function useVoice(opts: {
       teardownCapture();
       try {
         const form = new FormData();
-        form.set('file', blob, 'turn.webm');
+        if (voiceRef.current?.sttEngine === 'builtin') form.set('file', await toWav16k(blob), 'audio.wav');
+        else form.set('file', blob, 'turn.webm');
         const res = await fetch('/api/voice/transcribe', { method: 'POST', body: form });
         if (!res.ok) return fail(await res.text());
         const { text } = (await res.json()) as { text?: string };

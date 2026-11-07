@@ -185,6 +185,8 @@ export function voiceSignature(v: Record<string, unknown> | undefined | null): s
     v.lang ?? '',
     v.autoStartBackend === true,
     v.ttsEngine ?? '',
+    v.sttEngine ?? '',
+    v.sttBuiltinModel ?? '',
     v.ttsLanguage ?? '',
     v.pronunciationEnabled === true,
     v.pronunciation ?? null,
