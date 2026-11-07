@@ -20,6 +20,7 @@ import { listSkillsTool } from './list_skills.js';
 import { readSkillTool } from './read_skill.js';
 import { listAgentsTool } from './list_agents.js';
 import { invokeAgentTool } from './invoke_agent.js';
+import { setWorkspaceTool } from './set_workspace.js';
 import { listCommandsTool } from './list_commands.js';
 import { invokeCommandTool } from './invoke_command.js';
 import { getAgentContextTool } from './get_agent_context.js';
@@ -73,6 +74,9 @@ export function registerBuiltins(registry: ToolRegistry): void {
   // more than one agent configured — they're useless otherwise).
   registry.register(listAgentsTool);
   registry.register(invokeAgentTool);
+  // Session workspace switch (opt-in via allowedTools like any capability
+  // tool; session-bound, so not part of a served mcp__* namespace).
+  registry.register(setWorkspaceTool);
   // Slash commands as tools — same gating as skills (auto-included when
   // the agent has at least one plugin active).
   registry.register(listCommandsTool);
