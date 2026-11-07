@@ -47,7 +47,7 @@ test('a replacement is never matched again', () =>
 test('italian defaults are the approved generic list', () => {
   assert.deepEqual(
     DEFAULT_PRONUNCIATION.it.map((e) => e.term).sort(),
-    ['branch', 'build', 'deploy', 'feature', 'merge request', 'pipeline', 'pull request', 'review', 'stage'],
+    ['branch', 'buffer', 'build', 'deploy', 'feature', 'file', 'merge request', 'ok', 'pipeline', 'pull request', 'review', 'stage'],
   );
   assert.equal(DEFAULT_PRONUNCIATION.it.find((e) => e.term === 'stage')!.say, 'stèij');
 });

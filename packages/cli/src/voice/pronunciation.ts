@@ -15,6 +15,9 @@ export const DEFAULT_PRONUNCIATION: Readonly<Record<string, readonly Pronunciati
     { term: 'build', say: 'bìld' },
     { term: 'review', say: 'riviù' },
     { term: 'stage', say: 'stèij' },
+    { term: 'file', say: 'fàil' },
+    { term: 'ok', say: 'okèi' },
+    { term: 'buffer', say: 'bàffer' },
   ],
 };
 
