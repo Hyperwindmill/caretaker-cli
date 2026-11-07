@@ -10,7 +10,7 @@
 // ConfirmCard rows at the tail until the user resolves them.
 
 import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
-import { beginActivation, onAgentSelected, type Activation } from './assistant_activation.js';
+import { onAgentSelected, onSelectFailed, resolvePending, type Activation } from './assistant_activation.js';
 
 import type { 
   AgentSummary, 
@@ -67,6 +67,15 @@ export interface AppProps {
   layout?: 'compact' | 'sidebar';
 }
 
+/** Read and clear the activation the desktop main process may have left on
+ *  the window before this app mounted (first launch with `--assistant`). */
+function takeInjectedActivation(): string | null {
+  const w = window as unknown as { __caretakerAssistant?: string };
+  const id = typeof w.__caretakerAssistant === 'string' ? w.__caretakerAssistant : null;
+  delete w.__caretakerAssistant;
+  return id;
+}
+
 export function App({ postMessage, layout = 'compact' }: AppProps) {
   const [chatState, dispatch] = useReducer(chatReducer, initialChatState);
 
@@ -107,6 +116,12 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
   const [composerDraft, setComposerDraft] = useState('');
   // Desktop assistant activation in flight (see assistant_activation.ts).
   const [activation, setActivation] = useState<Activation>(null);
+  // Agent the server last confirmed via `agentSelected` — the activation gate.
+  const [confirmedAgentId, setConfirmedAgentId] = useState<string | null>(null);
+  // Activation requested before the agent list arrived (first launch): the
+  // desktop main process also leaves it on window.__caretakerAssistant in case
+  // this component was not mounted yet when it was injected.
+  const [pendingAssistantId, setPendingAssistantId] = useState<string | null>(() => takeInjectedActivation());
   const [composerFocusToken, setComposerFocusToken] = useState(0);
 
 
@@ -157,6 +172,9 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
           return;
         case 'error':
           dispatch({ kind: 'error', text: msg.message });
+          // A refused agent switch (e.g. missing provider) never gets its
+          // `agentSelected`; drop a waiting assistant activation.
+          setActivation(onSelectFailed);
           return;
         case 'contextUsage':
           dispatch({ kind: 'context-usage', usage: msg.usage });
@@ -211,15 +229,12 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
         case 'voiceConfig':
           setVoiceConfig(msg.voice);
           return;
-        case 'assistantActivate': {
-          const a = beginActivation(msg.agentId, selectedAgentId, agents.map((x) => x.id));
-          if (!a) return;
-          setActiveScreen('chat');
-          if (a.step === 'awaiting-agent') onSelectAgent(a.agentId);
-          setActivation(a);
+        case 'assistantActivate':
+          takeInjectedActivation();
+          setPendingAssistantId(msg.agentId);
           return;
-        }
         case 'agentSelected':
+          setConfirmedAgentId(msg.agentId);
           setActivation((cur) => onAgentSelected(cur, msg.agentId));
           return;
       }
@@ -355,6 +370,19 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showSessions]);
+
+  // Desktop assistant: turn a pending request into an activation once the
+  // agent list is known; post the switch only for a new wait (a repeated press
+  // returns the same activation object and must not re-post).
+  useEffect(() => {
+    if (!pendingAssistantId) return;
+    const r = resolvePending(pendingAssistantId, confirmedAgentId, agents.map((a) => a.id), activation);
+    setPendingAssistantId(r.pending);
+    if (r.pending || r.activation === activation) return;
+    setActiveScreen('chat');
+    if (r.activation?.step === 'awaiting-agent') onSelectAgent(r.activation.agentId);
+    setActivation(r.activation);
+  }, [pendingAssistantId, agents]);
 
   // Desktop assistant: once the agent is current, start a fresh session and
   // either open the mic in conversation mode or focus the composer.
@@ -511,6 +539,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
                               if (isSelected) {
                                 setShowAllAgents(false);
                               } else {
+                                setActivation(null);
                                 onSelectAgent(agent.id);
                               }
                             }}
@@ -640,7 +669,10 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
               <select
                 className="app__agent-select"
                 value={selectedAgentId ?? ''}
-                onChange={(e) => onSelectAgent(e.target.value)}
+                onChange={(e) => {
+                  setActivation(null);
+                  onSelectAgent(e.target.value);
+                }}
               >
                 <option value="" disabled>-- Select Agent --</option>
                 {agents.map((agent) => (

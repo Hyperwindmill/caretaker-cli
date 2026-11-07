@@ -24,10 +24,14 @@ export function readAssistantConfig(dataDir: string): AssistantConfig | null {
 }
 
 /** JS source run in the page: hands `assistantActivate` to the webview the
- *  same way standalone.tsx hands it WebSocket frames (a window message). */
+ *  same way standalone.tsx hands it WebSocket frames (a window message). It
+ *  also leaves the request on `window.__caretakerAssistant`, because on a
+ *  first launch the app mounts only after its WebSocket connects — after
+ *  did-finish-load — and would miss the event; the app reads and clears it. */
 export function activationScript(agentId: string): string {
+  const id = JSON.stringify(agentId);
   const data = JSON.stringify({ type: "assistantActivate", agentId });
-  return `window.dispatchEvent(new MessageEvent('message', { data: ${data} }))`;
+  return `window.__caretakerAssistant = ${id}; window.dispatchEvent(new MessageEvent('message', { data: ${data} }))`;
 }
 
 export function hasAssistantFlag(argv: readonly string[]): boolean {

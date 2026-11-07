@@ -266,8 +266,14 @@ if (!gotTheLock) {
   /** Single entry point for every assistant trigger (global shortcut,
    *  `--assistant` launch, a future wake word): bring the window up and hand
    *  the page an `assistantActivate` message. Feature off ⇒ no-op. */
+  let activateWhenReady = false;
   function activateAssistant() {
-    if (!mainWindow) return;
+    if (!mainWindow) {
+      // Trigger arrived while the backend is still booting: replay it once
+      // the window has loaded.
+      activateWhenReady = true;
+      return;
+    }
     const cfg = readAssistantConfig(DATA_DIR);
     if (!cfg) return;
     if (mainWindow.isMinimized()) mainWindow.restore();
@@ -334,7 +340,8 @@ if (!gotTheLock) {
     // ponytail: 2 s poll of one file; fs.watch if latency ever matters.
     registerAssistantShortcut();
     fs.watchFile(CONFIG_FILE, { interval: 2000 }, registerAssistantShortcut);
-    if (hasAssistantFlag(process.argv)) {
+    if (hasAssistantFlag(process.argv) || activateWhenReady) {
+      activateWhenReady = false;
       mainWindow!.webContents.once("did-finish-load", activateAssistant);
     }
 
