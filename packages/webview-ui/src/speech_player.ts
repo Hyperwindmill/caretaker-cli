@@ -78,7 +78,11 @@ async function playPcm(
     // Wait for the scheduled end, not the last source's `onended`: the stream
     // may close after that source already finished, and the event would never
     // fire again.
-    const remainingMs = Math.max(0, (cursor - ctx.currentTime) * 1000);
+    // currentTime is when a sample is rendered, not when it is heard: add the output
+    // latency (tens to hundreds of ms on PulseAudio/PipeWire or Bluetooth), or closing
+    // the context cuts the tail and the mic reopens over it.
+    const latency = (ctx.outputLatency || 0) + (ctx.baseLatency || 0);
+    const remainingMs = Math.max(0, (cursor - ctx.currentTime + latency) * 1000);
     await new Promise<void>((resolve) => {
       const timer = setTimeout(resolve, remainingMs);
       signal.addEventListener('abort', () => (clearTimeout(timer), resolve()), { once: true });
