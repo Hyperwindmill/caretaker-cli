@@ -78,7 +78,13 @@ export async function dispatchAgent(opts: DispatchOptions): Promise<DispatchResu
     };
   }
 
-  const effective = effectiveAgent(opts.invoked, caller);
+  // Inherit the caller's *live* working dir, not its stored config: a chat
+  // moved by `set_workspace` mutates ctx.workingDir, and a sub-agent must
+  // follow the session into that project.
+  const effective = effectiveAgent(
+    opts.invoked,
+    caller && { ...caller, workingDir: opts.ctx.workingDir },
+  );
 
   if (!effective.provider) {
     return {

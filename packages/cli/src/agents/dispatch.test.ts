@@ -190,6 +190,22 @@ describe('dispatchAgent', () => {
     assert.equal(body?.model, 'claude-opus-4-7', "child must hit the API with caller's model");
   });
 
+  it("child runs in the caller's live ctx.workingDir, not its stored one (set_workspace)", async () => {
+    await seedConfig();
+    let system = '';
+    __setFetch(async (_url, init) => {
+      const b = JSON.parse(init.body as string) as { messages: Array<{ role: string; content: string }> };
+      system = b.messages.find((m) => m.role === 'system')?.content ?? '';
+      return sseResponse(SINGLE_TURN('ok'));
+    });
+    const switchedDir = mkdtempSync(path.join(tmpdir(), 'ct-switched-'));
+    const caller = agent({ provider: 'anthropic', model: 'm', workingDir: '/stored/home' });
+    const target = agent({ provider: '', model: '' });
+    const c = { ...ctx(caller), workingDir: switchedDir };
+    await dispatchAgent({ invoked: target, task: 'x', ctx: c });
+    assert.match(system, new RegExp(`working_dir: ${switchedDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  });
+
   it('propagates abort signal to the child run', async () => {
     await seedConfig();
     __setFetch(async (_url, init) => {
