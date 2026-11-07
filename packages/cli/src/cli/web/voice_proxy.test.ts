@@ -554,6 +554,7 @@ test('speak streams: the first chunk reaches the client before upstream finishes
       providers: [],
       voice: {
         enabled: true,
+        sttModel: '',
         endpoint: `http://127.0.0.1:${(slowServer.address() as any).port}/v1`,
         ttsModel: 'm',
       },
@@ -582,6 +583,7 @@ test('speak applies the dictionary when enabled and the language matches', async
     providers: [],
     voice: {
       enabled: true,
+      sttModel: '',
       endpoint: upstreamUrl,
       ttsModel: 'kokoro',
       lang: 'it-IT',
@@ -597,7 +599,7 @@ test('speak leaves text alone when pronunciationEnabled is false', async () => {
   await saveConfig({
     port: 3000,
     providers: [],
-    voice: { enabled: true, endpoint: upstreamUrl, ttsModel: 'kokoro', lang: 'it-IT' },
+    voice: { enabled: true, sttModel: '', endpoint: upstreamUrl, ttsModel: 'kokoro', lang: 'it-IT' },
   });
   upstreamBody = new Uint8Array([1]);
   await post('/api/voice/speak', { text: 'la pipeline' });
@@ -610,6 +612,7 @@ test('preview with a different ttsEndpoint does not send the saved ttsApiKey', a
     providers: [],
     voice: {
       enabled: true,
+      sttModel: '',
       endpoint: upstreamUrl,
       ttsModel: 'm',
       ttsEndpoint: upstreamUrl,
@@ -629,7 +632,7 @@ test('preview uses unsaved dictionary rows', async () => {
   await saveConfig({
     port: 3000,
     providers: [],
-    voice: { enabled: true, endpoint: upstreamUrl, lang: 'it-IT' },
+    voice: { enabled: true, sttModel: '', endpoint: upstreamUrl, lang: 'it-IT' },
   });
   upstreamBody = new Uint8Array([1]);
   await post('/api/voice/preview', {
@@ -644,7 +647,7 @@ test('preview uses unsaved dictionary rows', async () => {
 });
 
 test('preview rejects malformed bodies with 400', async () => {
-  await saveConfig({ port: 3000, providers: [], voice: { enabled: true, endpoint: upstreamUrl } });
+  await saveConfig({ port: 3000, providers: [], voice: { enabled: true, sttModel: '', endpoint: upstreamUrl } });
   assert.equal((await post('/api/voice/preview', { text: '', settings: {} })).status, 400);
   assert.equal((await post('/api/voice/preview', { text: 'x' })).status, 400);
   assert.equal((await post('/api/voice/preview', { text: 'x', settings: { ttsSpeed: 'fast' } })).status, 400);
