@@ -1,5 +1,15 @@
 # webview-ui
 
+## 0.33.0
+
+### Minor Changes
+
+- ad71e39: Services: a Run now button starts a heartbeat or email triage run immediately (even when the service is Off), and the Execution Console follows any service run live, cron-started ones included, until its log is saved.
+
+### Patch Changes
+
+- ca56fa5: Email triage: "Max emails per run" now goes up to 200 (the scan window) instead of 50. Only envelopes reach the triage prompt, so the per-call body cap of `email_fetch` no longer applies to it.
+
 ## 0.32.0
 
 No changes in this release.
