@@ -3,6 +3,7 @@ import type { CaretakerConfig, AgentConfig, ServiceConfig } from 'caretaker-type
 import type { ViewToHost, ChatMessage } from './bridge.js';
 import type { ChatItem } from './App.js';
 import { MessageList } from './MessageList.js';
+import { triageFormError, triageAccountOptions } from './services_form_utils.js';
 import { WarningIcon, TipIcon, LogsIcon, EditIcon, DeleteIcon, CloseIcon, StatusIcon } from './icons.js';
 
 interface ServicesTabProps {
@@ -116,6 +117,10 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
   const [allowedSenders, setAllowedSenders] = useState('');
   const [allowedRecipients, setAllowedRecipients] = useState('');
   const [allowedAgents, setAllowedAgents] = useState<string[]>([]);
+  const [triageAccountId, setTriageAccountId] = useState('');
+  const [triageRecipients, setTriageRecipients] = useState('');
+  const [triageMaxEmails, setTriageMaxEmails] = useState('50');
+  const [triageSubjectPrefix, setTriageSubjectPrefix] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const startEdit = (task: ServiceConfig) => {
@@ -144,6 +149,10 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
     setAllowedSenders(task.allowedSenders || '');
     setAllowedRecipients(task.allowedRecipients || '');
     setAllowedAgents(task.allowedAgents || []);
+    setTriageAccountId(task.triageAccountId || '');
+    setTriageRecipients(task.triageRecipients || '');
+    setTriageMaxEmails(task.triageMaxEmails ? String(task.triageMaxEmails) : '50');
+    setTriageSubjectPrefix(task.triageSubjectPrefix || '');
     setErrorMsg(null);
   };
 
@@ -173,6 +182,10 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
     setAllowedSenders('');
     setAllowedRecipients('');
     setAllowedAgents([]);
+    setTriageAccountId('');
+    setTriageRecipients('');
+    setTriageMaxEmails('50');
+    setTriageSubjectPrefix('');
     setErrorMsg(null);
   };
 
@@ -215,6 +228,15 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
       const cronParts = trimmedCron.split(/\s+/);
       if (cronParts.length !== 5) {
         setErrorMsg('Invalid cron expression. It must contain exactly 5 space-separated fields (e.g. "*/15 * * * *").');
+        return;
+      }
+    } else if (type === 'email_triage') {
+      const err = triageFormError(
+        { agentId, cron: trimmedCron, accountId: triageAccountId, recipients: triageRecipients, maxEmails: triageMaxEmails },
+        triageAccountOptions(tasks),
+      );
+      if (err) {
+        setErrorMsg(err);
         return;
       }
     } else if (type === 'telegram') {
@@ -273,6 +295,14 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
         ? {
             telegramBotToken: telegramBotToken.trim(),
             telegramAllowedChats: telegramAllowedChats.trim(),
+          }
+        : {}),
+      ...(type === 'email_triage'
+        ? {
+            triageAccountId,
+            triageRecipients: triageRecipients.trim(),
+            triageMaxEmails: Number(triageMaxEmails),
+            triageSubjectPrefix: triageSubjectPrefix.trim(),
           }
         : {}),
       ...(type === 'email'
@@ -415,6 +445,7 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
               <option value="heartbeat">Heartbeat (Scheduled Agent Run)</option>
               <option value="telegram">Telegram Bot (Poller)</option>
               <option value="email">Email (IMAP credentials)</option>
+              <option value="email_triage">Email triage (Scheduled Report)</option>
             </select>
           </div>
 
@@ -488,6 +519,126 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
                 <textarea
                   id="task-prompt"
                   placeholder="What instructions should the agent execute on each run?"
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  rows={4}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--vscode-input-background, #252526)',
+                    color: 'var(--vscode-input-foreground, #cccccc)',
+                    border: '1px solid var(--vscode-input-border, #3c3c3c)',
+                    fontFamily: 'inherit',
+                    fontSize: '12px',
+                    resize: 'vertical'
+                  }}
+                />
+              </div>
+            </>
+          ) : type === 'email_triage' ? (
+            <>
+              <div className="form-group">
+                <label htmlFor="task-cron">Cron Timing</label>
+                <input
+                  id="task-cron"
+                  type="text"
+                  placeholder="e.g. 0 8 * * * (every morning at 8)"
+                  value={cron}
+                  onChange={(e) => setCron(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="triage-account">Email account</label>
+                <select
+                  id="triage-account"
+                  value={triageAccountId}
+                  onChange={(e) => setTriageAccountId(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '6px 8px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--vscode-dropdown-background, #252526)',
+                    color: 'var(--vscode-dropdown-foreground, #cccccc)',
+                    border: '1px solid var(--vscode-dropdown-border, #3c3c3c)',
+                    fontSize: '12px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <option value="" disabled>-- Select account --</option>
+                  {triageAccountOptions(tasks).map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="field-hint" style={{ fontSize: '11px', opacity: 0.8, marginTop: '4px' }}>
+                  Only enabled email services with both IMAP and SMTP configured are listed.
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="triage-recipients">Report recipients (one per line)</label>
+                <textarea
+                  id="triage-recipients"
+                  placeholder="you@example.com"
+                  value={triageRecipients}
+                  onChange={(e) => setTriageRecipients(e.target.value)}
+                  rows={3}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--vscode-input-background, #252526)',
+                    color: 'var(--vscode-input-foreground, #cccccc)',
+                    border: '1px solid var(--vscode-input-border, #3c3c3c)',
+                    fontFamily: 'inherit',
+                    fontSize: '12px',
+                    resize: 'vertical'
+                  }}
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="triage-max">Max emails per run (1-50)</label>
+                <input
+                  id="triage-max"
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={triageMaxEmails}
+                  onChange={(e) => setTriageMaxEmails(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="triage-prefix">Subject prefix (optional)</label>
+                <input
+                  id="triage-prefix"
+                  type="text"
+                  placeholder="[Email Triage]"
+                  value={triageSubjectPrefix}
+                  onChange={(e) => setTriageSubjectPrefix(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="task-dir">Working Directory (Absolute path, optional)</label>
+                <input
+                  id="task-dir"
+                  type="text"
+                  placeholder="e.g. /home/user/project (default: process.cwd())"
+                  value={workingDir}
+                  onChange={(e) => setWorkingDir(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="task-prompt">Extra triage instructions (optional)</label>
+                <textarea
+                  id="task-prompt"
+                  placeholder="e.g. Treat anything from our main client as urgent."
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   rows={4}
@@ -829,6 +980,12 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
                           ? ` · agents: ${task.allowedAgents.map(id => agents.find(a => a.id === id)?.name || id).join(', ')}`
                           : ' · any agent'}
                       </div>
+                    ) : task.type === 'email_triage' ? (
+                      <div className="settings-card__subtitle" style={{ fontSize: '11px', marginTop: '4px' }}>
+                        <strong>Agent:</strong> {agentName} · <strong>Schedule:</strong> <code>{task.cron}</code> · <strong>Account:</strong>{' '}
+                        {tasks.find(t => t.id === task.triageAccountId)?.name || 'missing'} ·{' '}
+                        {(task.triageRecipients || '').split(/[,\n]/).filter(r => r.trim()).length} recipient(s)
+                      </div>
                     ) : (
                       <>
                         <div className="settings-card__subtitle" style={{ fontSize: '11px', marginTop: '4px' }}>
@@ -841,7 +998,7 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
                     )}
                   </div>
                   <div className="settings-card__actions">
-                    {task.type === 'heartbeat' && (
+                    {(task.type === 'heartbeat' || task.type === 'email_triage') && (
                       <button
                         className="icon-btn"
                         onClick={() => openLogViewer(task)}
