@@ -1,7 +1,10 @@
 import { loadConfig } from '../../store/json.js';
-import { HeartbeatStrategy } from './scheduler/heartbeat.js';
+import type { ServiceConfig } from '../../types.js';
+import { HeartbeatStrategy, executeTaskRun } from './scheduler/heartbeat.js';
 import { TelegramStrategy } from './scheduler/telegram.js';
-import { EmailTriageStrategy } from './scheduler/email_triage_agent.js';
+import { EmailTriageStrategy, realTriageDeps } from './scheduler/email_triage_agent.js';
+import { executeTriageRun } from './scheduler/email_triage.js';
+import { activeServiceRun, newRunId } from './scheduler/service_runs.js';
 import { runTaskHeartbeatTick } from './scheduler/task_strategy.js';
 import { runMemorySweepTick } from './scheduler/memory_sweep.js';
 
@@ -54,6 +57,28 @@ export async function runSchedulerTick(): Promise<void> {
   }
 }
 
+
+/** Service types a user can run by hand: the cron-driven ones. */
+export function isRunnableService(service: ServiceConfig): boolean {
+  return service.type === 'heartbeat' || service.type === 'email_triage';
+}
+
+/**
+ * Starts a run of a cron-driven service now, regardless of its schedule or
+ * enabled flag, and returns its run id. A run already in flight is not
+ * duplicated: its id is returned instead, so the caller can follow it.
+ */
+export function runServiceNow(service: ServiceConfig): string {
+  const inFlight = activeServiceRun(service.id);
+  if (inFlight) return inFlight;
+  const runId = newRunId();
+  const run =
+    service.type === 'email_triage'
+      ? executeTriageRun(service, realTriageDeps, runId)
+      : executeTaskRun(service, runId);
+  void run.catch((err) => console.error(`[scheduler] Manual run of "${service.name}" failed:`, err));
+  return runId;
+}
 
 let schedulerIntervalRef: NodeJS.Timeout | null = null;
 

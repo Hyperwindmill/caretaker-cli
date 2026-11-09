@@ -51,8 +51,10 @@ export interface ChatMessage {
   createdAt: string;
 }
 
-/** Live events of a running task cycle: the chat's own stream events. */
+/** Live events of a running task cycle or service run: the chat's own stream events. */
 export type CycleEvent =
+  /** A user turn known only mid-run (the email triage prompt). */
+  | { type: 'user'; text: string }
   | { type: 'chunk'; text: string }
   | { type: 'thinking'; text: string }
   | { type: 'tool_call'; id: string; name: string; args: unknown }
@@ -170,7 +172,9 @@ export type HostToView =
   | { type: 'voiceConfig'; voice: VoiceClientConfig | null }
   | { type: 'voiceModelsFetched'; result: VoiceCatalogResult; target?: 'stt' | 'tts' }
   | { type: 'cycleLoaded'; sessionId: string; messages: ChatMessage[]; running: boolean }
-  | { type: 'cycleEvent'; sessionId: string; event: CycleEvent };
+  | { type: 'cycleEvent'; sessionId: string; event: CycleEvent }
+  /** A service run is in flight (started by hand or by its cron); follow it with watchServiceRun. */
+  | { type: 'serviceRunActive'; serviceId: string; runId: string };
 
 
 export type ViewToHost =
@@ -199,7 +203,10 @@ export type ViewToHost =
   | { type: 'authenticateMcpServer'; serverId: string }
   | { type: 'revokeMcpAuth'; serverId: string }
   | { type: 'watchCycle'; agentId: string; sessionId: string }
-  | { type: 'unwatchCycle'; sessionId: string };
+  /** Also stops following a service run (pass its run id). */
+  | { type: 'unwatchCycle'; sessionId: string }
+  | { type: 'runService'; serviceId: string }
+  | { type: 'watchServiceRun'; runId: string };
 
 /** Runtime validator for messages coming from the webview. Returns
  * the typed message on success, or null on any structural mismatch.
@@ -299,6 +306,10 @@ export function parseViewToHost(value: unknown): ViewToHost | null {
         : null;
     case 'unwatchCycle':
       return isSafeId(value.sessionId) ? { type, sessionId: value.sessionId } : null;
+    case 'runService':
+      return typeof value.serviceId === 'string' ? { type, serviceId: value.serviceId } : null;
+    case 'watchServiceRun':
+      return isSafeId(value.runId) ? { type, runId: value.runId } : null;
 
     default:
       return null;

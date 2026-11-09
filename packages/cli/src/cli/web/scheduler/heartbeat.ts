@@ -7,6 +7,7 @@ import type { MessageRecord } from '../../../session/types.js';
 import type { ServiceConfig } from '../../../types.js';
 import { saveTaskRun } from './logs.js';
 import { runningTasks } from './locks.js';
+import { beginServiceRun, endServiceRun, newRunId, serviceRunCallbacks } from './service_runs.js';
 import type { SchedulerStrategy } from './strategy.js';
 
 /**
@@ -80,14 +81,18 @@ export function matchesCron(cronStr: string, date: Date): boolean {
  * Runs completely in background, automatically approving tool runs.
  * Guards against concurrent execution: if the task is already running, skips.
  */
-export async function executeTaskRun(task: ServiceConfig): Promise<void> {
+export async function executeTaskRun(task: ServiceConfig, runId: string = newRunId()): Promise<void> {
   if (runningTasks.has(task.id)) {
     console.log(`[scheduler] Task "${task.name}" is already running — skipping.`);
     return;
   }
   runningTasks.add(task.id);
 
-  const runId = `run_${randomUUID().slice(0, 8)}`;
+  const unattendedNotice = `[UNATTENDED RUN] Note: You are running as an unattended scheduled task. No human is supervising this execution. Act autonomously and complete the task to the best of your ability.`;
+  const effectivePrompt = `${unattendedNotice}\n\n${task.prompt}`;
+  const startMsg = userMessage(effectivePrompt);
+  // Same synchronous block as the lock: the live stream exists as soon as the run does.
+  beginServiceRun(task.id, runId, startMsg);
   console.log(`[scheduler] Starting execution run ${runId} for task: "${task.name}"`);
 
   const runMessages: MessageRecord[] = [];
@@ -107,11 +112,7 @@ export async function executeTaskRun(task: ServiceConfig): Promise<void> {
     const tools = await harness.resolveAgentTools(agent, harness.tools);
     const workingDir = task.workingDir || agent.workingDir || process.cwd();
 
-    const unattendedNotice = `[UNATTENDED RUN] Note: You are running as an unattended scheduled task. No human is supervising this execution. Act autonomously and complete the task to the best of your ability.`;
-    const effectivePrompt = `${unattendedNotice}\n\n${task.prompt}`;
-
     // Track the initial user prompt inside run history
-    const startMsg = userMessage(effectivePrompt);
     runMessages.push(startMsg);
 
     // Invoke headless loop run
@@ -125,6 +126,7 @@ export async function executeTaskRun(task: ServiceConfig): Promise<void> {
         workingDir,
       },
       {
+        ...serviceRunCallbacks(runId),
         onMessage: async (msg) => {
           runMessages.push(msg);
         },
@@ -191,6 +193,7 @@ export async function executeTaskRun(task: ServiceConfig): Promise<void> {
   } finally {
     // Always release the lock so future ticks can re-schedule this task
     runningTasks.delete(task.id);
+    endServiceRun(task.id, runId);
   }
 }
 

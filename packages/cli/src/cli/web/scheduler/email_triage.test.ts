@@ -10,6 +10,8 @@ import type { MessageRecord } from '../../../session/types.js';
 import type { ServiceConfig, AgentConfig } from '../../../types.js';
 import { markdownToHtml } from '../../../lib/email.js';
 import { runningTasks } from './locks.js';
+import { watchCycleStream, type CycleEvent } from './cycle_events.js';
+import { activeServiceRun } from './service_runs.js';
 import {
   TRIAGE_INSTRUCTIONS,
   buildTriagePrompt,
@@ -434,4 +436,44 @@ test('triageMaxEmails: unset → 50, 100 → 100, 500 → 200, 7 → 7', async (
     await executeTriageRun(triage({ triageMaxEmails: input }), deps);
     assert.equal(got, want);
   }
+});
+
+// ─── live stream ─────────────────────────────────────────────────────────
+
+test('a run is live from its first synchronous block and ends with done after the log is saved', async () => {
+  const seen: (CycleEvent | 'saved')[] = [];
+  const { deps } = makeDeps({
+    runAgent: async (i) => {
+      i.stream.onChunk!('thinking aloud');
+      return { messages: [msg('assistant', REPORT)], stop: 'done' };
+    },
+    saveRun: async () => {
+      seen.push('saved');
+    },
+  });
+  const svc = triage();
+  const pending = executeTriageRun(svc, deps, 'run_live1');
+  // Visible before the first await resolves: the server reads it right after starting the run.
+  assert.equal(activeServiceRun(svc.id), 'run_live1');
+  const live = watchCycleStream('run_live1', (e) => seen.push(e))!;
+  assert.equal(live.prompt, null);
+  await pending;
+  assert.deepEqual(
+    seen.map((e) => (typeof e === 'string' ? e : e.type)),
+    ['user', 'chunk', 'saved', 'done'],
+  );
+  assert.match((seen[0] as { text: string }).text, /S4/);
+  assert.equal(activeServiceRun(svc.id), undefined);
+  assert.equal(watchCycleStream('run_live1', () => {}), null);
+});
+
+test('empty mailbox tells the live viewer why no log appears', async () => {
+  const seen: CycleEvent[] = [];
+  const { deps } = makeDeps({
+    listEnvelopes: async () => ({ envelopes: [], refused: 0, scanTruncated: false, uidValidity: '1' }),
+  });
+  const pending = executeTriageRun(triage(), deps, 'run_empty1');
+  watchCycleStream('run_empty1', (e) => seen.push(e));
+  await pending;
+  assert.deepEqual(seen, [{ type: 'chunk', text: 'No unread mail to triage.' }, { type: 'done' }]);
 });

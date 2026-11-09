@@ -2,10 +2,14 @@
 // the chat's own stream events keyed by session id; WebSocket watchers attach
 // to a running cycle and replay what has happened so far, then follow it.
 // Finished cycles are dropped from the map — watchers then load from disk.
+// Service runs (heartbeat, email triage) use the same channel keyed by run id;
+// see service_runs.ts.
 
 import type { MessageRecord } from '../../../session/types.js';
 
 export type CycleEvent =
+  /** A user turn known only mid-run (the triage prompt is built after listing mail). */
+  | { type: 'user'; text: string }
   | { type: 'chunk'; text: string }
   | { type: 'thinking'; text: string }
   | { type: 'tool_call'; id: string; name: string; args: unknown }
@@ -14,7 +18,7 @@ export type CycleEvent =
   | { type: 'error'; message: string };
 
 interface RunningCycle {
-  prompt: MessageRecord;
+  prompt: MessageRecord | null;
   /** Every event of the cycle so far, consecutive text coalesced. */
   events: CycleEvent[];
   listeners: Set<(ev: CycleEvent) => void>;
@@ -22,7 +26,7 @@ interface RunningCycle {
 
 const running = new Map<string, RunningCycle>();
 
-export function beginCycleStream(sessionId: string, prompt: MessageRecord): void {
+export function beginCycleStream(sessionId: string, prompt: MessageRecord | null): void {
   running.set(sessionId, { prompt, events: [], listeners: new Set() });
 }
 
@@ -49,7 +53,7 @@ export function emitCycleEvent(sessionId: string, ev: CycleEvent): void {
 export function watchCycleStream(
   sessionId: string,
   listener: (ev: CycleEvent) => void,
-): { prompt: MessageRecord; events: CycleEvent[]; unwatch: () => void } | null {
+): { prompt: MessageRecord | null; events: CycleEvent[]; unwatch: () => void } | null {
   const cycle = running.get(sessionId);
   if (!cycle) return null;
   cycle.listeners.add(listener);

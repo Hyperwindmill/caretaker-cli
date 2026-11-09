@@ -57,7 +57,8 @@ import { guardTurnCallbacks } from './turn_guard.js';
 import type { AgentConfig, ProviderConfig, PluginsFile, McpServerConfig } from '../../types.js';
 import type { ChatMessage, ConfirmDecision, HostToView, ViewToHost } from 'webview-ui/bridge';
 import { watchCycleStream } from './scheduler/cycle_events.js';
-import { startBackgroundScheduler, loadTaskRuns } from './scheduler.js';
+import { startBackgroundScheduler, loadTaskRuns, isRunnableService, runServiceNow } from './scheduler.js';
+import { activeServiceRun } from './scheduler/service_runs.js';
 import { fsRouter } from './fs.js';
 import { activationStatus, resolvePlanningEnabled } from './scheduler/task_roles.js';
 import {
@@ -1433,7 +1434,7 @@ export async function startServer(port: number, host: string): Promise<void> {
               // Running: the prompt, then every event so far, then the tail — all
               // synchronously, so nothing is lost between snapshot and listener.
               cycleWatchers.set(sessionId, live.unwatch);
-              post({ type: 'cycleLoaded', sessionId, messages: [toChatMessage(live.prompt)], running: true });
+              post({ type: 'cycleLoaded', sessionId, messages: [toChatMessage(live.prompt!)], running: true });
               for (const event of live.events) post({ type: 'cycleEvent', sessionId, event });
               return;
             }
@@ -1449,10 +1450,40 @@ export async function startServer(port: number, host: string): Promise<void> {
           case 'unwatchCycle':
             if (/^[A-Za-z0-9_-]+$/.test(msg.sessionId)) unwatchCycle(msg.sessionId);
             return;
+          case 'runService': {
+            const service = (await loadConfig()).scheduler?.tasks?.find((t) => t.id === msg.serviceId);
+            if (!service || !isRunnableService(service)) {
+              post({ type: 'error', message: `Service "${msg.serviceId}" cannot be run manually` });
+              return;
+            }
+            post({ type: 'serviceRunActive', serviceId: service.id, runId: runServiceNow(service) });
+            return;
+          }
+          case 'watchServiceRun': {
+            // A service run lives only in memory while running; its log is on disk after.
+            const { runId } = msg;
+            unwatchCycle(runId);
+            const live = watchCycleStream(runId, (event) => post({ type: 'cycleEvent', sessionId: runId, event }));
+            if (!live) {
+              post({ type: 'cycleEvent', sessionId: runId, event: { type: 'done' } });
+              return;
+            }
+            cycleWatchers.set(runId, live.unwatch);
+            post({
+              type: 'cycleLoaded',
+              sessionId: runId,
+              messages: live.prompt ? [toChatMessage(live.prompt)] : [],
+              running: true,
+            });
+            for (const event of live.events) post({ type: 'cycleEvent', sessionId: runId, event });
+            return;
+          }
           case 'getTaskRuns':
             try {
               const runs = await loadTaskRuns(msg.taskId);
               post({ type: 'taskRunsLoaded', taskId: msg.taskId, runs });
+              const runId = activeServiceRun(msg.taskId);
+              if (runId) post({ type: 'serviceRunActive', serviceId: msg.taskId, runId });
             } catch (err) {
               console.error('[web] failed to load task runs:', err);
               post({

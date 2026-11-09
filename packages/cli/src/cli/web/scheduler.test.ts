@@ -11,6 +11,9 @@ import {
   schedulerLogsDir,
 } from './scheduler.js';
 import { matchesCron } from './scheduler/heartbeat.js';
+import { runServiceNow } from './scheduler.js';
+import { beginServiceRun, endServiceRun } from './scheduler/service_runs.js';
+import type { ServiceConfig } from '../../types.js';
 import {
   splitMessage,
   saveTelegramOffset,
@@ -156,4 +159,14 @@ test('scheduler: loadTelegramOffset returns undefined on corrupted file', async 
   assert.equal(await loadTelegramOffset(taskId), undefined);
 
   await rm(path, { force: true });
+});
+
+test('scheduler: runServiceNow returns the run in flight instead of starting a second one', () => {
+  const svc = { id: 'svc-dup', name: 'dup', type: 'heartbeat', agentId: 'a', cron: '* * * * *', prompt: 'x', enabled: false } as ServiceConfig;
+  beginServiceRun(svc.id, 'run_inflight', null);
+  try {
+    assert.equal(runServiceNow(svc), 'run_inflight');
+  } finally {
+    endServiceRun(svc.id, 'run_inflight');
+  }
 });

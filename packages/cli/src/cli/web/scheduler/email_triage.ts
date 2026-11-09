@@ -21,6 +21,13 @@ import {
 import type { MessageRecord } from '../../../session/types.js';
 import type { AgentConfig, CaretakerConfig, ProviderConfig, ServiceConfig } from '../../../types.js';
 import { runningTasks } from './locks.js';
+import {
+  beginServiceRun,
+  emitServiceRunEvent,
+  endServiceRun,
+  newRunId,
+  serviceRunCallbacks,
+} from './service_runs.js';
 import { CLAUDE_CODE_DEFAULT_RUN_SECONDS } from './task_roles.js';
 
 const DEFAULT_PREFIX = '[Email Triage]';
@@ -142,6 +149,8 @@ export type TriageAgentInput = {
   account: EmailAccount;
   workingDir: string;
   signal: AbortSignal;
+  /** Live-stream hooks for the log viewer; spread into the run's callbacks. */
+  stream: ReturnType<typeof serviceRunCallbacks>;
 };
 
 export type TriageDeps = {
@@ -190,14 +199,16 @@ const assistantNote = (content: string) => ({
 export async function executeTriageRun(
   service: ServiceConfig,
   deps: TriageDeps,
+  runId: string = newRunId(),
 ): Promise<TriageOutcome> {
   if (runningTasks.has(service.id)) {
     console.log(`[scheduler] Triage "${service.name}" is already running — skipping.`);
     return { kind: 'skipped' };
   }
   runningTasks.add(service.id);
+  // Same synchronous block as the lock. No prompt yet: it needs the mail listing.
+  beginServiceRun(service.id, runId, null);
 
-  const runId = `run_${randomUUID().slice(0, 8)}`;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), CLAUDE_CODE_DEFAULT_RUN_SECONDS * 1000);
   const messages: Partial<ReturnType<typeof toChat>>[] = [];
@@ -244,6 +255,7 @@ export async function executeTriageRun(
           `The oldest ${MAX_SCAN} unread messages are all from senders outside the account's allowedSenders, so triage cannot see newer mail. Read, move or delete them (or widen the allowlist).`,
         );
       }
+      emitServiceRunEvent(runId, 'No unread mail to triage.', 'chunk');
       return { kind: 'skipped' };
     }
 
@@ -258,6 +270,7 @@ export async function executeTriageRun(
       content: prompt,
       createdAt: new Date().toISOString(),
     });
+    emitServiceRunEvent(runId, prompt, 'user');
 
     let result: Awaited<ReturnType<TriageDeps['runAgent']>>;
     try {
@@ -268,6 +281,7 @@ export async function executeTriageRun(
         account,
         workingDir: service.workingDir || agent.workingDir || process.cwd(),
         signal: ctrl.signal,
+        stream: serviceRunCallbacks(runId),
       });
     } catch (e) {
       return await fail(`Agent run failed: ${errText(e)}`);
@@ -332,5 +346,6 @@ export async function executeTriageRun(
   } finally {
     clearTimeout(timer);
     runningTasks.delete(service.id);
+    endServiceRun(service.id, runId);
   }
 }

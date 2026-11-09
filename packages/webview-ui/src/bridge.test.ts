@@ -20,3 +20,10 @@ test('watchCycle and unwatchCycle with valid ids parse to the typed message', ()
   });
   assert.equal(parseViewToHost({ type: 'unwatchCycle', sessionId: 'a/b' }), null);
 });
+
+test('runService and watchServiceRun parse; a path-like run id is rejected', () => {
+  assert.deepEqual(parseViewToHost({ type: 'runService', serviceId: 'svc-1' }), { type: 'runService', serviceId: 'svc-1' });
+  assert.equal(parseViewToHost({ type: 'runService' }), null);
+  assert.deepEqual(parseViewToHost({ type: 'watchServiceRun', runId: 'run_ab12' }), { type: 'watchServiceRun', runId: 'run_ab12' });
+  assert.equal(parseViewToHost({ type: 'watchServiceRun', runId: '../x' }), null);
+});

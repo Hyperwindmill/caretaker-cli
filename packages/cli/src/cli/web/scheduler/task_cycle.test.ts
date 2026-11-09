@@ -117,7 +117,7 @@ test('watcher attached before close sees the cycle, ending with done', async () 
   const rec = await cycle.openCycle({ task, agent, role: 'developer', agentLabel: 'A · m', prompt: 'live' });
   const seen: CycleEvent[] = [];
   const snap = watchCycleStream(rec.sessionId, (e) => seen.push(e))!;
-  assert.equal(snap.prompt.content, 'live');
+  assert.equal(snap.prompt!.content, 'live');
   rec.callbacks.onChunk!('working');
   rec.callbacks.onToolCall!('t1', 'read_file', { path: 'a' });
   rec.callbacks.onToolResult!('t1', 'ok');

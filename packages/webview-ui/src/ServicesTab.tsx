@@ -1,10 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import type { CaretakerConfig, AgentConfig, ServiceConfig } from 'caretaker-types';
-import type { ViewToHost, ChatMessage } from './bridge.js';
+import type { ViewToHost, HostToView, ChatMessage } from './bridge.js';
 import type { ChatItem } from './App.js';
 import { MessageList } from './MessageList.js';
 import { triageFormError, triageAccountOptions, splitRecipients } from './services_form_utils.js';
-import { WarningIcon, TipIcon, LogsIcon, EditIcon, DeleteIcon, CloseIcon, StatusIcon } from './icons.js';
+import { useCycleStream } from './use_cycle_stream.js';
+import { WarningIcon, TipIcon, LogsIcon, EditIcon, DeleteIcon, CloseIcon, StatusIcon, ActivateIcon } from './icons.js';
 
 interface ServicesTabProps {
   config: CaretakerConfig;
@@ -82,6 +83,45 @@ function reconstructChatItems(messages: ChatMessage[]): ChatItem[] {
   return closeStreamingAssistant(items);
 }
 
+/** A service run still in flight (or finished without writing a log), followed live. */
+function LiveServiceRun({
+  runId,
+  agentName,
+  postMessage,
+  onFinished,
+}: {
+  runId: string;
+  agentName?: string;
+  postMessage: (msg: ViewToHost) => void;
+  onFinished: () => void;
+}) {
+  const chat = useCycleStream(runId, {
+    watch: () => postMessage({ type: 'watchServiceRun', runId }),
+    unwatch: () => postMessage({ type: 'unwatchCycle', sessionId: runId }),
+    onDone: onFinished,
+  });
+  const running = chat.status === 'streaming';
+  return (
+    <>
+      <div className="execution-console__run-header">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <span style={{ fontSize: '12px', fontWeight: 700 }}>Run: {runId}</span>
+          <span style={{ fontSize: '10px', color: 'var(--vscode-descriptionForeground)' }}>
+            {running ? 'Running…' : 'Finished without writing a log'}
+          </span>
+        </div>
+        <span style={{ fontSize: '11px', color: 'var(--vscode-descriptionForeground)' }}>
+          Agent: <strong>{agentName}</strong>
+        </span>
+      </div>
+      <div className="messages" style={{ padding: '20px 24px', flex: 1, overflowY: 'auto' }}>
+        <MessageList items={chat.items} isStreaming={running} agentName={agentName} />
+      </div>
+      {chat.errorText && <div className="notice notice--block">{chat.errorText}</div>}
+    </>
+  );
+}
+
 export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: ServicesTabProps) {
   // Ensure tasks array is initialized
   const tasks = config.scheduler?.tasks || [];
@@ -92,6 +132,18 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
   // Task log viewer states
   const [viewingTaskLogs, setViewingTaskLogs] = useState<ServiceConfig | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  // serviceId → the run the host reported in flight; `finished` once its stream ended.
+  const [liveRuns, setLiveRuns] = useState<Record<string, { runId: string; finished: boolean }>>({});
+
+  useEffect(() => {
+    function handle(event: MessageEvent<unknown>): void {
+      const msg = event.data as HostToView;
+      if (!msg || typeof msg !== 'object' || msg.type !== 'serviceRunActive') return;
+      setLiveRuns((prev) => ({ ...prev, [msg.serviceId]: { runId: msg.runId, finished: false } }));
+    }
+    window.addEventListener('message', handle);
+    return () => window.removeEventListener('message', handle);
+  }, []);
 
   // Form states
   const [name, setName] = useState('');
@@ -384,14 +436,35 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
   const openLogViewer = (task: ServiceConfig) => {
     setViewingTaskLogs(task);
     setSelectedRunId(null);
+    // A finished run that left no log has nothing left to replay.
+    setLiveRuns((prev) => {
+      if (!prev[task.id]?.finished) return prev;
+      const { [task.id]: _gone, ...rest } = prev;
+      return rest;
+    });
     postMessage({ type: 'getTaskRuns', taskId: task.id });
+  };
+
+  const runNow = (task: ServiceConfig) => {
+    postMessage({ type: 'runService', serviceId: task.id });
+    openLogViewer(task);
+  };
+
+  const onLiveRunFinished = (serviceId: string, runId: string) => {
+    setLiveRuns((prev) =>
+      prev[serviceId]?.runId === runId ? { ...prev, [serviceId]: { runId, finished: true } } : prev,
+    );
+    postMessage({ type: 'getTaskRuns', taskId: serviceId });
   };
 
   const showForm = isCreating || editingTask !== null;
 
   // Filter current runs for viewing
   const runs = viewingTaskLogs ? taskRuns[viewingTaskLogs.id] || [] : [];
-  const activeRunId = selectedRunId || runs[0]?.runId;
+  // The live run until its log lands in `runs`, then the persisted one takes over.
+  const live = viewingTaskLogs ? liveRuns[viewingTaskLogs.id] : undefined;
+  const liveUnsaved = live && !runs.some((r) => r.runId === live.runId) ? live : undefined;
+  const activeRunId = selectedRunId || liveUnsaved?.runId || runs[0]?.runId;
   const activeRun = runs.find(r => r.runId === activeRunId);
   const activeRunChatItems = useMemo(() => activeRun ? reconstructChatItems(activeRun.messages || []) : [], [activeRun]);
   const selectedAgentName = viewingTaskLogs ? agents.find(a => a.id === viewingTaskLogs.agentId)?.name : '';
@@ -1001,6 +1074,17 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
                     {(task.type === 'heartbeat' || task.type === 'email_triage') && (
                       <button
                         className="icon-btn"
+                        onClick={() => runNow(task)}
+                        title="Run now (ignores schedule and Off state)"
+                        aria-label="Run now"
+                        style={{ fontSize: '12px', marginRight: '4px' }}
+                      >
+                        <ActivateIcon size={13} />
+                      </button>
+                    )}
+                    {(task.type === 'heartbeat' || task.type === 'email_triage') && (
+                      <button
+                        className="icon-btn"
                         onClick={() => openLogViewer(task)}
                         title="View execution logs"
                         aria-label="View execution logs"
@@ -1057,8 +1141,34 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
                 <span className="app__sidebar-section-title" style={{ paddingLeft: '4px', marginBottom: '8px' }}>
                   Execution History
                 </span>
+                {liveUnsaved && (
+                  <button
+                    className={`execution-console__run-item ${liveUnsaved.runId === activeRunId ? 'execution-console__run-item--active' : ''}`}
+                    onClick={() => setSelectedRunId(liveUnsaved.runId)}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                      <span style={{ fontSize: '10px', color: 'var(--vscode-descriptionForeground)' }}>
+                        {liveUnsaved.runId}
+                      </span>
+                      <span style={{
+                        fontSize: '9px',
+                        fontWeight: 700,
+                        padding: '1px 5px',
+                        borderRadius: '10px',
+                        background: 'oklch(0.72 0.14 230 / 0.12)',
+                        color: 'oklch(0.72 0.14 230)',
+                        border: '1px solid oklch(0.72 0.14 230 / 0.3)'
+                      }}>
+                        {liveUnsaved.finished ? 'ENDED' : 'RUNNING'}
+                      </span>
+                    </div>
+                    <span style={{ fontSize: '11px', fontWeight: 600, marginTop: '2px' }}>
+                      {liveUnsaved.finished ? 'No log written' : 'In progress'}
+                    </span>
+                  </button>
+                )}
                 {runs.length === 0 ? (
-                  <div className="app__sidebar-empty-text">No execution runs recorded yet.</div>
+                  !liveUnsaved && <div className="app__sidebar-empty-text">No execution runs recorded yet.</div>
                 ) : (
                   runs.map((run) => {
                     const isSelected = run.runId === activeRunId;
@@ -1099,7 +1209,15 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
 
               {/* Right main run trace log */}
               <div className="execution-console__run-details">
-                {activeRun ? (
+                {liveUnsaved && activeRunId === liveUnsaved.runId ? (
+                  <LiveServiceRun
+                    key={liveUnsaved.runId}
+                    runId={liveUnsaved.runId}
+                    agentName={selectedAgentName}
+                    postMessage={postMessage}
+                    onFinished={() => onLiveRunFinished(viewingTaskLogs.id, liveUnsaved.runId)}
+                  />
+                ) : activeRun ? (
                   <>
                     <div className="execution-console__run-header">
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>

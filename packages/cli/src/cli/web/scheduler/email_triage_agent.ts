@@ -63,6 +63,7 @@ export async function runTriageAgent(
         signal: i.signal,
       },
       {
+        ...i.stream,
         onMessage: async (msg) => {
           messages.push(msg);
         },
