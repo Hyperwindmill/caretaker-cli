@@ -1,7 +1,7 @@
 # Email Triage Service — Design
 
 **Date:** 2026-11-09
-**Status:** Draft
+**Status:** Implemented
 
 ## Intent
 

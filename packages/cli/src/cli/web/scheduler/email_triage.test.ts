@@ -83,6 +83,7 @@ function makeDeps(
           { uid: 7, from: 'b@x.com', subject: 'S7', date: 'd7' },
         ],
         refused: 2,
+        scanTruncated: false,
         uidValidity: '99',
       };
     },
@@ -200,9 +201,69 @@ test('resolveTriageAccount: happy path and every error', () => {
 
 // ─── core ────────────────────────────────────────────────────────────────
 
+test('extractReport accepts a decorated header', () => {
+  for (const h of ['## IMPORTANT (3)', '## IMPORTANT:']) {
+    const body = `${h}\n_No important emails._`;
+    assert.equal(extractReport([msg('assistant', `intro\n${body}`)], 'done'), body);
+  }
+  assert.equal(extractReport([msg('assistant', '## IMPORTANTLY\nx')], 'done'), null);
+});
+
+test('empty mailbox, window truncated → logged failure, no agent/send/mark', async () => {
+  const { deps, calls } = makeDeps({
+    listEnvelopes: async () => ({ envelopes: [], refused: 200, scanTruncated: true, uidValidity: '1' }),
+  });
+  const out = await executeTriageRun(triage(), deps);
+  assertFailure(calls, out, /oldest 200 unread[\s\S]*allowedSenders/);
+  assert.equal(calls.order.includes('run'), false);
+  assert.equal(calls.sent.length, 0);
+  assert.equal(calls.marked.length, 0);
+});
+
+test('some included, window truncated → success with a warning in the summary', async () => {
+  const base = makeDeps();
+  const { deps, calls } = makeDeps({
+    listEnvelopes: async (...a) => ({ ...(await base.deps.listEnvelopes(...a)), scanTruncated: true }),
+  });
+  const out = await executeTriageRun(triage(), deps);
+  assert.equal(out.kind, 'success');
+  const summary = calls.saved[0].run.messages.at(-1).content;
+  assert.match(summary, /oldest 200/);
+});
+
+test('empty recipients → failure before listEnvelopes and the agent', async () => {
+  const { deps, calls } = makeDeps();
+  const out = await executeTriageRun(triage({ triageRecipients: ' ; , ' }), deps);
+  assertFailure(calls, out, /recipient/i);
+  assert.equal(calls.order.includes('list'), false);
+  assert.equal(calls.order.includes('run'), false);
+});
+
+test('send and markSeen are not tied to the budget signal', async () => {
+  const sigs: Record<string, AbortSignal | undefined> = {};
+  const { deps } = makeDeps({
+    runAgent: async (i) => {
+      sigs.run = i.signal;
+      return { messages: [msg('assistant', REPORT)], stop: 'done' };
+    },
+    send: async (_a, _m, s) => {
+      sigs.send = s;
+      return 'id';
+    },
+    markSeen: async (_a, _u, _v, s) => {
+      sigs.mark = s;
+      return 'marked';
+    },
+  });
+  await executeTriageRun(triage(), deps);
+  assert.ok(sigs.run);
+  assert.notEqual(sigs.send, sigs.run);
+  assert.notEqual(sigs.mark, sigs.run);
+});
+
 test('empty mailbox → skipped, no runAgent, no saveRun', async () => {
   const { deps, calls } = makeDeps({
-    listEnvelopes: async () => ({ envelopes: [], refused: 3, uidValidity: '1' }),
+    listEnvelopes: async () => ({ envelopes: [], refused: 3, scanTruncated: false, uidValidity: '1' }),
   });
   const out = await executeTriageRun(triage(), deps);
   assert.deepEqual(out, { kind: 'skipped' });

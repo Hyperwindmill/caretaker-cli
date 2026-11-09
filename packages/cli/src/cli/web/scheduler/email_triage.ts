@@ -10,6 +10,7 @@ import {
   canRead,
   canSend,
   MAX_FETCH,
+  MAX_SCAN,
   clampLimit,
   emailAccounts,
   markdownToHtml,
@@ -89,7 +90,7 @@ export function extractReport(messages: MessageRecord[], stop: TriageStop): stri
       .join('');
     if (tail.trim()) text = tail;
   }
-  const m = /^## IMPORTANT\s*$/m.exec(text);
+  const m = /^## IMPORTANT\b.*$/m.exec(text);
   return m ? text.slice(m.index).trim() : null;
 }
 
@@ -144,12 +145,13 @@ export type TriageDeps = {
     signal: AbortSignal,
   ): ReturnType<typeof listUnseenEnvelopes>;
   runAgent(i: TriageAgentInput): Promise<{ messages: MessageRecord[]; stop: TriageStop }>;
-  send(account: EmailAccount, mail: OutgoingMail, signal: AbortSignal): Promise<string>;
+  /** No budget signal: a delivery in flight must finish on its own timeout. */
+  send(account: EmailAccount, mail: OutgoingMail, signal?: AbortSignal): Promise<string>;
   markSeen(
     account: EmailAccount,
     uids: number[],
     uidValidity: string,
-    signal: AbortSignal,
+    signal?: AbortSignal,
   ): Promise<'marked' | 'uidvalidity-changed'>;
   saveRun(serviceId: string, run: unknown): Promise<void>;
   now(): Date;
@@ -219,14 +221,24 @@ export async function executeTriageRun(
     if ('error' in resolved) return await fail(resolved.error);
     const { account } = resolved;
 
+    const recipients = parseRecipients(service.triageRecipients);
+    if (recipients.length === 0) return await fail(`Triage service "${service.name}" has no report recipients.`);
+
     let listing: Awaited<ReturnType<typeof listUnseenEnvelopes>>;
     try {
       listing = await deps.listEnvelopes(account, service.triageMaxEmails == null ? MAX_FETCH : clampLimit(service.triageMaxEmails), ctrl.signal);
     } catch (e) {
       return await fail(`Listing unread mail failed: ${errText(e)}`);
     }
-    const { envelopes, refused, uidValidity } = listing;
-    if (envelopes.length === 0) return { kind: 'skipped' };
+    const { envelopes, refused, uidValidity, scanTruncated } = listing;
+    if (envelopes.length === 0) {
+      if (scanTruncated) {
+        return await fail(
+          `The oldest ${MAX_SCAN} unread messages are all from senders outside the account's allowedSenders, so triage cannot see newer mail. Read, move or delete them (or widen the allowlist).`,
+        );
+      }
+      return { kind: 'skipped' };
+    }
 
     const prompt = buildTriagePrompt({
       accountName: account.name,
@@ -269,12 +281,11 @@ export async function executeTriageRun(
       await deps.send(
         account,
         {
-          to: parseRecipients(service.triageRecipients),
+          to: recipients,
           subject: triageSubject(service.triageSubjectPrefix || DEFAULT_PREFIX, included, deps.now()),
           body: report,
           html: markdownToHtml(report),
         },
-        ctrl.signal,
       );
     } catch (e) {
       return await fail(`Sending the report failed: ${errText(e)}`);
@@ -284,7 +295,7 @@ export async function executeTriageRun(
     let marked = false;
     let warning: string | undefined;
     try {
-      const r = await deps.markSeen(account, envelopes.map((e) => e.uid), uidValidity, ctrl.signal);
+      const r = await deps.markSeen(account, envelopes.map((e) => e.uid), uidValidity);
       if (r === 'marked') marked = true;
       else warning = 'mailbox UIDVALIDITY changed since listing; messages left unread';
     } catch (e) {
@@ -295,6 +306,10 @@ export async function executeTriageRun(
       assistantNote(
         `Triage: ${included} included, ${refused} refused by sender allowlist, ${
           marked ? 'marked read' : `not marked read: ${warning}`
+        }${
+          scanTruncated
+            ? `. Warning: more than ${MAX_SCAN} unread messages; only the oldest ${MAX_SCAN} were scanned, newer mail waits for the next runs.`
+            : ''
         }`,
       ),
     );

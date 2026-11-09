@@ -3,7 +3,7 @@ import type { CaretakerConfig, AgentConfig, ServiceConfig } from 'caretaker-type
 import type { ViewToHost, ChatMessage } from './bridge.js';
 import type { ChatItem } from './App.js';
 import { MessageList } from './MessageList.js';
-import { triageFormError, triageAccountOptions } from './services_form_utils.js';
+import { triageFormError, triageAccountOptions, splitRecipients } from './services_form_utils.js';
 import { WarningIcon, TipIcon, LogsIcon, EditIcon, DeleteIcon, CloseIcon, StatusIcon } from './icons.js';
 
 interface ServicesTabProps {
@@ -233,7 +233,7 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
     } else if (type === 'email_triage') {
       const err = triageFormError(
         { agentId, cron: trimmedCron, accountId: triageAccountId, recipients: triageRecipients, maxEmails: triageMaxEmails },
-        triageAccountOptions(tasks),
+        triageAccountOptions(tasks, agentId),
       );
       if (err) {
         setErrorMsg(err);
@@ -567,7 +567,7 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
                   }}
                 >
                   <option value="" disabled>-- Select account --</option>
-                  {triageAccountOptions(tasks).map((a) => (
+                  {triageAccountOptions(tasks, agentId).map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.name}
                     </option>
@@ -984,7 +984,7 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
                       <div className="settings-card__subtitle" style={{ fontSize: '11px', marginTop: '4px' }}>
                         <strong>Agent:</strong> {agentName} · <strong>Schedule:</strong> <code>{task.cron}</code> · <strong>Account:</strong>{' '}
                         {tasks.find(t => t.id === task.triageAccountId)?.name || 'missing'} ·{' '}
-                        {(task.triageRecipients || '').split(/[,\n]/).filter(r => r.trim()).length} recipient(s)
+                        {splitRecipients(task.triageRecipients).length} recipient(s)
                       </div>
                     ) : (
                       <>

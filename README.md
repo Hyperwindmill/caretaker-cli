@@ -160,7 +160,7 @@ Each task gets its own JSONL execution log under `~/.caretaker/scheduler-logs/`;
 
 An **email** service in the **Services** tab holds one mailbox: IMAP settings (host, port, user, password, TLS) to **read**, plus the SMTP settings to **send**. Each half is optional — leave the SMTP host empty and the account cannot send, leave the IMAP host empty and it cannot be read. `From`, SMTP username and SMTP password default to the IMAP username/password, so a normal mailbox needs only a host and a port. Both passwords are encrypted at rest; Gmail/Outlook want an **app password**, not the account password.
 
-Agents get three tools:
+Agents get four tools:
 
 - `email_list_accounts` — the account names to pick from, each with its From address, whether it can send and/or be read, and its allowlists. Passwords are never returned.
 - `email_send` — send a message through the account you name. `body` is the plain-text version and is always required. For a formatted mail the agent writes `body` in markdown and sets `markdown: true` (converted for it, so the content is written once), or passes its own `html`; either way both parts are sent and the recipient's client picks. No attachments.
@@ -185,13 +185,13 @@ An **email triage** service reads the unread mail of an email account on a cron 
 
 - **Account** — the `email` service to triage (it must be enabled and able to both read and send; if it is scoped to specific agents, the triage agent must be one of them).
 - **Agent** — who runs the triage.
-- **Recipients** — comma- or newline-separated addresses that receive the report. They are not checked against the account's Allowed Recipients: you typed them.
+- **Recipients** — comma-, semicolon- or newline-separated addresses that receive the report. They are not checked against the account's Allowed Recipients: you typed them.
 - **Max emails per run** — default 50.
 - **Subject prefix** — default `[Email Triage]`; the subject reads `<prefix> <N> emails triaged — <date time>`.
 - **Instructions** — optional, appended to the built-in rubric. This is where your own criteria and the report language go (the shipped rubric is English). Section headers (`## IMPORTANT`, `## INFORMATION`, `## TRASH`) stay literal whatever the language.
 - **Cron** — standard 5-field expression.
 
-Each run lists the unread messages (only those from allowed senders), the agent classifies them into IMPORTANT, INFORMATION and TRASH, opening a body only when the subject is not enough, and the report is emailed. **Messages are marked read only after the report has been delivered.** If anything fails first — the agent errors or times out (15 minutes), the report is malformed, SMTP refuses it — the mail stays unread and the next cron match tries again. With no unread mail nothing runs and nothing is logged. Runs appear under the service's Logs button.
+Each run lists the unread messages (only those from allowed senders), the agent classifies them into IMPORTANT, INFORMATION and TRASH, opening a body only when the subject is not enough, and the report is emailed. **Messages are marked read only after the report has been delivered.** If anything fails first — the agent errors or times out (15 minutes), the report is malformed, SMTP refuses it — the mail stays unread and the next cron match tries again. With no unread mail nothing runs and nothing is logged. A run also fails (and repeats on the same mail at the next cron match) if the agent hits its `maxTurns` before finishing: raise `maxTurns` or lower Max emails. Only the oldest 200 unread messages are scanned; if all of them are from senders outside the account's Allowed Senders, the run fails with a log entry saying so. Read, move or delete those messages (or widen the allowlist) so triage can see newer mail. Runs appear under the service's Logs button.
 
 Mail bodies are untrusted input and can try to instruct the agent. Caretaker does not remove any of the agent's tools for this run, so use a **dedicated triage agent with read-only tools** (no shell, no write tools, no send).
 

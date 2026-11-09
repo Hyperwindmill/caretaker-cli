@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { ServiceConfig } from 'caretaker-types';
-import { triageFormError, triageAccountOptions } from './services_form_utils.js';
+import { triageFormError, triageAccountOptions, splitRecipients } from './services_form_utils.js';
 
 const svc = (o: Partial<ServiceConfig>): ServiceConfig =>
   ({ id: 'a', name: 'A', type: 'email', enabled: true, agentId: '', cron: '', prompt: '', ...o }) as ServiceConfig;
@@ -36,5 +36,18 @@ test('triageAccountOptions keeps only enabled accounts that can read and send', 
     svc({ id: 'readonly', imapHost: 'i' }),
     svc({ id: 'hb', type: 'heartbeat', imapHost: 'i', smtpHost: 's' }),
   ];
-  assert.deepEqual(triageAccountOptions(list).map(s => s.id), ['m1']);
+  assert.deepEqual(triageAccountOptions(list, 'ag').map(s => s.id), ['m1']);
+});
+
+test('triageAccountOptions drops accounts scoped to other agents', () => {
+  const scoped = svc({ id: 's', imapHost: 'i', smtpHost: 's', allowedAgents: ['other'] });
+  const open = svc({ id: 'o', imapHost: 'i', smtpHost: 's', allowedAgents: ['ag'] });
+  assert.deepEqual(triageAccountOptions([scoped, open, mail], 'ag').map(s => s.id), ['o', 'm1']);
+  assert.ok(triageFormError(valid, triageAccountOptions([svc({ ...scoped, id: 'm1' })], 'ag')));
+});
+
+test('recipients may be separated by semicolons', () => {
+  assert.deepEqual(splitRecipients('a@x.com; b@x.com'), ['a@x.com', 'b@x.com']);
+  assert.equal(triageFormError({ ...valid, recipients: ' ; ' }, [mail]) !== null, true);
+  assert.equal(triageFormError({ ...valid, recipients: 'a@x.com; b@x.com' }, [mail]), null);
 });

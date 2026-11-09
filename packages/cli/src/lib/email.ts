@@ -452,14 +452,15 @@ export async function listUnseenEnvelopes(
   account: EmailAccount,
   max: number,
   signal?: AbortSignal,
-): Promise<{ envelopes: TriageEnvelope[]; refused: number; uidValidity: string }> {
+): Promise<{ envelopes: TriageEnvelope[]; refused: number; scanTruncated: boolean; uidValidity: string }> {
   const limit = clampLimit(max);
   return withInbox(account, signal, async (client) => {
     const uidValidity = String((client.mailbox as { uidValidity?: bigint | number }).uidValidity ?? '');
     const uids = (await client.search({ seen: false }, { uid: true })) as number[] | false;
     const envelopes: TriageEnvelope[] = [];
     let refused = 0;
-    if (!uids || uids.length === 0) return { envelopes, refused, uidValidity };
+    if (!uids || uids.length === 0) return { envelopes, refused, scanTruncated: false, uidValidity };
+    const scanTruncated = uids.length > MAX_SCAN;
     for await (const msg of client.fetch(
       uids.slice(0, MAX_SCAN).join(','),
       { envelope: true, uid: true, internalDate: true },
@@ -478,7 +479,7 @@ export async function listUnseenEnvelopes(
       });
       if (envelopes.length >= limit) break;
     }
-    return { envelopes, refused, uidValidity };
+    return { envelopes, refused, scanTruncated, uidValidity };
   });
 }
 
