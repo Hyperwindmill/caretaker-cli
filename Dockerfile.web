@@ -56,7 +56,10 @@ WORKDIR /build
 
 # Manifests first, for a cache-friendly install layer.
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
-COPY packages/types/package.json        packages/types/package.json
+# types goes in whole, not just its manifest: the root `prepare` script builds
+# it during `pnpm install` (it is a type-only package whose exports point at
+# dist/), so its sources must exist before the install layer.
+COPY packages/types                      packages/types
 COPY packages/webview-ui/package.json    packages/webview-ui/package.json
 COPY packages/cli/package.json           packages/cli/package.json
 COPY packages/vscode-extension/package.json packages/vscode-extension/package.json
@@ -68,8 +71,7 @@ COPY packages/desktop/package.json       packages/desktop/package.json
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile --filter @hyperwindmill/caretaker-cli...
 
-# Now the sources for the three packages we build.
-COPY packages/types      packages/types
+# Now the sources for the other two packages we build (types is already in).
 COPY packages/webview-ui packages/webview-ui
 COPY packages/cli        packages/cli
 
