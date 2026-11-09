@@ -24,7 +24,7 @@ import { setWorkspaceTool } from './set_workspace.js';
 import { listCommandsTool } from './list_commands.js';
 import { invokeCommandTool } from './invoke_command.js';
 import { getAgentContextTool } from './get_agent_context.js';
-import { emailListAccountsTool, emailSendTool, emailFetchTool } from './email_tools.js';
+import { emailListAccountsTool, emailSendTool, emailFetchTool, emailReadTool } from './email_tools.js';
 import { memoryReadTool } from './memory_tools.js';
 import {
   getTaskStateTool,
@@ -112,6 +112,7 @@ export function registerBuiltins(registry: ToolRegistry): void {
   registry.register(emailListAccountsTool);
   registry.register(emailSendTool);
   registry.register(emailFetchTool);
+  registry.register(emailReadTool);
 
   // Memory subsystem read path (recall accounting lives in the tool).
   registry.register(memoryReadTool);
@@ -159,5 +160,6 @@ export {
   emailListAccountsTool,
   emailSendTool,
   emailFetchTool,
+  emailReadTool,
   memoryReadTool,
 };

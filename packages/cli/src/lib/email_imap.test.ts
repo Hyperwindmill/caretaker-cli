@@ -8,6 +8,9 @@ import net from 'node:net';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
+import { saveConfig } from '../store/json.js';
+import { emailReadTool } from '../harness/tools/builtin/email_tools.js';
+import type { ToolContext } from '../harness/tools/types.js';
 import {
   sendEmail,
   listUnseenEnvelopes,
@@ -119,4 +122,39 @@ test('markSeen refuses on a different uidValidity', { skip }, async () => {
   const { envelopes } = await listUnseenEnvelopes(acc, 10);
   assert.equal(await markSeen(acc, [envelopes[0].uid], '0'), 'uidvalidity-changed');
   assert.equal((await listUnseenEnvelopes(acc, 10)).envelopes.length, 1);
+});
+
+test('email_read returns the body and leaves it unseen', { skip }, async () => {
+  const acc = mailbox({ name: 'Gm' });
+  await saveConfig({
+    port: 3000,
+    providers: [],
+    scheduler: {
+      tasks: [
+        {
+          id: 'svc_gm',
+          name: 'Gm',
+          type: 'email',
+          enabled: true,
+          agentId: '',
+          cron: '',
+          prompt: '',
+          imapHost: acc.imapHost,
+          imapPort: acc.imapPort,
+          imapSecure: false,
+          imapUser: acc.imapUser,
+          imapPassword: acc.imapPassword,
+        } as any,
+      ],
+    },
+  });
+  await deliver(acc, 'a@ok.com', 'via tool');
+  const { envelopes } = await listUnseenEnvelopes(acc, 10);
+  const ctx = { workingDir: process.cwd(), signal: new AbortController().signal, readPaths: new Set() } as ToolContext;
+  const res = JSON.parse((await emailReadTool.execute({ account: 'Gm', uid: envelopes[0].uid }, ctx)).content);
+  assert.equal(res.account, 'Gm');
+  assert.match(res.message.body, /body of via tool/);
+  assert.equal((await listUnseenEnvelopes(acc, 10)).envelopes.length, 1);
+  const missing = JSON.parse((await emailReadTool.execute({ account: 'Gm', uid: 9999 }, ctx)).content);
+  assert.deepEqual(missing, { error: 'No message with uid 9999 in "Gm".' });
 });

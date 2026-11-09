@@ -18,6 +18,7 @@ import {
   bareAddress,
   sendEmail,
   fetchInbox,
+  readMessage,
   canSend,
   canRead,
   clampLimit,
@@ -131,6 +132,49 @@ export const emailFetchTool: Tool = {
       };
     } catch (e: any) {
       return err(`IMAP fetch failed: ${e?.message ?? String(e)}`);
+    }
+  },
+};
+
+export const emailReadTool: Tool = {
+  name: 'mcp__email__email_read',
+  description:
+    'Read one message from an account inbox by its UID, without marking it read. Returns the plain-text body (possibly truncated) and attachment names. A message from a sender outside the account allowlist, or an unknown UID, is reported as "No message".',
+  parameters: {
+    type: 'object',
+    properties: {
+      account: { type: 'string', description: 'Account name from email_list_accounts.' },
+      uid: { type: 'number', description: 'IMAP UID of the message, as returned by email_fetch.' },
+    },
+    required: ['account', 'uid'],
+  },
+  execute: async (args: any, ctx): Promise<ToolResult> => {
+    const name = typeof args?.account === 'string' ? args.account : '';
+    if (!name.trim()) return err('account must be a non-empty string');
+    const uid = args?.uid;
+    if (typeof uid !== 'number' || !Number.isInteger(uid) || uid < 1)
+      return err('uid must be a positive integer');
+
+    const accounts = await listEmailAccounts(ctx.callerAgent?.id);
+    const account = findAccount(accounts, name);
+    if (!account) {
+      const available = accounts.filter(canRead).map((a) => a.name);
+      return err(
+        available.length
+          ? `Unknown email account "${name}". Readable accounts: ${available.join(', ')}`
+          : `Unknown email account "${name}". No account is configured for reading — an email service needs an IMAP host and must be enabled.`,
+      );
+    }
+    if (!canRead(account)) {
+      return err(`Account "${account.name}" has no IMAP host, so it cannot be read.`);
+    }
+
+    try {
+      const message = await readMessage(account, uid, ctx.signal);
+      if (!message) return err(`No message with uid ${uid} in "${account.name}".`);
+      return { content: JSON.stringify({ account: account.name, message }) };
+    } catch (e: any) {
+      return err(`IMAP read failed: ${e?.message ?? String(e)}`);
     }
   },
 };

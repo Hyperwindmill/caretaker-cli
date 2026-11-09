@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { saveConfig } from '../../../store/json.js';
 import type { ServiceConfig } from '../../../types.js';
 import type { ToolContext } from '../types.js';
-import { emailListAccountsTool, emailSendTool, emailFetchTool } from './email_tools.js';
+import { emailListAccountsTool, emailSendTool, emailFetchTool, emailReadTool } from './email_tools.js';
 
 const ctx = {
   workingDir: process.cwd(),
@@ -204,4 +204,25 @@ test('email_send ignores a disabled account', async () => {
     ctx,
   );
   assert.match(parse(res.content).error, /No account is configured for sending/);
+});
+
+test('email_read rejects a non-integer uid', async () => {
+  await writeServices([service()]);
+  for (const uid of ['x', 1.5]) {
+    const res = await emailReadTool.execute({ account: 'Work', uid }, ctx);
+    assert.match(parse(res.content).error, /uid/);
+  }
+});
+
+test('email_read hides an account scoped to another agent', async () => {
+  await writeServices([service({ allowedAgents: ['other'] })]);
+  const scoped = { ...ctx, callerAgent: { id: 'me' } } as ToolContext;
+  const res = await emailReadTool.execute({ account: 'Work', uid: 1 }, scoped);
+  assert.match(parse(res.content).error, /Unknown email account/);
+});
+
+test('email_read refuses an account without IMAP', async () => {
+  await writeServices([service({ imapHost: '' })]);
+  const res = await emailReadTool.execute({ account: 'Work', uid: 1 }, ctx);
+  assert.match(parse(res.content).error, /cannot be read/);
 });
