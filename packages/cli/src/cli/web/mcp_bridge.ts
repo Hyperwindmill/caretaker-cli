@@ -26,16 +26,27 @@ type TokenInfo = {
   exec?: { container: string; workdir: string };
   /** Serve ONLY run_command (review runs: shell yes, task-state tools no). */
   execOnly?: boolean;
+  /** Serve ONLY these builtin tools (full mcp__… names). Overrides exec. */
+  only?: string[];
 };
 /** token → token info (agent id, exec binding, exec-only mode). */
 const activeTokens = new Map<string, TokenInfo>();
 
 export function issueBridgeToken(
   agentId = '',
-  opts: { exec?: { container: string; workdir: string }; execOnly?: boolean } = {},
+  opts: {
+    exec?: { container: string; workdir: string };
+    execOnly?: boolean;
+    only?: string[];
+  } = {},
 ): string {
   const token = randomBytes(24).toString('hex');
-  activeTokens.set(token, { agentId, exec: opts.exec, execOnly: opts.execOnly });
+  activeTokens.set(token, {
+    agentId,
+    exec: opts.exec,
+    execOnly: opts.execOnly,
+    only: opts.only,
+  });
   return token;
 }
 export function revokeBridgeToken(token: string): void {
@@ -65,7 +76,11 @@ export function registerTaskBridge(app: Hono): void {
       ? (await loadAgents().catch(() => [])).find((a) => a.id === agentId)
       : undefined;
     const extraTools = tokenInfo.exec ? [makeRunCommandTool(tokenInfo.exec)] : [];
-    const tools = tokenInfo.execOnly ? extraTools : [...builtinMcpTools(), ...extraTools];
+    const tools = tokenInfo.only
+      ? builtinMcpTools().filter((t) => tokenInfo.only!.includes(t.name))
+      : tokenInfo.execOnly
+        ? extraTools
+        : [...builtinMcpTools(), ...extraTools];
     const server = buildBuiltinMcpServer(undefined, { callerAgent, tools });
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined, // stateless

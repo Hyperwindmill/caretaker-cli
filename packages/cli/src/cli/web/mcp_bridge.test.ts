@@ -130,3 +130,16 @@ test('the token identifies the run, so email accounts are scoped per agent', asy
   // the documented trusted-caller behaviour, not an accident.
   assert.equal((await list(issueBridgeToken())).length, 1);
 });
+
+test('a token restricted with only serves exactly those tools', async () => {
+  const token = issueBridgeToken('', { only: ['mcp__email__email_read'] });
+  const { transport, mcp } = client(token);
+  await mcp.connect(transport);
+  const { tools: listed } = await mcp.listTools();
+  assert.deepEqual(
+    listed.map((t) => t.name),
+    ['email_read'],
+  );
+  await mcp.close();
+  revokeBridgeToken(token);
+});
