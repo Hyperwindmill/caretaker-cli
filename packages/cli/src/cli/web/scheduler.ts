@@ -1,6 +1,7 @@
 import { loadConfig } from '../../store/json.js';
 import { HeartbeatStrategy } from './scheduler/heartbeat.js';
 import { TelegramStrategy } from './scheduler/telegram.js';
+import { EmailTriageStrategy } from './scheduler/email_triage_agent.js';
 import { runTaskHeartbeatTick } from './scheduler/task_strategy.js';
 import { runMemorySweepTick } from './scheduler/memory_sweep.js';
 
@@ -17,6 +18,7 @@ export { runningTasks } from './scheduler/locks.js';
 const strategies = new Map<string, any>([
   [HeartbeatStrategy.type, HeartbeatStrategy],
   [TelegramStrategy.type, TelegramStrategy],
+  [EmailTriageStrategy.type, EmailTriageStrategy],
 ]);
 
 /**
