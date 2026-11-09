@@ -44,6 +44,8 @@ function armAbort(close: () => void, signal?: AbortSignal): () => void {
 
 /** An email account with its secrets decrypted and its defaults applied. */
 export type EmailAccount = {
+  /** The service record id. */
+  id: string;
   name: string;
   from: string;
   smtpHost: string;
@@ -127,6 +129,7 @@ export function emailAccounts(services: ServiceConfig[]): EmailAccount[] {
   return services
     .filter((s) => s.type === 'email' && s.enabled)
     .map((s) => ({
+      id: s.id,
       name: s.name,
       from: (s.smtpFrom || s.imapUser || '').trim(),
       smtpHost: (s.smtpHost ?? '').trim(),
@@ -190,10 +193,15 @@ export function findAccount(accounts: EmailAccount[], name: string): EmailAccoun
  */
 export function markdownToHtml(markdown: string): string {
   const body = marked.parse(markdown, { async: false, gfm: true });
+  // Tables: clients strip <style>, so borders go inline; border="1" is for old Outlook.
+  const cell = 'border:1px solid #999;padding:6px 10px;text-align:left;vertical-align:top';
+  const html = body
+    .replace(/<table(?=[\s>])/g, '<table border="1" style="border-collapse:collapse"')
+    .replace(/<(th|td)(?=[\s>])/g, `<$1 style="${cell}"`);
   return (
     '<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;' +
     'font-size:14px;line-height:1.5;color:#1a1a1a;max-width:40em">' +
-    body +
+    html +
     '</div>'
   );
 }
@@ -314,14 +322,13 @@ export type FetchOptions = {
   signal?: AbortSignal;
 };
 
-/** Read the oldest matching messages from INBOX. */
-export async function fetchInbox(
+/** Connect, lock INBOX, run `fn`, and always release and log out. */
+async function withInbox<T>(
   account: EmailAccount,
-  opts: FetchOptions = {},
-): Promise<{ messages: InboundMessage[]; refused: number; scanTruncated?: boolean }> {
-  const limit = clampLimit(opts.limit);
-  const markSeen = opts.markSeen !== false;
-  if (opts.signal?.aborted) throw new Error('aborted before connecting');
+  signal: AbortSignal | undefined,
+  fn: (client: ImapFlow) => Promise<T>,
+): Promise<T> {
+  if (signal?.aborted) throw new Error('aborted before connecting');
   const client = new ImapFlow({
     host: account.imapHost,
     port: account.imapPort,
@@ -329,7 +336,7 @@ export async function fetchInbox(
     auth: { user: account.imapUser, pass: account.imapPassword },
     logger: false,
   });
-  const disarm = armAbort(() => client.close(), opts.signal);
+  const disarm = armAbort(() => client.close(), signal);
   try {
     await client.connect();
   } catch (err) {
@@ -338,6 +345,44 @@ export async function fetchInbox(
   }
   const lock = await client.getMailboxLock('INBOX');
   try {
+    return await fn(client);
+  } finally {
+    disarm();
+    lock.release();
+    await client.logout().catch(() => client.close());
+  }
+}
+
+/** Build the model-facing message from a parsed source. */
+function toInbound(
+  uid: number,
+  parsed: Awaited<ReturnType<typeof simpleParser>>,
+  internalDate: Date | string | undefined,
+): InboundMessage {
+  const { body, truncated } = truncateBody(messageText(parsed));
+  return {
+    uid,
+    from: parsed.from?.text ?? '',
+    to: (parsed.to as { text?: string } | undefined)?.text ?? '',
+    subject: parsed.subject ?? '',
+    // The server's INTERNALDATE always exists; a Date header may be absent
+    // or malformed, and mailparser then leaves the field undefined. (imapflow
+    // types internalDate as string | Date depending on the fetch shape.)
+    date: isoDate(parsed.date ?? internalDate),
+    body,
+    ...(truncated ? { truncated } : {}),
+    attachments: (parsed.attachments ?? []).map((a) => a.filename ?? '(unnamed)'),
+  };
+}
+
+/** Read the oldest matching messages from INBOX. */
+export async function fetchInbox(
+  account: EmailAccount,
+  opts: FetchOptions = {},
+): Promise<{ messages: InboundMessage[]; refused: number; scanTruncated?: boolean }> {
+  const limit = clampLimit(opts.limit);
+  const markSeen = opts.markSeen !== false;
+  return withInbox(account, opts.signal, async (client) => {
     // Only the two criteria every server implements the same way. The sender
     // allowlist is applied below, host-side: IMAP `SEARCH FROM` is substring by
     // spec but not in practice (GreenMail matches whole addresses only and
@@ -381,21 +426,7 @@ export async function fetchInbox(
         { uid: true },
       );
       if (!msg || !msg.source) continue;
-      const parsed = await simpleParser(msg.source);
-      const { body, truncated } = truncateBody(messageText(parsed));
-      messages.push({
-        uid,
-        from: parsed.from?.text ?? '',
-        to: (parsed.to as { text?: string } | undefined)?.text ?? '',
-        subject: parsed.subject ?? '',
-        // The server's INTERNALDATE always exists; a Date header may be absent
-        // or malformed, and mailparser then leaves the field undefined. (imapflow
-        // types internalDate as string | Date depending on the fetch shape.)
-        date: isoDate(parsed.date ?? msg.internalDate),
-        body,
-        ...(truncated ? { truncated } : {}),
-        attachments: (parsed.attachments ?? []).map((a) => a.filename ?? '(unnamed)'),
-      });
+      messages.push(toInbound(uid, await simpleParser(msg.source), msg.internalDate));
     }
     // Only what the agent actually received is marked read — a refused message
     // is left untouched for the human.
@@ -403,9 +434,83 @@ export async function fetchInbox(
       await client.messageFlagsAdd(messages.map((m) => m.uid).join(','), ['\\Seen'], { uid: true });
     }
     return { messages, refused, ...(scanTruncated ? { scanTruncated } : {}) };
-  } finally {
-    disarm();
-    lock.release();
-    await client.logout().catch(() => client.close());
-  }
+  });
+}
+
+// ─── Triage helpers ───────────────────────────────────────────────────────
+//
+// Host-driven triage reads in three separate steps (list, read, mark) so the
+// orchestrator decides what is handled; none of the first two touch `\Seen`.
+
+export type TriageEnvelope = { uid: number; from: string; subject: string; date: string };
+
+/** Oldest unseen envelopes the account may read; no bodies, no flag changes. */
+export async function listUnseenEnvelopes(
+  account: EmailAccount,
+  max: number,
+  signal?: AbortSignal,
+): Promise<{ envelopes: TriageEnvelope[]; refused: number; uidValidity: string }> {
+  const limit = clampLimit(max);
+  return withInbox(account, signal, async (client) => {
+    const uidValidity = String((client.mailbox as { uidValidity?: bigint | number }).uidValidity ?? '');
+    const uids = (await client.search({ seen: false }, { uid: true })) as number[] | false;
+    const envelopes: TriageEnvelope[] = [];
+    let refused = 0;
+    if (!uids || uids.length === 0) return { envelopes, refused, uidValidity };
+    for await (const msg of client.fetch(
+      uids.slice(0, MAX_SCAN).join(','),
+      { envelope: true, uid: true, internalDate: true },
+      { uid: true },
+    )) {
+      const from = msg.envelope?.from?.[0]?.address ?? '';
+      if (!matchesAllowlist(from, account.allowedSenders)) {
+        refused++;
+        continue;
+      }
+      envelopes.push({
+        uid: msg.uid,
+        from,
+        subject: msg.envelope?.subject ?? '',
+        date: isoDate(msg.envelope?.date ?? msg.internalDate),
+      });
+      if (envelopes.length >= limit) break;
+    }
+    return { envelopes, refused, uidValidity };
+  });
+}
+
+/** One message by UID, or null when it does not exist or its sender is not
+ *  allowed. `source` is fetched as BODY.PEEK[], so `\Seen` stays untouched. */
+export async function readMessage(
+  account: EmailAccount,
+  uid: number,
+  signal?: AbortSignal,
+): Promise<InboundMessage | null> {
+  return withInbox(account, signal, async (client) => {
+    const env = await client.fetchOne(String(uid), { envelope: true }, { uid: true });
+    if (!env) return null;
+    if (!matchesAllowlist(env.envelope?.from?.[0]?.address ?? '', account.allowedSenders)) return null;
+    const msg = await client.fetchOne(
+      String(uid),
+      { source: true, internalDate: true },
+      { uid: true },
+    );
+    if (!msg || !msg.source) return null;
+    return toInbound(uid, await simpleParser(msg.source), msg.internalDate);
+  });
+}
+
+/** Mark `uids` seen, unless the mailbox was reset since they were listed. */
+export async function markSeen(
+  account: EmailAccount,
+  uids: number[],
+  expectedUidValidity: string,
+  signal?: AbortSignal,
+): Promise<'marked' | 'uidvalidity-changed'> {
+  return withInbox(account, signal, async (client) => {
+    const current = String((client.mailbox as { uidValidity?: bigint | number }).uidValidity ?? '');
+    if (current !== expectedUidValidity) return 'uidvalidity-changed';
+    if (uids.length) await client.messageFlagsAdd(uids.join(','), ['\\Seen'], { uid: true });
+    return 'marked';
+  });
 }

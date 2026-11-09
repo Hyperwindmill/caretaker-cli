@@ -299,6 +299,17 @@ test('markdownToHtml renders the markdown and wraps it with inline styles', () =
   assert.match(html, /<strong>two<\/strong>/);
   assert.match(html, /<a href="https:\/\/x\.io">link<\/a>/);
   // GFM: a bare table must become a table, not a paragraph of pipes.
-  assert.match(markdownToHtml('| a | b |\n| - | - |\n| 1 | 2 |'), /<table>/);
+  assert.match(markdownToHtml('| a | b |\n| - | - |\n| 1 | 2 |'), /<table/);
   assert.ok(!html.includes('<style'), 'a <style> block would be stripped by mail clients');
+});
+
+test('emailAccounts carries the service id', () => {
+  assert.equal(emailAccounts([email({ id: 'svc_9' })])[0].id, 'svc_9');
+});
+
+test('markdownToHtml styles tables inline', () => {
+  const html = markdownToHtml('| a | b |\n|---|---|\n| 1 | 2 |');
+  assert.match(html, /<table border="1"[^>]*style="[^"]*border-collapse/);
+  assert.match(html, /<th style="[^"]*border:1px solid/);
+  assert.match(html, /<td style="[^"]*border:1px solid/);
 });
