@@ -146,7 +146,7 @@ No web server and no token are needed: the server operates on the `CARETAKER_HOM
 
 ### Scheduler
 
-Services are configured from the **Services** settings tab. Of the three service types only `heartbeat` is cron-scheduled and `telegram` polls; an `email` service is a credentials record and is never ticked — see **Email** below.
+Services are configured from the **Services** settings tab. Of the four service types `heartbeat` and `email_triage` are cron-scheduled and `telegram` polls; an `email` service is a credentials record and is never ticked — see **Email** and **Email triage** below.
 
 The web server boots an in-process background scheduler that ticks every 15 s. It runs **three** loops:
 
@@ -165,6 +165,7 @@ Agents get three tools:
 - `email_list_accounts` — the account names to pick from, each with its From address, whether it can send and/or be read, and its allowlists. Passwords are never returned.
 - `email_send` — send a message through the account you name. `body` is the plain-text version and is always required. For a formatted mail the agent writes `body` in markdown and sets `markdown: true` (converted for it, so the content is written once), or passes its own `html`; either way both parts are sent and the recipient's client picks. No attachments.
 - `email_fetch` — read the oldest unread messages and mark them read, so a later run does not see them again. Bodies are plain text (HTML mail is converted) and may be truncated; attachments are listed by name, not downloaded.
+- `email_read` — read one message by its UID without marking it read. A message from a sender your allowlist refuses reads as "not found".
 
 **Reading mail is scheduled by an ordinary heartbeat, not by the account.** There is no email poller: you add a `heartbeat` service with the cron you want and a prompt like *"read the new mail on the 'Work' account, at most 10 messages, and open a task for anything that looks like an order"*. The cron, the agent and the on/off switch are the heartbeat's; the per-run limit and an optional subject filter are arguments the agent passes. Two different treatments of one mailbox — say, one for invoices and one for support — are simply two heartbeats.
 
@@ -177,6 +178,22 @@ Three boundaries protect an account, and none of them depends on the agent behav
 **An empty list allows everything** in all three cases — fill them in before leaving an account to unattended work. The per-call ceilings (50 messages, 8000 characters of body) are enforced in the tool, not requested in the prompt.
 
 Reach mirrors the task tools: native agents opt into `mcp__email__*` from the tool picker, and both MCP surfaces (the `caretaker-cli mcp` stdio server and the per-task bridge that feeds `claude-code` agents) serve them — so an autonomous task, including one running in Docker, can mail you a report. The read-only **planner** phase can list and read but not send. `docker-compose.mail.yml` ships a GreenMail container (SMTP `127.0.0.1:3025`, IMAP `3143`, no auth) for trying all of this locally.
+
+### Email triage
+
+An **email triage** service reads the unread mail of an email account on a cron schedule, has one agent sort it, and mails you a single report. Fields:
+
+- **Account** — the `email` service to triage (it must be enabled and able to both read and send; if it is scoped to specific agents, the triage agent must be one of them).
+- **Agent** — who runs the triage.
+- **Recipients** — comma- or newline-separated addresses that receive the report. They are not checked against the account's Allowed Recipients: you typed them.
+- **Max emails per run** — default 50.
+- **Subject prefix** — default `[Email Triage]`; the subject reads `<prefix> <N> emails triaged — <date time>`.
+- **Instructions** — optional, appended to the built-in rubric. This is where your own criteria and the report language go (the shipped rubric is English). Section headers (`## IMPORTANT`, `## INFORMATION`, `## TRASH`) stay literal whatever the language.
+- **Cron** — standard 5-field expression.
+
+Each run lists the unread messages (only those from allowed senders), the agent classifies them into IMPORTANT, INFORMATION and TRASH, opening a body only when the subject is not enough, and the report is emailed. **Messages are marked read only after the report has been delivered.** If anything fails first — the agent errors or times out (15 minutes), the report is malformed, SMTP refuses it — the mail stays unread and the next cron match tries again. With no unread mail nothing runs and nothing is logged. Runs appear under the service's Logs button.
+
+Mail bodies are untrusted input and can try to instruct the agent. Caretaker does not remove any of the agent's tools for this run, so use a **dedicated triage agent with read-only tools** (no shell, no write tools, no send).
 
 ### Voice Mode (dictation & hands-free conversation)
 

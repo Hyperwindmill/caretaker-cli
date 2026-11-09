@@ -254,11 +254,14 @@ export async function sendEmail(
 
 // ─── Inbound ──────────────────────────────────────────────────────────────
 //
-// There is no `email` scheduler strategy and no stored UID cursor: an inbound
-// workflow is a `heartbeat` service whose prompt tells the agent to call
-// email_fetch, and "already handled" is the IMAP `\Seen` flag — server state,
-// shared with the user's own mail client. Two behaviours on one account are two
-// heartbeats, which is also how a per-subject triage is expressed.
+// There is no generic `email` scheduler strategy and no stored UID cursor: a
+// generic inbound workflow is a `heartbeat` service whose prompt tells the agent
+// to call email_fetch, and "already handled" is the IMAP `\Seen` flag — server
+// state, shared with the user's own mail client. Two behaviours on one account
+// are two heartbeats. The dedicated `email_triage` service (cli/web/scheduler/)
+// references an account by id and uses the peek-style helpers below
+// (listUnseenEnvelopes / readMessage / markSeen) so it marks mail read only
+// after its report is delivered.
 
 /** Hard ceiling on messages per call, whatever the caller asks for. */
 export const MAX_FETCH = 50;
