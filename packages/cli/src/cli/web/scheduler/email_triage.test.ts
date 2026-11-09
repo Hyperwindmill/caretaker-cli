@@ -126,6 +126,18 @@ test('extractReport uses the last non-empty assistant message', () => {
   assert.equal(r, REPORT);
 });
 
+test('extractReport handles an ACP-shaped record (text glued to the header)', () => {
+  const rec = {
+    ...msg('assistant', `Let me read 42.${REPORT}`),
+    parts: [
+      { type: 'text', text: 'Let me read 42.' },
+      { type: 'tool_use', id: 't1', name: 'email_read', args: {} },
+      { type: 'text', text: REPORT },
+    ],
+  } as MessageRecord;
+  assert.equal(extractReport([rec], 'done'), REPORT);
+});
+
 test('extractReport is null on max_turns, aborted, or without the header', () => {
   assert.equal(extractReport([msg('assistant', REPORT)], 'max_turns'), null);
   assert.equal(extractReport([msg('assistant', REPORT)], 'aborted'), null);
@@ -345,5 +357,20 @@ test('the run is aborted after the budget', async () => {
     assert.equal(((await run) as any).kind, 'failure');
   } finally {
     mock.timers.reset();
+  }
+});
+
+test('triageMaxEmails: unset → 50, 80 → 50, 7 → 7', async () => {
+  for (const [input, want] of [[undefined, 50], [80, 50], [7, 7]] as const) {
+    let got = -1;
+    const base = makeDeps();
+    const { deps } = makeDeps({
+      listEnvelopes: async (a, max, s) => {
+        got = max;
+        return base.deps.listEnvelopes(a, max, s);
+      },
+    });
+    await executeTriageRun(triage({ triageMaxEmails: input }), deps);
+    assert.equal(got, want);
   }
 });

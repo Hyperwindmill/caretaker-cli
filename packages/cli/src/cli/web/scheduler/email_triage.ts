@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import {
   canRead,
   canSend,
+  MAX_FETCH,
   clampLimit,
   emailAccounts,
   markdownToHtml,
@@ -76,8 +77,20 @@ export function extractReport(messages: MessageRecord[], stop: TriageStop): stri
   if (stop !== 'done') return null;
   const last = [...messages].reverse().find((m) => m.role === 'assistant' && m.content?.trim());
   if (!last) return null;
-  const m = /^## IMPORTANT\s*$/m.exec(last.content);
-  return m ? last.content.slice(m.index).trim() : null;
+  // ACP emits one record per turn with every text part concatenated in
+  // `content` (no separator), so prose before a tool call glues onto the
+  // report header. Prefer the text after the last tool_use.
+  let text = last.content;
+  if (last.parts?.length) {
+    const lastTool = last.parts.map((p) => p.type).lastIndexOf('tool_use');
+    const tail = last.parts
+      .slice(lastTool + 1)
+      .map((p) => (p.type === 'text' ? p.text : ''))
+      .join('');
+    if (tail.trim()) text = tail;
+  }
+  const m = /^## IMPORTANT\s*$/m.exec(text);
+  return m ? text.slice(m.index).trim() : null;
 }
 
 export function triageSubject(prefix: string, count: number, now: Date): string {
@@ -208,7 +221,7 @@ export async function executeTriageRun(
 
     let listing: Awaited<ReturnType<typeof listUnseenEnvelopes>>;
     try {
-      listing = await deps.listEnvelopes(account, clampLimit(service.triageMaxEmails), ctrl.signal);
+      listing = await deps.listEnvelopes(account, service.triageMaxEmails == null ? MAX_FETCH : clampLimit(service.triageMaxEmails), ctrl.signal);
     } catch (e) {
       return await fail(`Listing unread mail failed: ${errText(e)}`);
     }
