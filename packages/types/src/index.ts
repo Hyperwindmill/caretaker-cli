@@ -46,13 +46,14 @@ export type AcpAgentPreset = {
  *  `scheduler.tasks` key in caretaker.json — the key is kept for backward
  *  compatibility).
  *
- *  Only `heartbeat` is cron-scheduled. `telegram` is a poller. `email` is a
+ *  `heartbeat` and `email_triage` are cron-scheduled (for `email_triage`,
+ *  `prompt` holds optional extra triage instructions). `telegram` is a poller. `email` is a
  *  credentials record: it holds one mailbox's IMAP and SMTP settings for the
  *  `mcp__email__*` tools and is never ticked (no strategy is registered for it). */
 export type ServiceConfig = {
   id: string;
   name: string;
-  type: 'heartbeat' | 'telegram' | 'email';
+  type: 'heartbeat' | 'telegram' | 'email' | 'email_triage';
   enabled: boolean;
   /** Agent that runs this service. Empty for `email` — a credentials-only
    *  record has nothing to run. */
@@ -105,6 +106,15 @@ export type ServiceConfig = {
    *  email_list_accounts, and naming it returns "unknown account" — so the
    *  model cannot learn that a mailbox it may not touch exists. */
   allowedAgents?: string[];
+  // ─── email_triage ───────────────────────────────────────────────────
+  /** Id of the `email` service record to triage. */
+  triageAccountId?: string;
+  /** Who receives the report. Comma/newline separated addresses. */
+  triageRecipients?: string;
+  /** Max unread emails per run. Unset = default (clamped host-side). */
+  triageMaxEmails?: number;
+  /** Subject prefix of the report mail. Unset = `[Email Triage]`. */
+  triageSubjectPrefix?: string;
 };
 
 /** @deprecated Renamed to {@link ServiceConfig}. Kept because the type is
