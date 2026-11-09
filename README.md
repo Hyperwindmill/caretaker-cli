@@ -186,7 +186,7 @@ An **email triage** service reads the unread mail of an email account on a cron 
 - **Account** — the `email` service to triage (it must be enabled and able to both read and send; if it is scoped to specific agents, the triage agent must be one of them).
 - **Agent** — who runs the triage.
 - **Recipients** — comma-, semicolon- or newline-separated addresses that receive the report. They are not checked against the account's Allowed Recipients: you typed them.
-- **Max emails per run** — default 50.
+- **Max emails per run** — default 50, up to 200.
 - **Subject prefix** — default `[Email Triage]`; the subject reads `<prefix> <N> emails triaged — <date time>`.
 - **Instructions** — optional, appended to the built-in rubric. This is where your own criteria and the report language go (the shipped rubric is English). Section headers (`## IMPORTANT`, `## INFORMATION`, `## TRASH`) stay literal whatever the language.
 - **Cron** — standard 5-field expression.

@@ -601,12 +601,12 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
               </div>
 
               <div className="form-group">
-                <label htmlFor="triage-max">Max emails per run (1-50)</label>
+                <label htmlFor="triage-max">Max emails per run (1-200)</label>
                 <input
                   id="triage-max"
                   type="number"
                   min={1}
-                  max={50}
+                  max={200}
                   value={triageMaxEmails}
                   onChange={(e) => setTriageMaxEmails(e.target.value)}
                 />

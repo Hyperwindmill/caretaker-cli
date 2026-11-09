@@ -88,7 +88,7 @@ record*. The triage service is its own service type that **references** an
 | `workingDir` (existing) | Same meaning as heartbeat (falls back to agent's). |
 | `triageAccountId` | `id` of an `email` service record (stable across renames). Required. |
 | `triageRecipients` | Report recipients, comma/newline separated (same parsing as `allowedRecipients`, no globs). At least one. |
-| `triageMaxEmails` | Max envelopes per run. Default 50, clamped to `MAX_FETCH` (50). |
+| `triageMaxEmails` | Max envelopes per run. Default 50, clamped to 1..`MAX_SCAN` (200): only envelopes reach the prompt, so `email_fetch`'s body cap does not apply. |
 | `triageSubjectPrefix` | Default `[Email Triage]`. |
 
 Decided with the user: **report recipients bypass the account's

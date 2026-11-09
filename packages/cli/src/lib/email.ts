@@ -453,7 +453,8 @@ export async function listUnseenEnvelopes(
   max: number,
   signal?: AbortSignal,
 ): Promise<{ envelopes: TriageEnvelope[]; refused: number; scanTruncated: boolean; uidValidity: string }> {
-  const limit = clampLimit(max);
+  // ponytail: no clamp beyond >= 1, the MAX_SCAN window already bounds it.
+  const limit = Math.max(1, Math.trunc(max) || 1);
   return withInbox(account, signal, async (client) => {
     const uidValidity = String((client.mailbox as { uidValidity?: bigint | number }).uidValidity ?? '');
     const uids = (await client.search({ seen: false }, { uid: true })) as number[] | false;

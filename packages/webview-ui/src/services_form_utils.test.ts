@@ -21,11 +21,12 @@ test('triageFormError: each missing piece', () => {
   assert.ok(triageFormError({ ...valid, recipients: ' \n ' }, [mail]));
 });
 
-test('triageFormError: maxEmails must be an integer 1-50', () => {
-  for (const bad of ['0', '51', '1.5', 'x', '']) {
+test('triageFormError: maxEmails must be an integer 1-200', () => {
+  for (const bad of ['0', '201', '1.5', 'x', '']) {
     assert.ok(triageFormError({ ...valid, maxEmails: bad }, [mail]), bad);
   }
   assert.equal(triageFormError({ ...valid, maxEmails: '1' }, [mail]), null);
+  assert.equal(triageFormError({ ...valid, maxEmails: '200' }, [mail]), null);
 });
 
 test('triageAccountOptions keeps only enabled accounts that can read and send', () => {

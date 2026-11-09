@@ -9,9 +9,7 @@ import { randomUUID } from 'node:crypto';
 import {
   canRead,
   canSend,
-  MAX_FETCH,
   MAX_SCAN,
-  clampLimit,
   emailAccounts,
   markdownToHtml,
   parsePatterns,
@@ -92,6 +90,15 @@ export function extractReport(messages: MessageRecord[], stop: TriageStop): stri
   }
   const m = /^## IMPORTANT\b.*$/m.exec(text);
   return m ? text.slice(m.index).trim() : null;
+}
+
+/** Envelopes per run: unset → 50; otherwise 1..MAX_SCAN. Only envelopes reach
+ *  the prompt (one line each), so the cap is the scan window, not email_fetch's
+ *  MAX_FETCH, which bounds full bodies. */
+export function triageLimit(max: number | undefined): number {
+  if (max == null) return 50;
+  const n = Math.trunc(Number(max));
+  return Number.isFinite(n) && n >= 1 ? Math.min(n, MAX_SCAN) : 50;
 }
 
 export function triageSubject(prefix: string, count: number, now: Date): string {
@@ -226,7 +233,7 @@ export async function executeTriageRun(
 
     let listing: Awaited<ReturnType<typeof listUnseenEnvelopes>>;
     try {
-      listing = await deps.listEnvelopes(account, service.triageMaxEmails == null ? MAX_FETCH : clampLimit(service.triageMaxEmails), ctrl.signal);
+      listing = await deps.listEnvelopes(account, triageLimit(service.triageMaxEmails), ctrl.signal);
     } catch (e) {
       return await fail(`Listing unread mail failed: ${errText(e)}`);
     }

@@ -421,8 +421,8 @@ test('the run is aborted after the budget', async () => {
   }
 });
 
-test('triageMaxEmails: unset → 50, 80 → 50, 7 → 7', async () => {
-  for (const [input, want] of [[undefined, 50], [80, 50], [7, 7]] as const) {
+test('triageMaxEmails: unset → 50, 100 → 100, 500 → 200, 7 → 7', async () => {
+  for (const [input, want] of [[undefined, 50], [100, 100], [500, 200], [7, 7]] as const) {
     let got = -1;
     const base = makeDeps();
     const { deps } = makeDeps({

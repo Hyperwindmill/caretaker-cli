@@ -32,6 +32,6 @@ export function triageFormError(
   }
   if (splitRecipients(f.recipients).length === 0) return 'Add at least one recipient for the triage report.';
   const n = Number(f.maxEmails);
-  if (!/^\d+$/.test(f.maxEmails.trim()) || n < 1 || n > 50) return 'Max emails must be a whole number between 1 and 50.';
+  if (!/^\d+$/.test(f.maxEmails.trim()) || n < 1 || n > 200) return 'Max emails must be a whole number between 1 and 200.';
   return null;
 }
