@@ -665,6 +665,7 @@ async function runReviewCycle(opts: {
 
   let verdict: 'pass' | 'changes' = 'pass';
   let reviewText = '';
+  let reviewError: string | null = null;
   let cycle: CycleRecorder | undefined;
   try {
     const review = await runDoneReview({
@@ -687,9 +688,10 @@ async function runReviewCycle(opts: {
     reviewText = review.text;
     cycle = review.cycle;
   } catch (reviewErr) {
-    // A broken review must not trap the task in reviewing — finalize as pass.
-    console.error(`[task_heartbeat] Task #${task.id} review failed, finalizing:`, reviewErr);
-    verdict = 'pass';
+    // A review that could not run proves nothing about the work: it must
+    // neither trap the task in reviewing nor pass it. Blocked below.
+    reviewError = reviewErr instanceof Error ? reviewErr.message : String(reviewErr);
+    console.error(`[task_heartbeat] Task #${task.id} review failed:`, reviewErr);
   }
 
   // The review cycle's session closes once its verdict is written (the recap
@@ -704,6 +706,22 @@ async function runReviewCycle(opts: {
   if (!current || current.status !== 'reviewing') {
     console.log(`[task_heartbeat] Task #${task.id} left reviewing mid-review (now ${current?.status}); skipping transition.`);
     await closeCycle();
+    return;
+  }
+
+  if (reviewError !== null) {
+    // No review message is written, so the failed attempt uses up no round.
+    const reason = `The review could not run, so the task was not finalized: ${reviewError}`;
+    current.status = 'blocked';
+    current.blockedReason = reason;
+    current.updatedAt = new Date().toISOString();
+    await saveTask(current);
+    await addTaskMessage({
+      taskId: task.id,
+      role: 'assistant',
+      messageType: 'block',
+      content: `${reason}\n\nThe worktree and branch are kept. Fix the reviewer agent or its provider and unblock the task; the review runs again at the next completion.`,
+    });
     return;
   }
 
