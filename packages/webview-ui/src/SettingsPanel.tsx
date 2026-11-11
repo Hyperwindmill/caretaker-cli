@@ -11,6 +11,7 @@ import { ServicesTab } from './ServicesTab.js';
 import { VoiceTab } from './VoiceTab.js';
 import { MemoryTab } from './MemoryTab.js';
 import { DesktopTab } from './DesktopTab.js';
+import { ApiAccessTab } from './ApiAccessTab.js';
 import { BackIcon } from './icons.js';
 
 interface SettingsPanelProps {
@@ -41,7 +42,7 @@ interface SettingsPanelProps {
 }
 
 
-export type TabId = 'providers' | 'projects' | 'agents' | 'plugins' | 'mcp' | 'services' | 'voice' | 'memory' | 'desktop';
+export type TabId = 'providers' | 'projects' | 'agents' | 'plugins' | 'mcp' | 'services' | 'voice' | 'memory' | 'desktop' | 'api';
 
 export function SettingsPanel({
   layout = 'compact',
@@ -174,6 +175,9 @@ export function SettingsPanel({
             onSave={(updatedConfig) => postMessage({ type: 'saveConfig', config: updatedConfig })}
           />
         );
+
+      case 'api':
+        return <ApiAccessTab />;
     }
   };
 
@@ -259,6 +263,15 @@ export function SettingsPanel({
             onClick={() => setActiveTab('desktop')}
           >
             Desktop
+          </button>
+        )}
+        {/* The API listener belongs to the web server; /api/access exists only there. */}
+        {layout === 'sidebar' && (
+          <button
+            className={`settings-panel__tab-btn ${activeTab === 'api' ? 'settings-panel__tab-btn--active' : ''}`}
+            onClick={() => setActiveTab('api')}
+          >
+            API
           </button>
         )}
       </nav>

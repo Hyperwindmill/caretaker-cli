@@ -2,6 +2,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { mkdir, readFile, writeFile, chmod, rename } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { AgentConfig, CaretakerConfig, McpServersFile, PluginsFile } from '../types.js';
 import { encrypt, isEncrypted } from '../lib/encryption.js';
 
@@ -30,6 +31,9 @@ export function mcpServersPath(): string {
 }
 export function uiStatePath(): string {
   return join(dataDir(), 'ui-state.json');
+}
+export function apiAccessPath(): string {
+  return join(dataDir(), 'api.json');
 }
 
 export const defaultConfig: CaretakerConfig = {
@@ -139,6 +143,79 @@ export async function loadUiState(): Promise<UiState> {
 
 export async function saveUiState(s: UiState): Promise<void> {
   await writeJson(uiStatePath(), s);
+}
+
+/** One API token as stored: the token itself is shown once at creation and
+ *  only its SHA-256 is kept. A plain hash is enough because the token is 32
+ *  random bytes, not a password. */
+export interface ApiTokenRecord {
+  id: string;
+  name: string;
+  hash: string;
+  createdAt: string;
+}
+
+/** `api.json`: the authenticated API listener's port and its tokens. Kept out
+ *  of caretaker.json for the same reason as the UI state — the settings form
+ *  saves that file whole from a stale copy — and so the hashes never travel
+ *  to the view inside the config. */
+export interface ApiAccess {
+  /** Unset = the listener is off. */
+  port?: number;
+  tokens: ApiTokenRecord[];
+}
+
+const hashApiToken = (token: string) => createHash('sha256').update(token).digest('hex');
+
+export async function loadApiAccess(): Promise<ApiAccess> {
+  const raw = await readJsonOrDefault<Partial<ApiAccess>>(apiAccessPath(), {});
+  const port = Number.isInteger(raw.port) && raw.port! >= 1 && raw.port! <= 65535 ? raw.port : undefined;
+  const tokens = Array.isArray(raw.tokens)
+    ? raw.tokens.filter((t) => t && typeof t.id === 'string' && typeof t.hash === 'string')
+    : [];
+  return port === undefined ? { tokens } : { port, tokens };
+}
+
+export async function setApiPort(port: number | null): Promise<void> {
+  const { tokens } = await loadApiAccess();
+  await writeJson(apiAccessPath(), port === null ? { tokens } : { port, tokens });
+}
+
+/** Creates a token and returns it in clear — the only time it exists outside
+ *  the caller's hands. */
+export async function createApiToken(name: string): Promise<{ token: string; record: ApiTokenRecord }> {
+  const access = await loadApiAccess();
+  const token = `ctk_${randomBytes(32).toString('base64url')}`;
+  const record: ApiTokenRecord = {
+    id: randomUUID(),
+    name: name.trim() || 'token',
+    hash: hashApiToken(token),
+    createdAt: new Date().toISOString(),
+  };
+  access.tokens.push(record);
+  await writeJson(apiAccessPath(), access);
+  return { token, record };
+}
+
+export async function revokeApiToken(id: string): Promise<boolean> {
+  const access = await loadApiAccess();
+  const tokens = access.tokens.filter((t) => t.id !== id);
+  if (tokens.length === access.tokens.length) return false;
+  await writeJson(apiAccessPath(), { ...access, tokens });
+  return true;
+}
+
+export async function verifyApiToken(token: string): Promise<boolean> {
+  if (!token) return false;
+  const presented = Buffer.from(hashApiToken(token), 'hex');
+  const { tokens } = await loadApiAccess();
+  let ok = false;
+  for (const t of tokens) {
+    const stored = Buffer.from(t.hash, 'hex');
+    // No early exit: every stored hash is compared, in constant time each.
+    if (stored.length === presented.length && timingSafeEqual(stored, presented)) ok = true;
+  }
+  return ok;
 }
 
 export async function loadAgents(): Promise<AgentConfig[]> {

@@ -111,8 +111,11 @@ The following are explicitly **not** goals of the current design:
 - Isolating tool execution from the host (no OS sandbox, container, or
   privilege separation).
 - Auditing or vetting third-party plugins and MCP servers you choose to add.
-- Network exposure hardening — the web server binds locally and is intended for
-  loopback use; do not expose it to untrusted networks.
+- Network exposure hardening — the web GUI port binds locally, has no
+  authentication, and is intended for loopback use; do not expose it to untrusted
+  networks. The optional API port requires a bearer token on every request, but
+  it speaks plain HTTP: across a network you do not trust, put it behind a
+  TLS-terminating proxy, or the token travels in clear.
 
 If you need adversarial isolation, run Caretaker inside a VM or container that
 you control, as an unprivileged user, with only the tools and network access

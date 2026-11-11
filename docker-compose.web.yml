@@ -24,9 +24,12 @@
 # the task containers it spawns):
 #   export CARETAKER_UID=$(id -u)  CARETAKER_GID=$(id -g)
 #
-# SECURITY: caretaker has no built-in auth. The port is published to loopback
-# only. To reach it from elsewhere, front it with an authenticating proxy — do
-# NOT change this to 0.0.0.0 on an untrusted network.
+# SECURITY: the web GUI port has no auth. It is published to loopback only. To
+# reach it from elsewhere, front it with an authenticating proxy — do NOT change
+# this to 0.0.0.0 on an untrusted network.
+#
+# Other programs can use the REST API through a separate, token-authenticated
+# port: set it in Settings → API, then publish it (see `ports` below).
 
 services:
   caretaker-web:
@@ -38,6 +41,8 @@ services:
     # Loopback publish on purpose — no auth. See note above.
     ports:
       - '127.0.0.1:3000:3000'
+      # Token-authenticated API port (Settings → API). Safe to publish openly.
+      # - '4000:4000'
     environment:
       - CARETAKER_HOME=${CARETAKER_DATA:-/srv/caretaker}
     volumes:

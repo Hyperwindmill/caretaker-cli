@@ -76,9 +76,17 @@ export async function runCli(argv: string[]): Promise<void> {
     .description('Launch the Caretaker web server local-first GUI.')
     .option('-p, --port <number>', 'Port to listen on', '3000')
     .option('-h, --host <string>', 'Host to bind to', '127.0.0.1')
-    .action(async (opts: { port: string; host: string }) => {
+    .option('--api-port <number>', 'Port of the token-authenticated API listener (overrides the one saved in the settings)')
+    .option('--api-host <string>', 'Host the API listener binds to (default: same as --host)')
+    .action(async (opts: { port: string; host: string; apiPort?: string; apiHost?: string }) => {
       const { startServer } = await import('./web/server.js');
-      await startServer(parseInt(opts.port, 10), opts.host);
+      const { parsePort } = await import('./web/api_access.js');
+      const apiPort = opts.apiPort === undefined ? undefined : parsePort(opts.apiPort);
+      if (apiPort === null) {
+        console.error(`Invalid --api-port "${opts.apiPort}".`);
+        process.exit(1);
+      }
+      await startServer(parseInt(opts.port, 10), opts.host, { port: apiPort, host: opts.apiHost });
     });
 
   program

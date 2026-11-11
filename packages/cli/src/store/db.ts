@@ -175,6 +175,9 @@ export function buildChecklist(
       item.status === undefined || item.status === null
         ? (defaultStatus ?? null)
         : tryNormalizeChecklistStatus(item.status);
+    if (!status && (item.status === undefined || item.status === null)) {
+      return { error: `Checklist item "${text}" has no status. Allowed values are: pending, in_progress, done, skipped.` };
+    }
     if (!status) {
       return {
         error: `Invalid checklist item status "${item.status}" for item "${text}". Allowed values are: pending, in_progress, done, skipped.`,

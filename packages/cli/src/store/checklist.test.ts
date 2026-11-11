@@ -35,7 +35,7 @@ test('status aliases are normalized', () => {
 
 test('a missing status takes the default, or is refused without one', () => {
   assert.equal(ok(buildChecklist([{ text: 'x' }], 'pending'))[0].status, 'pending');
-  assert.match(fail(buildChecklist([{ text: 'x' }])), /Invalid checklist item status/);
+  assert.match(fail(buildChecklist([{ text: 'x' }])), /has no status/);
 });
 
 test('an explicit status wins over the default', () => {

@@ -259,6 +259,21 @@ It reaches the running app (single instance) and does exactly what the shortcut 
 
 **Switching project by voice.** Enable the `set_workspace` tool on the assistant agent (and `mcp__task__*` so it can list projects). Then say "switch to the backend project, then …": the agent picks the project, and the rest of that conversation works in the project's directory, with its `AGENTS.md` and project memories from the next turn. Each new activation starts again from the agent's own working directory. The switch needs a native agent — Claude Code and ACP agents have no caretaker tools.
 
+### API access for other programs
+
+The web server's REST routes (`/api/projects`, `/api/tasks/…`, the same ones the GUI uses) can be opened to scripts and other programs on a **second port that always requires a token**. It is off by default. In **Settings → API** set the port and create a token; the token is shown once and only its hash is stored (`~/.caretaker/api.json`). Clients send it on every request:
+
+```bash
+curl -H "Authorization: Bearer ctk_…" http://127.0.0.1:4000/api/projects
+```
+
+A missing or wrong token gets `401`. Revoking a token in the same tab takes effect at once.
+
+- **The two ports have different jobs.** The main port (the GUI) is unchanged and has no authentication: keep it on loopback or behind an authenticating proxy. The API port serves only the REST routes — no GUI, no WebSocket, and not the token settings themselves — and asks for the token from every caller, local ones included. It is the one you can publish.
+- **Plain HTTP.** The API port has no TLS. Across a network you do not trust, put a TLS-terminating proxy in front of it, or the token travels in clear.
+- **A token is full access** to those routes: creating and deleting projects and tasks, and everything else the GUI can do over REST. Give one to programs you would let use the GUI.
+- **Port and bind address.** The saved port is used by `caretaker-cli web` and by the desktop app, whose main port changes at every launch while this one stays fixed. `caretaker-cli web --api-port <n>` overrides the saved port. The API listens on the same address as the web server (`--host`, default `127.0.0.1`); pass `--api-host 0.0.0.0` to reach it from another machine.
+
 ## Install
 
 
@@ -336,8 +351,12 @@ inside the container:
   and git common dir into sibling containers with `-v <path>:<path>`, resolved by
   the host daemon — so both must be the *same absolute path* on host and in the
   container.
-- **Loopback publish**: caretaker has no built-in auth, so the port is bound to
-  `127.0.0.1`. Front it with an authenticating reverse proxy to expose it.
+- **Loopback publish**: the web GUI port has no authentication, so it is bound
+  to `127.0.0.1`. Front it with an authenticating reverse proxy to expose it.
+- **API port (optional)**: to let other programs call the REST API, set an API
+  port in **Settings → API** and publish that port too (e.g. `-p 4000:4000`).
+  It requires a token on every request, so it does not need the proxy — see
+  [API access for other programs](#api-access-for-other-programs).
 
 ## Built-in tools
 

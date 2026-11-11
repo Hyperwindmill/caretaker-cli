@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { watch, existsSync, mkdirSync } from 'node:fs';
 import { Hono } from 'hono';
+import { applyApiListener, registerApiAccess } from './api_access.js';
 import { stream } from 'hono/streaming';
 import { serve } from '@hono/node-server';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -228,8 +229,15 @@ export class WebSessionController {
   }
 }
 
-export async function startServer(port: number, host: string): Promise<void> {
+export async function startServer(
+  port: number,
+  host: string,
+  api: { port?: number; host?: string } = {},
+): Promise<void> {
   const app = new Hono();
+  // Token-authenticated listener for clients outside the browser (api_access.ts).
+  const apiListener = { webPort: port, host: api.host ?? host, portOverride: api.port };
+  registerApiAccess(app, apiListener);
 
   app.route('/api/fs', fsRouter);
   registerTaskBridge(app);
@@ -883,6 +891,9 @@ export async function startServer(port: number, host: string): Promise<void> {
     port,
     hostname: host,
   });
+
+  // Fire-and-forget: a busy API port is reported in the settings, never fatal.
+  void applyApiListener(app, apiListener);
 
   const bridgeHost = host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host;
   setTaskBridgeUrl(`http://${bridgeHost}:${port}/api/mcp/task`);

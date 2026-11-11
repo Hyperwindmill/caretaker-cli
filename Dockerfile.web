@@ -43,9 +43,11 @@
 # source == target for both.
 #
 # ── Security ──────────────────────────────────────────────────────────────────
-# caretaker has NO built-in auth. The CMD binds 0.0.0.0 (127.0.0.1 would be
+# The web GUI port has NO auth. The CMD binds 0.0.0.0 (127.0.0.1 would be
 # unreachable from outside the container), so keep the HOST publish on loopback
 # (`-p 127.0.0.1:3000:3000`) or put an authenticating reverse proxy in front.
+# The optional API port (Settings → API) requires a token on every request and
+# can be published as it is.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── builder ───────────────────────────────────────────────────────────────────
