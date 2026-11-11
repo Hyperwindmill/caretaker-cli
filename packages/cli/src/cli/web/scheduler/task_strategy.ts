@@ -4,7 +4,7 @@ import { loadAgents, loadConfig } from '../../../store/json.js';
 import { getDb, Task, Project, TaskMessage, getTaskById, saveTask, addTaskMessage, runQuery } from '../../../store/db.js';
 import { runningTasks, runningTaskControllers, syncingProjects } from './locks.js';
 import { isGitRepo, ensureWorktree, agentDirIn, commitWip, finalizeDone, runBootstrap, gitCommonDir, syncProjectRepo, projectWorkingDir, pushBranch } from '../../../lib/task_git.js';
-import { runDoneReview, MAX_REVIEW_ROUNDS } from './task_review.js';
+import { runDoneReview, MAX_REVIEW_ROUNDS, reviewTransition, reviewRoundLabel } from './task_review.js';
 import { openCycle, filterHandoffMessages, resolveCycleOutcome, type CycleRecorder, type CycleRole } from './task_cycle.js';
 import type { AgentConfig, ProviderConfig, ProjectConfig } from '../../../types.js';
 import type { Tool } from '../../../harness/tools/types.js';
@@ -712,7 +712,7 @@ async function runReviewCycle(opts: {
       taskId: task.id,
       role: 'user',
       messageType: 'review',
-      content: `[CODE REVIEW round ${round}/${MAX_REVIEW_ROUNDS}] verdict=${verdict}\n\n${reviewText}`,
+      content: `[CODE REVIEW round ${reviewRoundLabel(round)}] verdict=${verdict}\n\n${reviewText}`,
       // role is 'user' so the verdict replays into the agent's history as feedback,
       // but the reviewer agent produced it — capture that for the log display.
       agentLabel: `${agent.name} · ${agent.model}`,
@@ -721,22 +721,31 @@ async function runReviewCycle(opts: {
   await closeCycle();
   console.log(`[task_heartbeat] Task #${task.id} review round ${round}: ${verdict}`);
 
-  if (verdict === 'changes' && round < MAX_REVIEW_ROUNDS) {
+  const transition = reviewTransition(verdict, round);
+  if (transition === 'reopen') {
     // Reopen: keep the worktree; the review message is replayed to the agent next cycle.
     current.status = 'active';
     current.noProgressCount = 0;
     current.updatedAt = new Date().toISOString();
     await saveTask(current);
     console.log(`[task_heartbeat] Task #${task.id} reopened by review (round ${round}).`);
+  } else if (transition === 'block') {
+    // Rounds exhausted with findings outstanding: a task marked done reads as
+    // ready to whoever verifies it, so hand it to a person instead. Worktree and
+    // branch are kept; unblocking resumes the developer and grants one more round.
+    const reason = `Review rounds exhausted (${MAX_REVIEW_ROUNDS}) with findings still outstanding.`;
+    current.status = 'blocked';
+    current.blockedReason = reason;
+    current.updatedAt = new Date().toISOString();
+    await saveTask(current);
+    await addTaskMessage({
+      taskId: task.id,
+      role: 'assistant',
+      messageType: 'block',
+      content: `${reason} The worktree and branch are kept; unblock the task to let the developer address the last review, which grants one more review round.`,
+    });
+    console.log(`[task_heartbeat] Task #${task.id} blocked: review rounds exhausted (round ${round}).`);
   } else {
-    if (verdict === 'changes') {
-      await addTaskMessage({
-        taskId: task.id,
-        role: 'assistant',
-        messageType: 'system',
-        content: `Finished as done despite outstanding review findings after ${MAX_REVIEW_ROUNDS} rounds.`,
-      });
-    }
     if (!(await pushOrBlock(current, project))) return;
     if (current.dockerContainer) {
       await removeContainer(current.dockerContainer);

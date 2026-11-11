@@ -9,6 +9,21 @@ import { resolveCycleOutcome, type CycleRecorder } from './task_cycle.js';
 
 export const MAX_REVIEW_ROUNDS = 3;
 
+/**
+ * What a review verdict does to the task. Rounds are counted from the `review`
+ * message stream, so a task unblocked after exhausting them comes back at
+ * round MAX+1: each manual unblock grants exactly one more round.
+ */
+export function reviewTransition(verdict: 'pass' | 'changes', round: number): 'done' | 'reopen' | 'block' {
+  if (verdict === 'pass') return 'done';
+  return round < MAX_REVIEW_ROUNDS ? 'reopen' : 'block';
+}
+
+/** `2/3` within the automatic rounds, the bare number for one granted by an unblock. */
+export function reviewRoundLabel(round: number): string {
+  return round <= MAX_REVIEW_ROUNDS ? `${round}/${MAX_REVIEW_ROUNDS}` : String(round);
+}
+
 export function reviewPrompt(objective: string, branch: string, round: number): string {
   return `You are an INDEPENDENT code reviewer. You did not write this code, and your job is to find real problems — not to be agreeable. Do not rubber-stamp.
 
@@ -31,7 +46,11 @@ Verify claims against the code — do not trust comments or commit messages.
 
 Be concrete: cite files and lines. If the work is genuinely complete and correct, say so plainly.
 
-This is review round ${round} of at most ${MAX_REVIEW_ROUNDS}.
+${
+    round < MAX_REVIEW_ROUNDS
+      ? `This is review round ${round} of at most ${MAX_REVIEW_ROUNDS}.`
+      : `This is review round ${round}, the last automatic one: a CHANGES_REQUESTED verdict now hands the task back to a person instead of the developer.`
+  }
 
 End your response with EXACTLY ONE of these two lines, and nothing after it:
 REVIEW_RESULT: PASS
