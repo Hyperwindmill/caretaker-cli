@@ -1,5 +1,15 @@
 # webview-ui
 
+## 0.34.0
+
+### Minor Changes
+
+- c22e51c: API access for other programs: the web server can serve its REST routes on a second port that requires an `Authorization: Bearer <token>` header on every request. Set the port and create or revoke tokens in Settings → API (or pass `--api-port` / `--api-host` to `caretaker-cli web`). The main port is unchanged.
+
+### Patch Changes
+
+- 6518041: The project and task REST routes are now described by an OpenAPI 3.1 document at `/api/openapi.json`, with an interactive explorer at `/api/docs`. Settings → API links to it.
+
 ## 0.33.0
 
 ### Minor Changes

@@ -1,5 +1,18 @@
 # caretaker-cli
 
+## 0.34.0
+
+### Minor Changes
+
+- c22e51c: API access for other programs: the web server can serve its REST routes on a second port that requires an `Authorization: Bearer <token>` header on every request. Set the port and create or revoke tokens in Settings → API (or pass `--api-port` / `--api-host` to `caretaker-cli web`). The main port is unchanged.
+- 6518041: The project and task REST routes are now described by an OpenAPI 3.1 document at `/api/openapi.json`, with an interactive explorer at `/api/docs`. Settings → API links to it.
+- 04388af: A task whose review still requests changes on the last round is now blocked instead of being marked done. The worktree and the branch are kept, and each manual unblock gives the developer one more attempt followed by one more review.
+- 90c9c00: Task REST routes for external clients: `POST /api/projects/:id/tasks` now returns the created task (its id and the checklist item ids) and accepts a `status` on each checklist item, and the new `PUT /api/tasks/:id/checklist` replaces a task's whole checklist, like the `task_update_checklist` tool.
+
+### Patch Changes
+
+- 78a19c0: A review that cannot run (provider error, time budget exceeded) now blocks the task instead of marking it done unreviewed. The worktree and the branch are kept.
+
 ## 0.33.0
 
 ### Minor Changes
