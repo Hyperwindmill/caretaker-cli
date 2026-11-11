@@ -2,14 +2,13 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
 import { watch, existsSync, mkdirSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
 import { stream } from 'hono/streaming';
 import { serve } from '@hono/node-server';
 import { WebSocketServer, WebSocket } from 'ws';
 
 import * as harness from '../../harness/index.js';
-import { getDb, Task, getTaskById, saveTask, createTask, addTaskMessage, deleteTask, deleteTaskSessions, runQuery, tryNormalizeChecklistStatus } from '../../store/db.js';
+import { getDb, Task, getTaskById, saveTask, createTask, addTaskMessage, deleteTask, deleteTaskSessions, runQuery, tryNormalizeChecklistStatus, buildChecklist } from '../../store/db.js';
 import { discardWorktree, syncProjectRepo, projectRepoStatus, managedRepoDir } from '../../lib/task_git.js';
 import { removeContainer } from '../../lib/docker.js';
 import { validateRepositoryUrl } from '../../lib/repo_url.js';
@@ -493,12 +492,9 @@ export async function startServer(port: number, host: string): Promise<void> {
       }
     }
 
-    const checklistItems = (checklist || []).map((item: any, idx: number) => ({
-      id: randomUUID(),
-      text: item.text,
-      status: 'pending',
-      order: idx,
-    }));
+    // Items may arrive already ticked; one without a status starts pending.
+    const built = buildChecklist(checklist ?? [], 'pending');
+    if ('error' in built) return c.json({ ok: false, error: built.error }, 400);
 
     const config = await loadConfig();
     const project = (config.projects || []).find((p) => p.id === projectId);
@@ -507,11 +503,11 @@ export async function startServer(port: number, host: string): Promise<void> {
       ? (resolvePlanningEnabled({ planningEnabled: taskPlanning }, project) ? 'planning' : 'active')
       : 'draft';
 
-    await createTask({
+    const task = await createTask({
       projectId,
       title,
       objective,
-      checklist: checklistItems,
+      checklist: built.checklist,
       status: startStatus,
       blockedReason: null,
       noProgressCount: 0,
@@ -525,7 +521,7 @@ export async function startServer(port: number, host: string): Promise<void> {
       sddEnabled: typeof sddEnabled === 'boolean' ? sddEnabled : null,
       maxRunSeconds: typeof maxRunSeconds === 'number' && maxRunSeconds > 0 ? maxRunSeconds : null,
     });
-    return c.json({ ok: true });
+    return c.json({ ok: true, task });
   });
 
   app.get('/api/tasks/:id/messages', async (c) => {
@@ -742,6 +738,22 @@ export async function startServer(port: number, host: string): Promise<void> {
     }
 
     return c.json({ ok: true });
+  });
+
+  // Replace the whole checklist — same semantics as mcp__task__task_update_checklist:
+  // items with an id keep it, the others get a new one, order follows the array.
+  app.put('/api/tasks/:id/checklist', async (c) => {
+    const taskId = c.req.param('id');
+    const body = await c.req.json().catch(() => null);
+    const built = buildChecklist(body?.checklist);
+    if ('error' in built) return c.json({ ok: false, error: built.error }, 400);
+
+    const task = await getTaskById(taskId);
+    if (!task) return c.json({ ok: false, error: `Task ${taskId} not found` }, 404);
+    task.checklist = built.checklist;
+    task.updatedAt = new Date().toISOString();
+    await saveTask(task);
+    return c.json({ ok: true, checklist: task.checklist });
   });
 
   app.patch('/api/tasks/:id/agent', async (c) => {

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { getDb, ChecklistItem, Project, Task, TaskMessage, getTaskById, saveTask, createTask, addTaskMessage, deleteTask, tryNormalizeChecklistStatus } from '../../../store/db.js';
+import { getDb, ChecklistItem, Project, Task, TaskMessage, getTaskById, saveTask, createTask, addTaskMessage, deleteTask, tryNormalizeChecklistStatus, buildChecklist } from '../../../store/db.js';
 import { loadConfig, loadAgents } from '../../../store/json.js';
 import type { Tool, ToolResult } from '../types.js';
 import { discardWorktree, projectWorkingDir } from '../../../lib/task_git.js';
@@ -133,27 +133,14 @@ export const updateChecklistTool: Tool = {
   execute: async (args: any): Promise<ToolResult> => {
     const db = getDb();
     const taskId = String(args.task_id);
-    const checklistInput = args.checklist as any[];
 
     const task = await getTaskById(taskId);
     if (!task) return err(`Task ${taskId} not found`);
 
-    const checklist: ChecklistItem[] = [];
-    for (let idx = 0; idx < checklistInput.length; idx++) {
-      const item = checklistInput[idx];
-      const status = tryNormalizeChecklistStatus(item.status);
-      if (!status) {
-        return err(`Invalid checklist item status "${item.status}" for item "${item.text}". Allowed values are: pending, in_progress, done, skipped.`);
-      }
-      checklist.push({
-        id: item.id || randomUUID(),
-        text: item.text,
-        status,
-        order: idx,
-      });
-    }
+    const built = buildChecklist(args.checklist);
+    if ('error' in built) return err(built.error);
 
-    task.checklist = checklist;
+    task.checklist = built.checklist;
     task.updatedAt = new Date().toISOString();
 
     await saveTask(task);

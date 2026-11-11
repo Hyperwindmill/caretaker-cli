@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { existsSync, mkdirSync } from 'node:fs';
 import { Store } from '@morphql/store';
@@ -150,6 +151,41 @@ export function tryNormalizeChecklistStatus(status: any): 'pending' | 'in_progre
     return 'pending';
   }
   return null;
+}
+
+/**
+ * Build a task checklist from untrusted input (a tool call or a REST body).
+ * Items that carry an `id` keep it, the others get a new one; order follows the
+ * array. `defaultStatus` is what an item without a `status` gets — leave it
+ * unset to require one on every item (a replace must not silently reset a
+ * finished item to pending).
+ */
+export function buildChecklist(
+  input: unknown,
+  defaultStatus?: ChecklistItem['status'],
+): { checklist: ChecklistItem[] } | { error: string } {
+  if (!Array.isArray(input)) return { error: 'checklist must be an array.' };
+  const checklist: ChecklistItem[] = [];
+  const seen = new Set<string>();
+  for (let idx = 0; idx < input.length; idx++) {
+    const item = input[idx];
+    const text = typeof item?.text === 'string' ? item.text.trim() : '';
+    if (!text) return { error: `Checklist item ${idx + 1} has no text.` };
+    const status =
+      item.status === undefined || item.status === null
+        ? (defaultStatus ?? null)
+        : tryNormalizeChecklistStatus(item.status);
+    if (!status) {
+      return {
+        error: `Invalid checklist item status "${item.status}" for item "${text}". Allowed values are: pending, in_progress, done, skipped.`,
+      };
+    }
+    const id = typeof item.id === 'string' && item.id ? item.id : randomUUID();
+    if (seen.has(id)) return { error: `Duplicate checklist item id "${id}".` };
+    seen.add(id);
+    checklist.push({ id, text, status, order: idx });
+  }
+  return { checklist };
 }
 
 /** Ids are validated slugs/composites; anything else never matches a record.
