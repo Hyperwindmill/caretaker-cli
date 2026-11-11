@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { watch, existsSync, mkdirSync } from 'node:fs';
 import { Hono } from 'hono';
 import { applyApiListener, registerApiAccess } from './api_access.js';
+import { registerOpenApi } from './openapi.js';
 import { stream } from 'hono/streaming';
 import { serve } from '@hono/node-server';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -238,6 +239,7 @@ export async function startServer(
   // Token-authenticated listener for clients outside the browser (api_access.ts).
   const apiListener = { webPort: port, host: api.host ?? host, portOverride: api.port };
   registerApiAccess(app, apiListener);
+  registerOpenApi(app);
 
   app.route('/api/fs', fsRouter);
   registerTaskBridge(app);

@@ -41,6 +41,14 @@ test('with a token, non-REST paths and reserved routes are 404', async () => {
   }
 });
 
+test('the API description is served without a token, to GET only', async () => {
+  for (const p of ['/api/openapi.json', '/api/docs']) {
+    assert.equal((await call(p)).status, 200, p);
+    const post = await guarded(new Request(`http://x${p}`, { method: 'POST' }));
+    assert.equal(post.status, 401, p);
+  }
+});
+
 test('isApiPath keeps look-alike prefixes', () => {
   assert.equal(isApiPath('/api/tasks/demo-1/messages'), true);
   assert.equal(isApiPath('/api/accessories'), true);

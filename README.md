@@ -269,6 +269,8 @@ curl -H "Authorization: Bearer ctk_…" http://127.0.0.1:4000/api/projects
 
 A missing or wrong token gets `401`. Revoking a token in the same tab takes effect at once.
 
+The project and task routes are described by an **OpenAPI 3.1** document at `/api/openapi.json`, with an interactive explorer (Swagger UI) at `/api/docs`; use its **Authorize** button to enter the token. Both are served on either port and need no token, since they describe the routes and return no data. The explorer loads its assets from a CDN, so it needs network access; the JSON document does not, and can be imported into any OpenAPI tool.
+
 - **The two ports have different jobs.** The main port (the GUI) is unchanged and has no authentication: keep it on loopback or behind an authenticating proxy. The API port serves only the REST routes — no GUI, no WebSocket, and not the token settings themselves — and asks for the token from every caller, local ones included. It is the one you can publish.
 - **Plain HTTP.** The API port has no TLS. Across a network you do not trust, put a TLS-terminating proxy in front of it, or the token travels in clear.
 - **A token is full access** to those routes: creating and deleting projects and tasks, and everything else the GUI can do over REST. Give one to programs you would let use the GUI.

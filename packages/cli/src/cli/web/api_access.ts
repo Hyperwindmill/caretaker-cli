@@ -1,4 +1,5 @@
 import type { Hono } from 'hono';
+import { OPENAPI_PUBLIC_PATHS } from './openapi.js';
 import { serve, type ServerType } from '@hono/node-server';
 import {
   createApiToken,
@@ -36,9 +37,14 @@ export function isApiPath(pathname: string): boolean {
 }
 
 /** Wraps the app's fetch for the API port. The token is checked first, so an
- *  unauthenticated caller learns nothing about which paths exist. */
+ *  unauthenticated caller learns nothing about which paths exist — apart from
+ *  the two that describe the API (OPENAPI_PUBLIC_PATHS). */
 export function guardApiFetch(appFetch: Fetch, verify: (token: string) => Promise<boolean> = verifyApiToken): Fetch {
   return async (req, ...rest) => {
+    const pathname = new URL(req.url).pathname;
+    // The API description carries no data and Swagger UI must load it before
+    // anyone can type a token.
+    if (req.method === 'GET' && OPENAPI_PUBLIC_PATHS.includes(pathname)) return appFetch(req, ...rest);
     const token = bearerToken(req.headers.get('authorization'));
     if (!token || !(await verify(token))) {
       // One answer for a missing and a wrong token.
@@ -47,7 +53,7 @@ export function guardApiFetch(appFetch: Fetch, verify: (token: string) => Promis
         headers: { 'content-type': 'application/json', 'www-authenticate': 'Bearer' },
       });
     }
-    if (!isApiPath(new URL(req.url).pathname)) {
+    if (!isApiPath(pathname)) {
       return new Response(JSON.stringify({ error: 'Not found' }), {
         status: 404,
         headers: { 'content-type': 'application/json' },

@@ -106,6 +106,13 @@ export function ApiAccessTab() {
             off. The address you are using now is not affected: it stays without authentication, so
             keep it on this machine or behind an authenticating proxy.
           </small>
+          <small>
+            The project and task routes are described at{' '}
+            <a href="/api/docs" target="_blank" rel="noreferrer">
+              /api/docs
+            </a>{' '}
+            (OpenAPI document: <code>/api/openapi.json</code>).
+          </small>
           {portOverride !== null && (
             <small>
               This server was started with <code>--api-port {portOverride}</code>, which takes
