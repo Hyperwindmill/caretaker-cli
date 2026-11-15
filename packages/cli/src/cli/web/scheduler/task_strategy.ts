@@ -3,7 +3,7 @@ import * as harness from '../../../harness/index.js';
 import { loadAgents, loadConfig } from '../../../store/json.js';
 import { getDb, Task, Project, TaskMessage, getTaskById, saveTask, addTaskMessage, runQuery } from '../../../store/db.js';
 import { runningTasks, runningTaskControllers, syncingProjects } from './locks.js';
-import { isGitRepo, ensureWorktree, agentDirIn, commitWip, finalizeDone, runBootstrap, gitCommonDir, syncProjectRepo, projectWorkingDir, pushBranch } from '../../../lib/task_git.js';
+import { isGitRepo, ensureWorktree, BranchDivergedError, agentDirIn, commitWip, finalizeDone, runBootstrap, gitCommonDir, syncProjectRepo, projectWorkingDir, pushBranch } from '../../../lib/task_git.js';
 import { runDoneReview, MAX_REVIEW_ROUNDS, reviewTransition, reviewRoundLabel } from './task_review.js';
 import { openCycle, filterHandoffMessages, resolveCycleOutcome, type CycleRecorder, type CycleRole } from './task_cycle.js';
 import type { AgentConfig, ProviderConfig, ProjectConfig } from '../../../types.js';
@@ -219,7 +219,24 @@ export async function runTaskHeartbeatTick(now: Date): Promise<void> {
       workingDir = await agentDirIn(task.worktreePath, baseWorkingDir);
       mountRoot = task.worktreePath;
     } else if (await isGitRepo(baseWorkingDir)) {
-      const wt = await ensureWorktree(baseWorkingDir, task.id, task.title, task.branch);
+      let wt: Awaited<ReturnType<typeof ensureWorktree>>;
+      try {
+        wt = await ensureWorktree(baseWorkingDir, task.id, task.title, task.branch);
+      } catch (wtErr) {
+        if (!(wtErr instanceof BranchDivergedError)) throw wtErr;
+        task.status = 'blocked';
+        task.blockedReason = wtErr.message;
+        task.updatedAt = new Date().toISOString();
+        await saveTask(task);
+        await addTaskMessage({
+          taskId: task.id,
+          role: 'assistant',
+          messageType: 'block',
+          content: `Task branch diverged from the remote — task blocked.\n\n${wtErr.message}`,
+        });
+        console.error(`[task_heartbeat] Task #${task.id} branch diverged, blocked:`, wtErr.message);
+        return;
+      }
       task.branch = wt.branch;
       task.worktreePath = wt.worktreePath;
       await saveTask(task);

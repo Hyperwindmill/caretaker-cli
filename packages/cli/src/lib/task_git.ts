@@ -285,6 +285,22 @@ export async function agentDirIn(worktreePath: string, projectWorkingDir: string
   return rel ? join(worktreePath, rel) : worktreePath;
 }
 
+export class BranchDivergedError extends Error {
+  constructor(branch: string) {
+    super(`Task branch "${branch}" diverged from origin/${branch}: it has local commits the remote lacks and the remote has commits the local branch lacks. Reconcile the branch by hand, then unblock the task.`);
+    this.name = 'BranchDivergedError';
+  }
+}
+
+async function isAncestor(cwd: string, a: string, b: string): Promise<boolean> {
+  try {
+    await git(cwd, ['merge-base', '--is-ancestor', a, b]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function ensureWorktree(
   projectWorkingDir: string,
   taskId: string,
@@ -302,6 +318,19 @@ export async function ensureWorktree(
   } catch {
     // Branch may already exist from a previous run whose path field was lost — reuse it.
     await git(repoRoot, ['worktree', 'add', worktreePath, branch]);
+    // Reused branch: catch up with a remote that moved while the task was finished.
+    // No fetch here — syncProjectRepo already refreshed origin/<branch>.
+    const remoteRef = `refs/remotes/origin/${branch}`;
+    const hasRemote = await git(worktreePath, ['rev-parse', '--verify', '--quiet', remoteRef]).then(() => true, () => false);
+    if (hasRemote && !(await isAncestor(worktreePath, remoteRef, 'HEAD'))) {
+      if (await isAncestor(worktreePath, 'HEAD', remoteRef)) {
+        await git(worktreePath, ['merge', '--ff-only', remoteRef]);
+      } else {
+        // Leave nothing behind: the next attempt must find the path free and the branch unlocked.
+        await git(repoRoot, ['worktree', 'remove', '--force', worktreePath]);
+        throw new BranchDivergedError(branch);
+      }
+    }
   }
 
   const rel = relative(repoRoot, projectWorkingDir);

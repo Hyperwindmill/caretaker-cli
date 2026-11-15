@@ -17,6 +17,7 @@ process.env.CARETAKER_HOME = CT_HOME;
 const {
   isGitRepo,
   ensureWorktree,
+  BranchDivergedError,
   commitWip,
   finalizeDone,
   discardWorktree,
@@ -438,6 +439,110 @@ test('discardWorktree pushes before removal; a failed push keeps the worktree', 
   const branches = await g(origin, ['branch', '--list', branch]);
   assert.match(branches.stdout, /caretaker\/task-4-21-discard-remote/);
 
+  await rm(repo, { recursive: true, force: true });
+  await rm(origin, { recursive: true, force: true });
+});
+
+/** A clone of a seeded origin with a finished task branch (pushed, worktree removed, branch kept). */
+async function finishedTaskBranch(taskId: string) {
+  const origin = await seededOrigin();
+  const repo = await mkdtemp(join(tmpdir(), 'ct-clone-'));
+  await g(repo, ['clone', '-q', origin, '.']);
+  await g(repo, ['config', 'user.email', 'test@example.com']);
+  await g(repo, ['config', 'user.name', 'Test']);
+  const { branch, worktreePath, agentWorkingDir } = await ensureWorktree(repo, taskId, 'Resume me');
+  await writeFile(join(agentWorkingDir, 'task.txt'), 'task\n');
+  await commitWip(worktreePath, 'Resume me');
+  await pushBranch(worktreePath, branch, { url: origin });
+  await finalizeDone(worktreePath);
+  await g(repo, ['fetch', '-q', 'origin']);
+  return { origin, repo, branch };
+}
+
+/** Push one more commit to origin/<branch> from a throwaway clone, then fetch it into `repo`. */
+async function personPushes(origin: string, repo: string, branch: string, base?: string) {
+  const other = await mkdtemp(join(tmpdir(), 'ct-person-'));
+  await g(other, ['clone', '-q', origin, '.']);
+  await g(other, ['config', 'user.email', 'p@example.com']);
+  await g(other, ['config', 'user.name', 'Person']);
+  await g(other, ['checkout', '-q', '-B', branch, base ?? `origin/${branch}`]);
+  await writeFile(join(other, 'person.txt'), 'person\n');
+  await g(other, ['add', '-A']);
+  await g(other, ['commit', '-q', '-m', 'person']);
+  await g(other, ['push', '-q', 'origin', branch]);
+  await g(repo, ['fetch', '-q', 'origin']);
+  await rm(other, { recursive: true, force: true });
+}
+
+const head = async (cwd: string, ref = 'HEAD') => (await g(cwd, ['rev-parse', ref])).stdout.trim();
+
+test('ensureWorktree on a reused branch fast-forwards it to a newer remote branch', async () => {
+  const { origin, repo, branch } = await finishedTaskBranch('7-1');
+  await personPushes(origin, repo, branch);
+  const remoteTip = await head(repo, `origin/${branch}`);
+
+  const wt = await ensureWorktree(repo, '7-1', 'Resume me', branch);
+  assert.equal(await head(wt.worktreePath), remoteTip);
+  assert.equal(await head(repo, branch), remoteTip);
+
+  await finalizeDone(wt.worktreePath);
+  await rm(repo, { recursive: true, force: true });
+  await rm(origin, { recursive: true, force: true });
+});
+
+test('ensureWorktree on a reused branch is a no-op without a remote branch', async () => {
+  const repo = await makeRepo();
+  const first = await ensureWorktree(repo, '7-2', 'No remote');
+  await writeFile(join(first.agentWorkingDir, 'a.txt'), 'a\n');
+  await commitWip(first.worktreePath, 'No remote');
+  const tip = await head(first.worktreePath);
+  await finalizeDone(first.worktreePath);
+
+  const wt = await ensureWorktree(repo, '7-2', 'No remote', first.branch);
+  assert.equal(await head(wt.worktreePath), tip);
+
+  await finalizeDone(wt.worktreePath);
+  await rm(repo, { recursive: true, force: true });
+});
+
+test('ensureWorktree on a reused branch is a no-op when the local branch is ahead', async () => {
+  const { origin, repo, branch } = await finishedTaskBranch('7-3');
+  const first = await ensureWorktree(repo, '7-3', 'Resume me', branch);
+  await writeFile(join(first.agentWorkingDir, 'ahead.txt'), 'ahead\n');
+  await commitWip(first.worktreePath, 'Resume me');
+  const tip = await head(first.worktreePath);
+  await finalizeDone(first.worktreePath);
+
+  const wt = await ensureWorktree(repo, '7-3', 'Resume me', branch);
+  assert.equal(await head(wt.worktreePath), tip);
+  assert.notEqual(tip, await head(repo, `origin/${branch}`));
+
+  await finalizeDone(wt.worktreePath);
+  await rm(repo, { recursive: true, force: true });
+  await rm(origin, { recursive: true, force: true });
+});
+
+test('ensureWorktree on a diverged reused branch throws, rewrites nothing and leaves no worktree', async () => {
+  const { origin, repo, branch } = await finishedTaskBranch('7-4');
+  const first = await ensureWorktree(repo, '7-4', 'Resume me', branch);
+  await writeFile(join(first.agentWorkingDir, 'local.txt'), 'local\n');
+  await commitWip(first.worktreePath, 'Resume me');
+  const localTip = await head(first.worktreePath);
+  await finalizeDone(first.worktreePath);
+  await personPushes(origin, repo, branch);
+  const remoteTip = await head(repo, `origin/${branch}`);
+
+  await assert.rejects(() => ensureWorktree(repo, '7-4', 'Resume me', branch), BranchDivergedError);
+  assert.equal(await head(repo, branch), localTip);
+  assert.equal(await head(repo, `origin/${branch}`), remoteTip);
+  await assert.rejects(() => stat(first.worktreePath));
+
+  // After a person reconciles the branch the next attempt works cleanly.
+  await g(repo, ['branch', '-f', branch, `origin/${branch}`]);
+  const wt = await ensureWorktree(repo, '7-4', 'Resume me', branch);
+  assert.equal(await head(wt.worktreePath), remoteTip);
+
+  await finalizeDone(wt.worktreePath);
   await rm(repo, { recursive: true, force: true });
   await rm(origin, { recursive: true, force: true });
 });
