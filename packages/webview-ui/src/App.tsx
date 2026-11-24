@@ -89,6 +89,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
 
   const [activeScreen, setActiveScreen] = useState<'chat' | 'settings' | 'projects'>('chat');
   const [settingsTab, setSettingsTab] = useState<TabId | undefined>();
+  const [orchestrationPending, setOrchestrationPending] = useState(0);
   const [settingsData, setSettingsData] = useState<{
     config: CaretakerConfig;
     agents: AgentConfig[];
@@ -426,6 +427,35 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
     if (screen === 'settings') postMessage({ type: 'getSettingsData' });
   };
 
+  // ponytail: polls the whole status for one number; move to a ws push if the payload grows.
+  useEffect(() => {
+    if (layout !== 'sidebar') return;
+    let cancelled = false;
+    const pollPending = async () => {
+      try {
+        const res = await fetch('/api/orchestrator');
+        if (!res.ok) {
+          if (!cancelled) setOrchestrationPending(0);
+          return;
+        }
+        const data = (await res.json()) as { pending?: unknown };
+        if (!cancelled) {
+          setOrchestrationPending(typeof data.pending === 'number' ? data.pending : 0);
+        }
+      } catch {
+        if (!cancelled) setOrchestrationPending(0);
+      }
+    };
+    void pollPending();
+    const timer = setInterval(() => {
+      void pollPending();
+    }, 15_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [layout]);
+
   // Persistent nav rail for the sidebar layout (web/desktop). Projects is
   // scheduler-driven, so — like the Services settings tab — it never shows in
   // the compact/VSCode surface, which keeps its header buttons instead.
@@ -446,6 +476,9 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
         >
           <Icon size={18} />
           <span>{label}</span>
+          {id === 'settings' && orchestrationPending > 0 && (
+            <span className="app__nav-badge">{orchestrationPending}</span>
+          )}
         </button>
       ))}
     </nav>
@@ -483,6 +516,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
           mcpAuthOutcome={mcpAuthOutcome}
           setMcpAuthOutcome={setMcpAuthOutcome}
           taskRuns={taskRuns}
+          orchestrationPending={orchestrationPending}
           onClose={() => setActiveScreen('chat')}
         />
       </div>

@@ -12,6 +12,7 @@ import { VoiceTab } from './VoiceTab.js';
 import { MemoryTab } from './MemoryTab.js';
 import { DesktopTab } from './DesktopTab.js';
 import { ApiAccessTab } from './ApiAccessTab.js';
+import { OrchestrationTab } from './OrchestrationTab.js';
 import { BackIcon } from './icons.js';
 import { settingsTabs, type TabId } from './settings_tabs.js';
 
@@ -42,6 +43,7 @@ interface SettingsPanelProps {
   taskRuns?: Record<string, any[]>;
   onClose: () => void;
   initialTab?: TabId;
+  orchestrationPending?: number;
 }
 
 export function SettingsPanel({
@@ -63,6 +65,7 @@ export function SettingsPanel({
   taskRuns = {},
   onClose,
   initialTab = 'providers',
+  orchestrationPending = 0,
 }: SettingsPanelProps) {
 
   const [activeTab, setActiveTab] = useState<TabId>(initialTab);
@@ -178,6 +181,9 @@ export function SettingsPanel({
 
       case 'api':
         return <ApiAccessTab />;
+
+      case 'orchestration':
+        return <OrchestrationTab />;
     }
   };
 
@@ -200,7 +206,10 @@ export function SettingsPanel({
             className={`settings-panel__tab-btn ${activeTab === tab.id ? 'settings-panel__tab-btn--active' : ''}`}
             onClick={() => setActiveTab(tab.id)}
           >
-            {tab.label}
+            <span>{tab.label}</span>
+            {tab.id === 'orchestration' && orchestrationPending > 0 && (
+              <span className="settings-panel__badge">{orchestrationPending}</span>
+            )}
           </button>
         ))}
       </nav>

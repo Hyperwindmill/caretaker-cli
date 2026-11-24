@@ -8,7 +8,8 @@ export type TabId =
   | 'voice'
   | 'memory'
   | 'desktop'
-  | 'api';
+  | 'api'
+  | 'orchestration';
 
 export interface SettingsTabDef {
   id: TabId;
@@ -31,6 +32,8 @@ const ALL_TABS: SettingsTabDef[] = [
   { id: 'desktop', label: 'Desktop', sidebarOnly: true },
   // The API listener belongs to the web server; /api/access exists only there.
   { id: 'api', label: 'API', sidebarOnly: true },
+  // Remote orchestration runs only in the web server; /api/orchestrator exists only there.
+  { id: 'orchestration', label: 'Orchestration', sidebarOnly: true },
 ];
 
 /**

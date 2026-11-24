@@ -9,6 +9,6 @@ describe('settingsTabs', () => {
 
   test('sidebar shows every tab in order', () => {
     assert.deepEqual(settingsTabs('sidebar').map((t) => t.id),
-      ['providers', 'projects', 'agents', 'plugins', 'mcp', 'services', 'voice', 'memory', 'desktop', 'api']);
+      ['providers', 'projects', 'agents', 'plugins', 'mcp', 'services', 'voice', 'memory', 'desktop', 'api', 'orchestration']);
   });
 });
