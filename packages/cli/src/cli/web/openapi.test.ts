@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { openApiDocument } from './openapi.js';
+import { openApiDocument, isDocumentedRoute } from './openapi.js';
 
 const doc = openApiDocument('1.2.3') as any;
 const METHODS = ['get', 'post', 'put', 'patch', 'delete'];
@@ -51,4 +51,17 @@ test('the document carries the version and the bearer scheme', () => {
   assert.equal(doc.openapi, '3.1.0');
   assert.equal(doc.info.version, '1.2.3');
   assert.equal(doc.components.securitySchemes.bearerAuth.scheme, 'bearer');
+});
+
+test('isDocumentedRoute matches documented operations only', () => {
+  assert.equal(isDocumentedRoute('GET', '/api/projects'), true);
+  assert.equal(isDocumentedRoute('post', '/api/projects/acme/tasks'), true);
+  assert.equal(isDocumentedRoute('GET', '/api/openapi.json'), true);
+  assert.equal(isDocumentedRoute('PUT', '/api/projects'), false);           // method not documented
+  assert.equal(isDocumentedRoute('GET', '/api/projects/a/b/tasks'), false); // {id} is one segment
+  assert.equal(isDocumentedRoute('GET', '/api/projects//tasks'), false);
+  assert.equal(isDocumentedRoute('GET', '/api/fs/list'), false);
+  assert.equal(isDocumentedRoute('GET', '/api/orchestrator'), false);
+  assert.equal(isDocumentedRoute('POST', '/api/access/tokens'), false);
+  assert.equal(isDocumentedRoute('GET', '/api/docs'), false);
 });

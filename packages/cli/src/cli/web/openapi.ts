@@ -522,3 +522,36 @@ export function registerOpenApi(app: Hono): void {
   app.get('/api/openapi.json', (c) => c.json(openApiDocument(version)));
   app.get('/api/docs', (c) => c.html(DOCS_HTML));
 }
+
+/**
+ * True when method + pathname is an operation of `paths` ({param} = exactly
+ * one non-empty segment), or GET /api/openapi.json. Pathname only: no query.
+ */
+export function isDocumentedRoute(method: string, pathname: string): boolean {
+  if (!pathname || pathname.includes('?')) return false;
+  const lowerMethod = method.toLowerCase();
+  if (lowerMethod === 'get' && pathname === '/api/openapi.json') return true;
+
+  const pathSegs = pathname.split('/');
+  for (const [template, ops] of Object.entries(paths)) {
+    if (!Object.prototype.hasOwnProperty.call(ops, lowerMethod)) continue;
+    const templateSegs = template.split('/');
+    if (templateSegs.length !== pathSegs.length) continue;
+    let match = true;
+    for (let i = 0; i < templateSegs.length; i++) {
+      const t = templateSegs[i];
+      const p = pathSegs[i];
+      if (t.startsWith('{') && t.endsWith('}')) {
+        if (p.length === 0) {
+          match = false;
+          break;
+        }
+      } else if (t !== p) {
+        match = false;
+        break;
+      }
+    }
+    if (match) return true;
+  }
+  return false;
+}
