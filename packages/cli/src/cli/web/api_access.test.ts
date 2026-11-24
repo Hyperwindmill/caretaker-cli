@@ -61,3 +61,8 @@ test('parsePort accepts integers in range, as number or string', () => {
   assert.equal(parsePort('8080'), 8080);
   for (const bad of [0, 65536, 1.5, '', 'abc', null, undefined]) assert.equal(parsePort(bad), null);
 });
+
+test('the orchestrator management routes stay off the API port', () => {
+  assert.equal(isApiPath('/api/orchestrator'), false);
+  assert.equal(isApiPath('/api/orchestrator/messages/x/approve'), false);
+});

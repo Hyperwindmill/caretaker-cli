@@ -33,7 +33,9 @@ export function bearerToken(header: string | null | undefined): string | null {
  *  token must not be able to mint or revoke tokens. */
 export function isApiPath(pathname: string): boolean {
   if (!pathname.startsWith('/api/')) return false;
-  return !['/api/ws', '/api/mcp', '/api/access'].some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  return !['/api/ws', '/api/mcp', '/api/access', '/api/orchestrator'].some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  );
 }
 
 /** Wraps the app's fetch for the API port. The token is checked first, so an

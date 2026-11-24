@@ -5,6 +5,7 @@ import { watch, existsSync, mkdirSync } from 'node:fs';
 import { Hono } from 'hono';
 import { applyApiListener, registerApiAccess, type ApiListenerOptions } from './api_access.js';
 import { registerOpenApi } from './openapi.js';
+import { registerOrchestrator, startOrchestrator } from './orchestrator.js';
 import { keepMissingProjects } from './save_config.js';
 import { stream } from 'hono/streaming';
 import { serve } from '@hono/node-server';
@@ -241,6 +242,7 @@ export function createApp(apiListener: ApiListenerOptions): Hono {
   registerVoiceProxy(app);
   registerVoiceBackend(app);
   registerVoiceBuiltin(app);
+  registerOrchestrator(app);
 
 
   // Pure-Node static serving with absolute path validation and fallback
@@ -924,6 +926,7 @@ export async function startServer(
 
   // Start the background scheduler trigger daemon
   startBackgroundScheduler();
+  startOrchestrator(app);
 
   // Opt-in: start the managed local speech backend if configured to. Never
   // awaited — a first run pulls 2.08 GB and must not hang server boot.
