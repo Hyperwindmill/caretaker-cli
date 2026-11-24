@@ -533,11 +533,24 @@ export function createApp(apiListener: ApiListenerOptions, fetchImpl?: typeof fe
 
   app.get('/api/tasks/:id/messages', async (c) => {
     const taskId = c.req.param('id');
+    // Paging, so a thread of any length can be read in bounded responses (an
+    // orchestrator caps a response at 1 MB): `after` is a message id, `limit`
+    // 1..500. Ids are the store's max+1 under a serialized writer, so a new
+    // message always sorts after every message already in its thread.
+    const afterRaw = c.req.query('after');
+    const limitRaw = c.req.query('limit');
+    const after = afterRaw === undefined ? 0 : /^\d+$/.test(afterRaw) ? Number(afterRaw) : NaN;
+    const limit = limitRaw === undefined ? Infinity : /^\d+$/.test(limitRaw) ? Number(limitRaw) : NaN;
+    if (Number.isNaN(after)) return c.json({ error: 'after must be a message id (a non-negative integer).' }, 400);
+    if (Number.isNaN(limit) || limit < 1 || (limit !== Infinity && limit > 500)) {
+      return c.json({ error: 'limit must be an integer between 1 and 500.' }, 400);
+    }
     if (!/^[a-z0-9][a-z0-9-]*$/.test(taskId)) return c.json([], 200);
     try {
       const rows = (await runQuery(`SELECT * FROM task_messages WHERE taskId = '${taskId}'`)) as any[];
-      rows.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-      return c.json(rows);
+      // By id, not createdAt: ids follow insertion order, and createdAt ties.
+      rows.sort((a, b) => a.id - b.id);
+      return c.json(rows.filter((m) => m.id > after).slice(0, limit));
     } catch (err) {
       return c.json([], 200);
     }

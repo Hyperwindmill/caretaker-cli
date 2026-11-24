@@ -315,9 +315,29 @@ const paths: Record<string, Record<string, unknown>> = {
     get: {
       tags: ['Tasks'],
       summary: 'Read the task thread',
-      description: 'Oldest first. An unknown task answers an empty list.',
-      parameters: task,
-      responses: { 200: res('Messages.', { type: 'array', items: ref('TaskMessage') }) },
+      description:
+        'Oldest first (by message id). An unknown task answers an empty list. Without `after` and `limit` the whole thread comes back. To read a long thread in bounded responses, page with `limit` and pass the id of the last message received as `after`; a page shorter than `limit` is the end. To follow a thread, keep the last id and ask only for what came `after` it.',
+      parameters: [
+        ...task,
+        {
+          name: 'after',
+          in: 'query',
+          required: false,
+          description: 'Return only messages with an id greater than this one.',
+          schema: { type: 'integer', minimum: 0 },
+        },
+        {
+          name: 'limit',
+          in: 'query',
+          required: false,
+          description: 'At most this many messages.',
+          schema: { type: 'integer', minimum: 1, maximum: 500 },
+        },
+      ],
+      responses: {
+        200: res('Messages.', { type: 'array', items: ref('TaskMessage') }),
+        400: errorRes('`after` or `limit` is not a valid integer, or `limit` is outside 1..500.'),
+      },
     },
     post: {
       tags: ['Tasks'],

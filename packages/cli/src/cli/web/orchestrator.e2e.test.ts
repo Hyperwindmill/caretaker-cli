@@ -9,6 +9,7 @@ import { after, beforeEach, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from './server.js';
 import { createDemoOrchestrator } from '../orchestrator_demo.js';
+import { addTaskMessage } from '../../store/db.js';
 import {
   loadOrchestrator,
   saveLedger,
@@ -89,6 +90,36 @@ describe('orchestrator e2e', () => {
     assert.equal(listRes.status, 200);
     const tasks = (await listRes.json()) as any[];
     assert.ok(tasks.some((t) => t.id === createdTaskId));
+  });
+
+  test('an orchestrator reads a task thread in pages through the channel', async () => {
+    const app = createApp({ webPort: 0, host: '127.0.0.1' });
+    const demo = createDemoOrchestrator({ token: 't', name: 'Demo' });
+    const deps = {
+      app,
+      fetch: ((url, init) => demo.app.request(String(url), init)) as typeof fetch,
+    };
+    const instanceId = await setupConfig('approve'); // GETs apply without approval
+    for (let i = 1; i <= 3; i++) {
+      await addTaskMessage({ taskId: 'paged-1', role: 'assistant', messageType: 'chat', content: `n${i}` });
+    }
+
+    const first = demo.enqueue(instanceId, { method: 'GET', path: '/api/tasks/paged-1/messages?limit=2' });
+    await runCycle(deps);
+    await runCycle(deps);
+    const page1 = demo.results(instanceId).find((r) => r.id === first)!;
+    assert.equal(page1.status, 200);
+    assert.deepEqual((page1.body as any[]).map((m) => m.content), ['n1', 'n2']);
+
+    const lastId = (page1.body as any[])[1].id;
+    const second = demo.enqueue(instanceId, {
+      method: 'GET',
+      path: `/api/tasks/paged-1/messages?limit=2&after=${lastId}`,
+    });
+    await runCycle(deps);
+    await runCycle(deps);
+    const page2 = demo.results(instanceId).find((r) => r.id === second)!;
+    assert.deepEqual((page2.body as any[]).map((m) => m.content), ['n3']);
   });
 
   test('a message the orchestrator keeps offering is applied once', async () => {
