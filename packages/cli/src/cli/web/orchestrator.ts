@@ -50,6 +50,13 @@ let recoveredThisProcess = false;
 let ledgerMutex: Promise<void> = Promise.resolve();
 let loopTimer: ReturnType<typeof setTimeout> | null = null;
 let loopGen = 0;
+/** Bumped by every config save. A cycle that started under an older generation
+ *  stops touching the ledger, the registration and the status: after a host
+ *  change it must not file the old orchestrator's messages into the new ledger. */
+let configGen = 0;
+/** Cycles run one at a time, whoever starts them (the loop, a restart after a
+ *  save): a slow cycle delays the next one, never overlaps it. */
+let cycleChain: Promise<void> = Promise.resolve();
 
 function withLedgerLock<T>(fn: () => Promise<T>): Promise<T> {
   const run = ledgerMutex.then(fn, fn);
@@ -153,11 +160,20 @@ export async function applyMessage(
 /**
  * One register-if-needed + poll cycle. Never throws; failures land in status.
  */
-export async function runCycle(deps: CycleDeps): Promise<void> {
+export function runCycle(deps: CycleDeps): Promise<void> {
+  const run = cycleChain.then(() => cycleOnce(deps));
+  cycleChain = run.catch(() => undefined);
+  return run;
+}
+
+async function cycleOnce(deps: CycleDeps): Promise<void> {
   const now = deps.now ? deps.now() : new Date();
+  const gen = configGen;
+  const stale = () => gen !== configGen;
   try {
     await ensureRecovered(now);
     const cfg = await loadOrchestrator();
+    if (stale()) return;
 
     if (!cfg.enabled) {
       registered = false;
@@ -194,6 +210,7 @@ export async function runCycle(deps: CycleDeps): Promise<void> {
         }),
         signal: AbortSignal.timeout(OUTBOUND_TIMEOUT_MS),
       });
+      if (stale()) return;
       if (!regRes.ok) {
         status = { ...status, state: 'error', lastError: `Register failed: HTTP ${regRes.status}` };
         return;
@@ -202,9 +219,11 @@ export async function runCycle(deps: CycleDeps): Promise<void> {
       try {
         regData = JSON.parse(await regRes.text());
       } catch {
+        if (stale()) return;
         status = { ...status, state: 'error', lastError: 'Register returned non-JSON response.' };
         return;
       }
+      if (stale()) return;
       if (!regData || typeof regData !== 'object' || (regData as Record<string, unknown>).ok !== true) {
         status = { ...status, state: 'error', lastError: 'Register response did not confirm ok.' };
         return;
@@ -241,6 +260,7 @@ export async function runCycle(deps: CycleDeps): Promise<void> {
       }),
       signal: AbortSignal.timeout(OUTBOUND_TIMEOUT_MS),
     });
+    if (stale()) return;
 
     if (
       pollRes.status === 401 ||
@@ -261,9 +281,11 @@ export async function runCycle(deps: CycleDeps): Promise<void> {
     try {
       pollData = JSON.parse(await pollRes.text());
     } catch {
+      if (stale()) return;
       status = { ...status, state: 'error', lastError: 'Poll returned non-JSON response.' };
       return;
     }
+    if (stale()) return;
     if (
       !pollData ||
       typeof pollData !== 'object' ||
@@ -300,6 +322,7 @@ export async function runCycle(deps: CycleDeps): Promise<void> {
 
     const messages = (pollData as { messages: unknown[] }).messages;
     for (const raw of messages) {
+      if (stale()) return;
       const parsed = parseMessage(raw);
       if (parsed === null) {
         status = { ...status, lastError: 'The orchestrator sent a message without an id.' };
@@ -309,7 +332,7 @@ export async function runCycle(deps: CycleDeps): Promise<void> {
       if ('error' in parsed) {
         await withLedgerLock(async () => {
           const records = await loadLedger();
-          if (records.some((r) => r.id === parsed.id)) return;
+          if (stale() || records.some((r) => r.id === parsed.id)) return;
           records.push({
             id: parsed.id,
             method: '',
@@ -329,7 +352,7 @@ export async function runCycle(deps: CycleDeps): Promise<void> {
       if (!isDocumentedRoute(parsed.method, pathname)) {
         await withLedgerLock(async () => {
           const records = await loadLedger();
-          if (records.some((r) => r.id === parsed.id)) return;
+          if (stale() || records.some((r) => r.id === parsed.id)) return;
           records.push({
             id: parsed.id,
             method: parsed.method,
@@ -348,7 +371,7 @@ export async function runCycle(deps: CycleDeps): Promise<void> {
       if (needsApproval(cfg.policy, parsed.method)) {
         await withLedgerLock(async () => {
           const records = await loadLedger();
-          if (records.some((r) => r.id === parsed.id)) return;
+          if (stale() || records.some((r) => r.id === parsed.id)) return;
           records.push({
             id: parsed.id,
             method: parsed.method,
@@ -365,7 +388,7 @@ export async function runCycle(deps: CycleDeps): Promise<void> {
 
       const claimed = await withLedgerLock(async () => {
         const records = await loadLedger();
-        if (records.some((r) => r.id === parsed.id)) return false;
+        if (stale() || records.some((r) => r.id === parsed.id)) return false;
         records.push({
           id: parsed.id,
           method: parsed.method,
@@ -385,7 +408,7 @@ export async function runCycle(deps: CycleDeps): Promise<void> {
       await withLedgerLock(async () => {
         const records = await loadLedger();
         const rec = records.find((r) => r.id === parsed.id);
-        if (!rec) return;
+        if (!rec || rec.state !== 'applying') return;
         delete rec.body;
         rec.state = 'done';
         rec.resolvedAt = resolvedAt;
@@ -394,7 +417,7 @@ export async function runCycle(deps: CycleDeps): Promise<void> {
       });
     }
   } catch (err) {
-    status = { ...status, state: 'error', lastError: oneLineError(err) };
+    if (!stale()) status = { ...status, state: 'error', lastError: oneLineError(err) };
   }
 }
 
@@ -439,7 +462,7 @@ export async function resolvePending(
   await withLedgerLock(async () => {
     const records = await loadLedger();
     const rec = records.find((r) => r.id === id);
-    if (!rec) return;
+    if (!rec || rec.state !== 'applying') return;
     delete rec.body;
     rec.state = 'done';
     rec.resolvedAt = resolvedAt;
@@ -454,12 +477,21 @@ export function orchestratorStatus(): OrchestratorStatus {
 }
 
 /**
- * Test hook and config-save hook: forgets registration, status, and recovery flag.
+ * Config-save hook: forgets the registration and the status, and retires any
+ * cycle still running under the previous configuration. Leaves the boot
+ * recovery alone: it runs once per process, and re-running it would settle a
+ * message that is being applied right now as an interrupted one.
  */
 export function resetOrchestrator(): void {
+  configGen++;
   registered = false;
-  recoveredThisProcess = false;
   status = { state: 'off' };
+}
+
+/** Tests only: also re-arms the once-per-process boot recovery. */
+export function resetOrchestratorForTests(): void {
+  resetOrchestrator();
+  recoveredThisProcess = false;
 }
 
 export function stopOrchestrator(): void {
@@ -541,11 +573,14 @@ export function registerOrchestrator(app: Hono, fetchImpl: typeof fetch = fetch)
     if ('error' in merged) {
       return c.json({ error: merged.error }, 400);
     }
+    // Retire the running loop and any in-flight cycle first, so nothing filed
+    // under the old configuration lands after the purge below.
+    stopOrchestrator();
+    resetOrchestrator();
     await saveOrchestrator(merged.config);
     if (merged.purgeLedger) {
       await withLedgerLock(() => saveLedger([]));
     }
-    resetOrchestrator();
     startOrchestrator(app, fetchImpl);
     return c.json(await buildView());
   });

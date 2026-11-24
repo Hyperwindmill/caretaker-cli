@@ -18,6 +18,7 @@ import {
 import {
   orchestratorStatus,
   resetOrchestrator,
+  resetOrchestratorForTests,
   resolvePending,
   runCycle,
   stopOrchestrator,
@@ -42,7 +43,7 @@ async function setupConfig(policy: OrchestratorPolicy, token = 't'): Promise<str
 describe('orchestrator e2e', () => {
   beforeEach(async () => {
     stopOrchestrator();
-    resetOrchestrator();
+    resetOrchestratorForTests();
     await saveLedger([]);
   });
 

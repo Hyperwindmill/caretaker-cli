@@ -22,6 +22,7 @@ import {
   resolvePending,
   orchestratorStatus,
   resetOrchestrator,
+  resetOrchestratorForTests,
   startOrchestrator,
   stopOrchestrator,
   registerOrchestrator,
@@ -104,7 +105,7 @@ function jsonRes(body: unknown, status = 200): Response {
 describe('orchestrator client', () => {
   beforeEach(async () => {
     stopOrchestrator();
-    resetOrchestrator();
+    resetOrchestratorForTests();
     await saveLedger([]);
   });
 
@@ -426,6 +427,86 @@ describe('orchestrator client', () => {
     assert.equal(results.length, 1);
     assert.equal(results[0].id, 'stuck-1');
     assert.equal(results[0].status, 500);
+  });
+
+  test('a config save while an approved message is applying delivers its real result, not a 500', async () => {
+    await seedConfig({ policy: 'approve' });
+    await saveLedger([
+      {
+        id: 'm1',
+        method: 'POST',
+        path: '/api/projects',
+        receivedAt: '2026-11-24T11:00:00.000Z',
+        state: 'pending',
+        delivered: false,
+      },
+    ]);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const { app } = makeStubApp(async () => {
+      await gate;
+      return jsonRes({ ok: true });
+    });
+    const delivered: { id: string; status: number }[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/register')) return jsonRes({ ok: true, name: 'Orch' });
+      delivered.push(...(JSON.parse(String(init?.body)).results as { id: string; status: number }[]));
+      return jsonRes({ messages: [] });
+    }) as typeof fetch;
+
+    await runCycle({ app, fetch: fetchImpl }); // first cycle: boot recovery done
+    const approving = resolvePending(app, 'm1', 'approve');
+    await new Promise((r) => setTimeout(r, 20));
+    resetOrchestrator(); // what PUT /api/orchestrator does
+    await runCycle({ app, fetch: fetchImpl });
+    release();
+    assert.equal(await approving, 'ok');
+    await runCycle({ app, fetch: fetchImpl });
+
+    assert.deepEqual(
+      delivered.map((r) => [r.id, r.status]),
+      [['m1', 200]],
+    );
+  });
+
+  test('a cycle started under the old config files nothing after a save, and cycles never overlap', async () => {
+    await seedConfig({ policy: 'auto', endpoint: 'https://old.example.com/v1' });
+    const { app, calls } = makeStubApp();
+    let releasePoll!: () => void;
+    const pollGate = new Promise<void>((r) => (releasePoll = r));
+    const urls: string[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      urls.push(url);
+      if (url.endsWith('/register')) return jsonRes({ ok: true, name: 'Orch' });
+      if (url.startsWith('https://old.example.com')) {
+        await pollGate;
+        return jsonRes({ messages: [{ id: 'old-msg', method: 'POST', path: '/api/projects', body: {} }] });
+      }
+      return jsonRes({ messages: [] });
+    }) as typeof fetch;
+
+    const oldCycle = runCycle({ app, fetch: fetchImpl });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.deepEqual(urls, ['https://old.example.com/v1/register', 'https://old.example.com/v1/poll']);
+
+    // A save switching orchestrator, in the order PUT /api/orchestrator does it.
+    resetOrchestrator();
+    await seedConfig({ policy: 'auto', endpoint: 'https://new.example.com/v1' });
+    await saveLedger([]);
+    const newCycle = runCycle({ app, fetch: fetchImpl });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(urls.length, 2, 'the new cycle waits for the old one');
+
+    releasePoll();
+    await oldCycle;
+    await newCycle;
+
+    assert.equal(calls.length, 0, 'the old orchestrator message was not applied');
+    assert.deepEqual(await loadLedger(), []);
+    assert.deepEqual(urls.slice(2), ['https://new.example.com/v1/register', 'https://new.example.com/v1/poll']);
+    assert.equal(orchestratorStatus().state, 'connected');
   });
 
   test('routes: GET never returns the token; hasToken reflects it', async () => {
