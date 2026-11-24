@@ -5,6 +5,7 @@ import { watch, existsSync, mkdirSync } from 'node:fs';
 import { Hono } from 'hono';
 import { applyApiListener, registerApiAccess } from './api_access.js';
 import { registerOpenApi } from './openapi.js';
+import { keepMissingProjects } from './save_config.js';
 import { stream } from 'hono/streaming';
 import { serve } from '@hono/node-server';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -1257,19 +1258,10 @@ export async function startServer(
             try {
               const idError = validateProjectIds(msg.config.projects || []);
               if (idError) { post({ type: 'error', message: idError }); return; }
-              // A project that still has tasks must be deleted through DELETE /api/projects/:id
-              // (which removes tasks, worktrees and the managed clone) — not silently dropped
-              // from a config save. Also blocks id "renames", which arrive as drop+add.
+              // Project deletion goes only through DELETE /api/projects/:id: a stale
+              // settings form copy must not delete a project created over REST.
               const prev = await loadConfig();
-              const incomingIds = new Set((msg.config.projects || []).map((p: any) => p.id));
-              for (const old of prev.projects || []) {
-                if (incomingIds.has(old.id)) continue;
-                const remaining = (await runQuery(`SELECT * FROM tasks WHERE projectId = '${old.id}'`)) as unknown[];
-                if (remaining.length > 0) {
-                  post({ type: 'error', message: `Project "${old.name}" still has ${remaining.length} task(s) — delete it from the Projects panel instead.` });
-                  return;
-                }
-              }
+              msg.config.projects = keepMissingProjects(prev.projects || [], msg.config.projects || []);
 
               // The settings form saves the whole config through here, so this
               // — not POST /api/projects — is the write path that actually

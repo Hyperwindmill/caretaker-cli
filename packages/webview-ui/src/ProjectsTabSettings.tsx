@@ -190,9 +190,8 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
     if (!confirm('Are you sure you want to delete this project? All associated tasks will be permanently removed from disk.')) return;
 
     // The DELETE route is the whole delete: it removes the project from the
-    // config, its tasks/messages from the store, and the managed clone. An
-    // optimistic saveConfig here would race it — the server's referential
-    // guard rejects a config save that drops a project which still has tasks.
+    // config, its tasks/messages from the store, and the managed clone. A
+    // config save cannot delete a project.
     try {
       await fetch(`/api/projects/${id}`, { method: 'DELETE' });
     } catch (err) {
