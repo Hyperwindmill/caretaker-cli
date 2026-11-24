@@ -60,3 +60,38 @@ describe('GET /api/tasks/:id/messages paging', () => {
     }
   });
 });
+
+describe('GET /api/projects/:id/tasks paging', () => {
+  const app = createApp({ webPort: 0, host: '127.0.0.1' });
+  const post = (url: string, body: unknown) =>
+    app.request(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const list = async (query = '') => {
+    const res = await app.request(`/api/projects/pager/tasks${query}`);
+    return { status: res.status, body: (await res.json()) as any };
+  };
+
+  test('after (a seq) + limit page through the tasks in seq order', async () => {
+    assert.equal((await post('/api/projects', { id: 'pager', name: 'Pager' })).status, 200);
+    for (let i = 1; i <= 5; i++) {
+      assert.equal((await post('/api/projects/pager/tasks', { title: `t${i}`, objective: 'o' })).status, 200);
+    }
+    assert.equal((await list()).body.length, 5);
+
+    const pages: string[][] = [];
+    let cursor: number | undefined;
+    for (let guard = 0; guard < 10; guard++) {
+      const page = await list(`?limit=2${cursor === undefined ? '' : `&after=${cursor}`}`);
+      assert.equal(page.status, 200);
+      if (page.body.length === 0) break;
+      pages.push(page.body.map((t: any) => t.title));
+      cursor = page.body[page.body.length - 1].seq;
+    }
+    assert.deepEqual(pages, [['t1', 't2'], ['t3', 't4'], ['t5']]);
+  });
+
+  test('malformed after or limit is a 400', async () => {
+    for (const q of ['?after=abc', '?after=-1', '?limit=0', '?limit=501']) {
+      assert.equal((await list(q)).status, 400, q);
+    }
+  });
+});

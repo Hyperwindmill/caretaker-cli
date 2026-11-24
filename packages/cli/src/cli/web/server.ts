@@ -232,6 +232,17 @@ export class WebSessionController {
   }
 }
 
+/** `after` + `limit` query parameters of the paged list routes, so a list of
+ *  any length can be read in bounded responses (an orchestrator caps a result
+ *  at 1 MB). Absent = no bound, which keeps the unpaged answer unchanged. */
+function parsePaging(after: string | undefined, limit: string | undefined): { after: number; limit: number } | { error: string } {
+  const a = after === undefined ? 0 : /^\d+$/.test(after) ? Number(after) : NaN;
+  const l = limit === undefined ? Infinity : /^\d+$/.test(limit) ? Number(limit) : NaN;
+  if (Number.isNaN(a)) return { error: 'after must be a non-negative integer.' };
+  if (Number.isNaN(l) || l < 1 || (l !== Infinity && l > 500)) return { error: 'limit must be an integer between 1 and 500.' };
+  return { after: a, limit: l };
+}
+
 export function createApp(apiListener: ApiListenerOptions, fetchImpl?: typeof fetch): Hono {
   const app = new Hono();
   registerApiAccess(app, apiListener);
@@ -473,10 +484,22 @@ export function createApp(apiListener: ApiListenerOptions, fetchImpl?: typeof fe
     const id = c.req.param('id');
     if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) return c.json({ error: 'Invalid id' }, 400);
     const includeArchived = c.req.query('archived') === 'true';
+    const afterRaw = c.req.query('after');
+    const limitRaw = c.req.query('limit');
+    const paging = parsePaging(afterRaw, limitRaw);
+    if ('error' in paging) return c.json({ error: paging.error }, 400);
     try {
       const rows = (await runQuery(`SELECT * FROM tasks WHERE projectId = '${id}'`)) as Task[];
       const filtered = includeArchived ? rows : rows.filter((t) => !t.archived);
-      return c.json(filtered);
+      // Unpaged: store order, unchanged for the GUI. Paged: by seq, the cursor
+      // (per project, never reused).
+      if (afterRaw === undefined && limitRaw === undefined) return c.json(filtered);
+      return c.json(
+        filtered
+          .filter((t) => t.seq > paging.after)
+          .sort((a, b) => a.seq - b.seq)
+          .slice(0, paging.limit),
+      );
     } catch (err) {
       return c.json([], 200);
     }
@@ -537,14 +560,9 @@ export function createApp(apiListener: ApiListenerOptions, fetchImpl?: typeof fe
     // orchestrator caps a response at 1 MB): `after` is a message id, `limit`
     // 1..500. Ids are the store's max+1 under a serialized writer, so a new
     // message always sorts after every message already in its thread.
-    const afterRaw = c.req.query('after');
-    const limitRaw = c.req.query('limit');
-    const after = afterRaw === undefined ? 0 : /^\d+$/.test(afterRaw) ? Number(afterRaw) : NaN;
-    const limit = limitRaw === undefined ? Infinity : /^\d+$/.test(limitRaw) ? Number(limitRaw) : NaN;
-    if (Number.isNaN(after)) return c.json({ error: 'after must be a message id (a non-negative integer).' }, 400);
-    if (Number.isNaN(limit) || limit < 1 || (limit !== Infinity && limit > 500)) {
-      return c.json({ error: 'limit must be an integer between 1 and 500.' }, 400);
-    }
+    const paging = parsePaging(c.req.query('after'), c.req.query('limit'));
+    if ('error' in paging) return c.json({ error: paging.error }, 400);
+    const { after, limit } = paging;
     if (!/^[a-z0-9][a-z0-9-]*$/.test(taskId)) return c.json([], 200);
     try {
       const rows = (await runQuery(`SELECT * FROM task_messages WHERE taskId = '${taskId}'`)) as any[];

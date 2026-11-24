@@ -255,7 +255,8 @@ const paths: Record<string, Record<string, unknown>> = {
     get: {
       tags: ['Tasks'],
       summary: 'List the tasks of a project',
-      description: 'An unknown project answers an empty list.',
+      description:
+        'An unknown project answers an empty list. Without `after` and `limit` every task comes back, in storage order. With either, tasks come ordered by `seq`: page with `limit` and pass the `seq` of the last task received as `after`; a page shorter than `limit` is the end.',
       parameters: [
         ...project,
         {
@@ -264,8 +265,25 @@ const paths: Record<string, Record<string, unknown>> = {
           description: 'true includes archived tasks.',
           schema: { type: 'string', enum: ['true'] },
         },
+        {
+          name: 'after',
+          in: 'query',
+          required: false,
+          description: 'Return only tasks with a seq greater than this one.',
+          schema: { type: 'integer', minimum: 0 },
+        },
+        {
+          name: 'limit',
+          in: 'query',
+          required: false,
+          description: 'At most this many tasks.',
+          schema: { type: 'integer', minimum: 1, maximum: 500 },
+        },
       ],
-      responses: { 200: res('Tasks, with status, checklist and blockedReason.', { type: 'array', items: ref('Task') }) },
+      responses: {
+        200: res('Tasks, with status, checklist and blockedReason.', { type: 'array', items: ref('Task') }),
+        400: errorRes('`after` or `limit` is not a valid integer, or `limit` is outside 1..500.'),
+      },
     },
     post: {
       tags: ['Tasks'],

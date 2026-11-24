@@ -249,10 +249,23 @@ export async function createTask(task: Omit<Task, 'id' | 'seq' | 'createdAt' | '
   return record;
 }
 
+/** Longest message content stored. Keeps one message well under the 1 MB an
+ *  orchestrator accepts per result even fully JSON-escaped (6 bytes a char), so
+ *  a paged thread can never stall on a single message. Applied at the one
+ *  insert path, for every writer (agents, people, the host). */
+export const MAX_MESSAGE_CHARS = 100_000;
+
+function capContent(content: string): string {
+  if (typeof content !== 'string' || content.length <= MAX_MESSAGE_CHARS) return content;
+  const omitted = content.length - MAX_MESSAGE_CHARS;
+  return `${content.slice(0, MAX_MESSAGE_CHARS)}\n\n[truncated: ${omitted} characters omitted]`;
+}
+
 export async function addTaskMessage(msg: Omit<TaskMessage, 'id' | 'createdAt'>): Promise<TaskMessage> {
   if (!safeId(msg.taskId)) throw new Error(`Invalid task id: ${msg.taskId}`);
   const payload = {
     ...msg,
+    content: capContent(msg.content),
     id: '$auto',
     createdAt: new Date().toISOString(),
   };
