@@ -13,6 +13,9 @@ import { MemoryTab } from './MemoryTab.js';
 import { DesktopTab } from './DesktopTab.js';
 import { ApiAccessTab } from './ApiAccessTab.js';
 import { BackIcon } from './icons.js';
+import { settingsTabs, type TabId } from './settings_tabs.js';
+
+export type { TabId };
 
 interface SettingsPanelProps {
   layout?: 'compact' | 'sidebar';
@@ -40,9 +43,6 @@ interface SettingsPanelProps {
   onClose: () => void;
   initialTab?: TabId;
 }
-
-
-export type TabId = 'providers' | 'projects' | 'agents' | 'plugins' | 'mcp' | 'services' | 'voice' | 'memory' | 'desktop' | 'api';
 
 export function SettingsPanel({
   layout = 'compact',
@@ -182,7 +182,7 @@ export function SettingsPanel({
   };
 
   return (
-    <div className="settings-panel">
+    <div className={`settings-panel${layout === 'sidebar' ? ' settings-panel--vertical' : ''}`}>
       <header className="settings-panel__header">
         {/* The sidebar layout has a persistent nav rail; only compact needs a way back. */}
         {layout !== 'sidebar' && (
@@ -194,86 +194,15 @@ export function SettingsPanel({
       </header>
 
       <nav className="settings-panel__tabs">
-        <button
-          className={`settings-panel__tab-btn ${activeTab === 'providers' ? 'settings-panel__tab-btn--active' : ''}`}
-          onClick={() => setActiveTab('providers')}
-        >
-          Providers
-        </button>
-        {layout === 'sidebar' && (
+        {settingsTabs(layout).map((tab) => (
           <button
-            className={`settings-panel__tab-btn ${activeTab === 'projects' ? 'settings-panel__tab-btn--active' : ''}`}
-            onClick={() => setActiveTab('projects')}
+            key={tab.id}
+            className={`settings-panel__tab-btn ${activeTab === tab.id ? 'settings-panel__tab-btn--active' : ''}`}
+            onClick={() => setActiveTab(tab.id)}
           >
-            Projects
+            {tab.label}
           </button>
-        )}
-        <button
-          className={`settings-panel__tab-btn ${activeTab === 'agents' ? 'settings-panel__tab-btn--active' : ''}`}
-          onClick={() => setActiveTab('agents')}
-        >
-          Agents
-        </button>
-        <button
-          className={`settings-panel__tab-btn ${activeTab === 'plugins' ? 'settings-panel__tab-btn--active' : ''}`}
-          onClick={() => setActiveTab('plugins')}
-        >
-          Plugins
-        </button>
-        <button
-          className={`settings-panel__tab-btn ${activeTab === 'mcp' ? 'settings-panel__tab-btn--active' : ''}`}
-          onClick={() => setActiveTab('mcp')}
-        >
-          MCP
-        </button>
-        {layout === 'sidebar' && (
-          <button
-            className={`settings-panel__tab-btn ${activeTab === 'services' ? 'settings-panel__tab-btn--active' : ''}`}
-            onClick={() => setActiveTab('services')}
-          >
-            Services
-          </button>
-        )}
-        {/* Voice is out of scope for the VSCode sidebar (webview CSP blocks the
-            mic), so its settings hide there too — same pattern as Projects and
-            Services above. */}
-        {layout === 'sidebar' && (
-          <button
-            className={`settings-panel__tab-btn ${activeTab === 'voice' ? 'settings-panel__tab-btn--active' : ''}`}
-            onClick={() => setActiveTab('voice')}
-          >
-            Voice
-          </button>
-        )}
-        {/* The memory sweep runs only in the web server's scheduler, so its
-            settings hide in the VSCode sidebar — same gate as Services. */}
-        {layout === 'sidebar' && (
-          <button
-            className={`settings-panel__tab-btn ${activeTab === 'memory' ? 'settings-panel__tab-btn--active' : ''}`}
-            onClick={() => setActiveTab('memory')}
-          >
-            Memory
-          </button>
-        )}
-        {/* Only the Electron desktop app acts on the assistant shortcut; the
-            desktop app runs the web server, so it shares the sidebar layout. */}
-        {layout === 'sidebar' && (
-          <button
-            className={`settings-panel__tab-btn ${activeTab === 'desktop' ? 'settings-panel__tab-btn--active' : ''}`}
-            onClick={() => setActiveTab('desktop')}
-          >
-            Desktop
-          </button>
-        )}
-        {/* The API listener belongs to the web server; /api/access exists only there. */}
-        {layout === 'sidebar' && (
-          <button
-            className={`settings-panel__tab-btn ${activeTab === 'api' ? 'settings-panel__tab-btn--active' : ''}`}
-            onClick={() => setActiveTab('api')}
-          >
-            API
-          </button>
-        )}
+        ))}
       </nav>
 
 
