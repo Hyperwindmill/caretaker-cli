@@ -1,5 +1,17 @@
 # caretaker-cli
 
+## 0.35.0
+
+### Minor Changes
+
+- abe29ca: Remote orchestration: outbound polling client, approval policy, management routes, demo orchestrator, and Orchestration settings tab.
+
+### Patch Changes
+
+- 3e51af2: Preserve projects on disk that are absent from a settings save; deletion goes only through `DELETE /api/projects/:id`.
+- a95dc65: A resumed task fast-forwards its branch to the remote one, so commits pushed to it in the meantime are kept; a diverged branch blocks the task instead of being forced.
+- 71a025b: Move settings navigation to a vertical left column on the wide sidebar layout.
+
 ## 0.34.0
 
 ### Minor Changes
