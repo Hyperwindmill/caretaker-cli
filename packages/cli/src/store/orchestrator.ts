@@ -41,38 +41,55 @@ export function orchestratorLedgerPath(): string {
   return path.join(dataDir(), 'orchestrator-ledger.json');
 }
 
+async function readRaw(): Promise<Record<string, unknown>> {
+  try {
+    const parsed = JSON.parse(await readFile(orchestratorPath(), 'utf8'));
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // Missing or unreadable file -> defaults
+  }
+  return {};
+}
+
+const hasInstanceId = (raw: Record<string, unknown>) =>
+  typeof raw.instanceId === 'string' && raw.instanceId.length > 0;
+
+/** The one in-flight instanceId creation: concurrent first loads (the loop and
+ *  the settings GET at boot) would otherwise each mint and save their own id. */
+let idCreation: Promise<void> | null = null;
+
 /**
  * Loads orchestrator.json with defaults (disabled, '', '', '', 15, 'approve').
  * Generates and persists `instanceId` (randomUUID) when missing.
  * Always returns a fresh object.
  */
 export async function loadOrchestrator(): Promise<OrchestratorConfig> {
-  const filePath = orchestratorPath();
-  let raw: Record<string, unknown> = {};
-  try {
-    const parsed = JSON.parse(await readFile(filePath, 'utf8'));
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      raw = parsed as Record<string, unknown>;
-    }
-  } catch {
-    // Missing or unreadable file -> defaults
+  let raw = await readRaw();
+  if (!hasInstanceId(raw)) {
+    idCreation ??= (async () => {
+      const again = await readRaw();
+      if (!hasInstanceId(again)) await saveOrchestrator(normalize({ ...again, instanceId: randomUUID() }));
+    })().finally(() => {
+      idCreation = null;
+    });
+    await idCreation;
+    raw = await readRaw();
   }
+  return normalize(raw);
+}
 
-  const hasId = typeof raw.instanceId === 'string' && raw.instanceId.length > 0;
-  const cfg: OrchestratorConfig = {
+function normalize(raw: Record<string, unknown>): OrchestratorConfig {
+  return {
     enabled: typeof raw.enabled === 'boolean' ? raw.enabled : false,
     name: typeof raw.name === 'string' ? raw.name : '',
     endpoint: typeof raw.endpoint === 'string' ? raw.endpoint : '',
     token: typeof raw.token === 'string' ? raw.token : '',
     pollSeconds: typeof raw.pollSeconds === 'number' && Number.isFinite(raw.pollSeconds) ? raw.pollSeconds : 15,
     policy: raw.policy === 'auto' || raw.policy === 'approve' ? raw.policy : 'approve',
-    instanceId: hasId ? (raw.instanceId as string) : randomUUID(),
+    instanceId: hasInstanceId(raw) ? (raw.instanceId as string) : '',
   };
-
-  if (!hasId) {
-    await saveOrchestrator(cfg);
-  }
-  return { ...cfg };
 }
 
 /**

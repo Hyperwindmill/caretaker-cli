@@ -517,6 +517,7 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
           setMcpAuthOutcome={setMcpAuthOutcome}
           taskRuns={taskRuns}
           orchestrationPending={orchestrationPending}
+          onOrchestrationPendingChange={setOrchestrationPending}
           onClose={() => setActiveScreen('chat')}
         />
       </div>

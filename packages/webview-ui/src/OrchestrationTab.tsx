@@ -81,7 +81,10 @@ export function OrchestrationTab({ onPendingChange }: { onPendingChange?: (count
   const [token, setToken] = useState('');
   const [pollSeconds, setPollSeconds] = useState('15');
   const [policy, setPolicy] = useState<'auto' | 'approve'>('approve');
+  // Errors from the user's own actions (Save, Test, Approve, Reject) are kept
+  // apart from the periodic refresh's, which would otherwise wipe them within 5 s.
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [busy, setBusy] = useState(false);
   const seededRef = useRef(false);
@@ -96,8 +99,12 @@ export function OrchestrationTab({ onPendingChange }: { onPendingChange?: (count
   }, []);
 
   const call = useCallback(
-    async <T = OrchestratorView>(path: string, init?: RequestInit): Promise<T | null> => {
-      setError(null);
+    async <T = OrchestratorView>(
+      path: string,
+      init?: RequestInit,
+      report: (message: string | null) => void = setError,
+    ): Promise<T | null> => {
+      report(null);
       try {
         const res = await fetch(path, {
           ...init,
@@ -105,12 +112,12 @@ export function OrchestrationTab({ onPendingChange }: { onPendingChange?: (count
         });
         const data = await res.json();
         if (!res.ok) {
-          setError(data?.error ?? `Request failed (${res.status})`);
+          report(data?.error ?? `Request failed (${res.status})`);
           return null;
         }
         return data as T;
       } catch {
-        setError('The server did not answer.');
+        report('The server did not answer.');
         return null;
       }
     },
@@ -118,7 +125,7 @@ export function OrchestrationTab({ onPendingChange }: { onPendingChange?: (count
   );
 
   const refresh = useCallback(async () => {
-    const data = await call<OrchestratorView>('/api/orchestrator');
+    const data = await call<OrchestratorView>('/api/orchestrator', undefined, setLoadError);
     if (!data) return;
     setView(data);
     onPendingChange?.(data.pending);
@@ -181,7 +188,7 @@ export function OrchestrationTab({ onPendingChange }: { onPendingChange?: (count
       <div className="glass-form">
         <h4>Orchestration</h4>
         <div className="glass-form__body">
-          <small className={error ? 'form-error' : undefined}>{error ?? 'Loading…'}</small>
+          <small className={loadError ? 'form-error' : undefined}>{loadError ?? 'Loading…'}</small>
         </div>
       </div>
     );
@@ -200,6 +207,7 @@ export function OrchestrationTab({ onPendingChange }: { onPendingChange?: (count
       </div>
 
       <div className="glass-form__body">
+        {loadError && <small className="form-error">{loadError}</small>}
         {error && <small className="form-error">{error}</small>}
 
         <label className="form-checkbox">

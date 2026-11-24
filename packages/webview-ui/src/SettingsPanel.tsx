@@ -44,6 +44,8 @@ interface SettingsPanelProps {
   onClose: () => void;
   initialTab?: TabId;
   orchestrationPending?: number;
+  /** Must be reference-stable (a state setter): the tab's refresh effect depends on it. */
+  onOrchestrationPendingChange?: (count: number) => void;
 }
 
 export function SettingsPanel({
@@ -66,6 +68,7 @@ export function SettingsPanel({
   onClose,
   initialTab = 'providers',
   orchestrationPending = 0,
+  onOrchestrationPendingChange,
 }: SettingsPanelProps) {
 
   const [activeTab, setActiveTab] = useState<TabId>(initialTab);
@@ -183,7 +186,7 @@ export function SettingsPanel({
         return <ApiAccessTab />;
 
       case 'orchestration':
-        return <OrchestrationTab />;
+        return <OrchestrationTab onPendingChange={onOrchestrationPendingChange} />;
     }
   };
 

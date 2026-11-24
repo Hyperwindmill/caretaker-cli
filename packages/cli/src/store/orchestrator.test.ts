@@ -38,6 +38,15 @@ describe('store/orchestrator', () => {
     assert.notEqual(second, first);
   });
 
+  test('concurrent first loads agree on one instanceId, the one on disk', async () => {
+    rmSync(orchestratorPath(), { force: true });
+    const loads = await Promise.all(Array.from({ length: 5 }, () => loadOrchestrator()));
+    const ids = new Set(loads.map((c) => c.instanceId));
+    assert.equal(ids.size, 1);
+    const onDisk = JSON.parse(readFileSync(orchestratorPath(), 'utf8')).instanceId;
+    assert.equal(loads[0].instanceId, onDisk);
+  });
+
   test('saveOrchestrator encrypts clear token on disk and decrypts on read', async () => {
     const cfg = await loadOrchestrator();
     cfg.enabled = true;
