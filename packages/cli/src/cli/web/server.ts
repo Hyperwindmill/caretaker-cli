@@ -3,7 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { watch, existsSync, mkdirSync } from 'node:fs';
 import { Hono } from 'hono';
-import { applyApiListener, registerApiAccess } from './api_access.js';
+import { applyApiListener, registerApiAccess, type ApiListenerOptions } from './api_access.js';
 import { registerOpenApi } from './openapi.js';
 import { keepMissingProjects } from './save_config.js';
 import { stream } from 'hono/streaming';
@@ -231,14 +231,8 @@ export class WebSessionController {
   }
 }
 
-export async function startServer(
-  port: number,
-  host: string,
-  api: { port?: number; host?: string } = {},
-): Promise<void> {
+export function createApp(apiListener: ApiListenerOptions): Hono {
   const app = new Hono();
-  // Token-authenticated listener for clients outside the browser (api_access.ts).
-  const apiListener = { webPort: port, host: api.host ?? host, portOverride: api.port };
   registerApiAccess(app, apiListener);
   registerOpenApi(app);
 
@@ -888,6 +882,18 @@ export async function startServer(
 
     return c.json({ ok: true, title: task.title, objective: task.objective });
   });
+
+  return app;
+}
+
+export async function startServer(
+  port: number,
+  host: string,
+  api: { port?: number; host?: string } = {},
+): Promise<void> {
+  // Token-authenticated listener for clients outside the browser (api_access.ts).
+  const apiListener = { webPort: port, host: api.host ?? host, portOverride: api.port };
+  const app = createApp(apiListener);
 
   const nodeServer = serve({
     fetch: app.fetch,
