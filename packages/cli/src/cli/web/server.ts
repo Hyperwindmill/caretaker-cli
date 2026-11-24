@@ -232,7 +232,7 @@ export class WebSessionController {
   }
 }
 
-export function createApp(apiListener: ApiListenerOptions): Hono {
+export function createApp(apiListener: ApiListenerOptions, fetchImpl?: typeof fetch): Hono {
   const app = new Hono();
   registerApiAccess(app, apiListener);
   registerOpenApi(app);
@@ -242,7 +242,7 @@ export function createApp(apiListener: ApiListenerOptions): Hono {
   registerVoiceProxy(app);
   registerVoiceBackend(app);
   registerVoiceBuiltin(app);
-  registerOrchestrator(app);
+  registerOrchestrator(app, fetchImpl);
 
 
   // Pure-Node static serving with absolute path validation and fallback

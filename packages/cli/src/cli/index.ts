@@ -90,6 +90,23 @@ export async function runCli(argv: string[]): Promise<void> {
     });
 
   program
+    .command('orchestrator-demo')
+    .description('Launch an in-memory demo orchestrator implementing protocol v1.')
+    .requiredOption('--token <token>', 'Bearer token required for all orchestrator routes')
+    .option('-p, --port <number>', 'Port to listen on', '4000')
+    .option('-h, --host <string>', 'Host to bind to', '127.0.0.1')
+    .option('-n, --name <name>', 'Display name returned by /health and /register')
+    .action(async (opts: { token: string; port: string; host: string; name?: string }) => {
+      const { startDemoOrchestrator } = await import('./orchestrator_demo.js');
+      startDemoOrchestrator({
+        port: parseInt(opts.port, 10),
+        host: opts.host,
+        token: opts.token,
+        name: opts.name,
+      });
+    });
+
+  program
     .command('mcp')
     .description('Serve the caretaker task/project tools over stdio for an external MCP client.')
     .action(async () => {
