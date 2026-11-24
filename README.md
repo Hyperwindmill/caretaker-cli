@@ -276,6 +276,29 @@ The project and task routes are described by an **OpenAPI 3.1** document at `/ap
 - **A token is full access** to those routes: creating and deleting projects and tasks, and everything else the GUI can do over REST. Give one to programs you would let use the GUI.
 - **Port and bind address.** The saved port is used by `caretaker-cli web` and by the desktop app, whose main port changes at every launch while this one stays fixed. `caretaker-cli web --api-port <n>` overrides the saved port. The API listens on the same address as the web server (`--host`, default `127.0.0.1`); pass `--api-host 0.0.0.0` to reach it from another machine.
 
+### Remote orchestration
+
+Caretaker's web server (including the desktop app) can register with a remote orchestrator over an outbound connection, poll it for REST commands against the project/task API, and report the results back. Because Caretaker initiates every connection, it works behind NAT and proxies without opening an inbound port.
+
+Configure it in **Settings → Orchestration**: set an `https://` endpoint (or `http://` on loopback for local testing), a bearer token (encrypted at rest in `~/.caretaker/orchestrator.json`), and a poll interval (5–3600 s, default 15 s). Use **Test connection** to verify reachability and token validity before saving.
+
+- **Ask me before applying changes (`approve`, default):** `GET` requests run immediately; `POST`, `PUT`, `PATCH`, and `DELETE` wait in the **Waiting for approval** inbox until you click **Approve** or **Reject** (`403`).
+- **Apply automatically (`auto`):** every documented project/task route runs on arrival.
+
+> **Trust statement:** In `auto` policy the orchestrator token grants the orchestrator the full project/task surface: it can create a project with `bootstrapCommands` and activate a task, which is code execution on your machine. The `approve` policy is the user-side brake.
+
+Try it locally with the built-in demo orchestrator:
+
+```bash
+caretaker-cli orchestrator-demo --token my-secret --port 4000
+caretaker-cli web --port 3000
+# In Settings → Orchestration: endpoint http://127.0.0.1:4000, token my-secret, Enable + Save
+# Then enqueue a command using the instanceId shown by GET http://127.0.0.1:4000/instances:
+curl -X POST http://127.0.0.1:4000/instances/<instanceId>/messages -H "Authorization: Bearer my-secret" -H "Content-Type: application/json" -d '{"method":"GET","path":"/api/projects"}'
+```
+
+See [docs/orchestration-protocol.md](docs/orchestration-protocol.md) for the Protocol v1 specification.
+
 ## Install
 
 
