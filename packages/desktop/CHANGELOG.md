@@ -1,5 +1,13 @@
 # caretaker-desktop
 
+## 0.38.1
+
+### Patch Changes
+
+- 101884a: The desktop app now ships the CLI's `package.json`, so it reports its real version (it showed `0.0.0`, and the update banner always said an update was available).
+- @hyperwindmill/caretaker-cli@0.38.1
+  - webview-ui@0.38.1
+
 ## 0.38.0
 
 ### Patch Changes
