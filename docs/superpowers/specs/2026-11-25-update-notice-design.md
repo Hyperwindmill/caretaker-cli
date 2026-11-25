@@ -86,6 +86,14 @@ Caretaker is starting to have users, and they run different versions. The goal i
   @hyperwindmill/caretaker-cli@latest". No dismiss (one line, per launch).
 - **Docs**: CLAUDE.md (surface matrix + `updateCheck`) and README (the notice and the opt-out).
 
+## Amendment (2026-11-25)
+
+The update command follows the package manager that installed the CLI on PATH: `pnpm add -g
+@hyperwindmill/caretaker-cli@latest` for a pnpm install (its package lives under `pnpm/global/` or a
+`.pnpm/` store), `npm i -g …` otherwise. A fixed npm command would leave a pnpm user's CLI untouched and
+add a shadowed npm copy; the README documents `pnpm add -g` as an install path. The same rule picks the
+command shown by the TUI line.
+
 ## Left to the builder
 
 Exact banner styling (match existing notices), where the version helper lives, test layout

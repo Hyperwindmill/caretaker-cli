@@ -8,6 +8,8 @@ export interface UpdateStatus {
   appOutdated: boolean;
   cliVersion?: string;
   cliOutdated: boolean;
+  /** npm or pnpm command, matching whatever installed the CLI on PATH. */
+  cliCommand?: string;
   dismissedVersion?: string;
 }
 
@@ -16,9 +18,14 @@ export interface CliUpdateResult {
   output: string;
   cliVersion?: string;
   cliOutdated: boolean;
+  cliCommand?: string;
 }
 
-export const UPDATE_COMMAND = 'npm i -g @hyperwindmill/caretaker-cli@latest';
+const NPM_UPDATE_COMMAND = 'npm i -g @hyperwindmill/caretaker-cli@latest';
+
+export function cliCommandFor(s: UpdateStatus): string {
+  return s.cliCommand ?? NPM_UPDATE_COMMAND;
+}
 
 export function shouldShowBanner(s: UpdateStatus | null): boolean {
   return !!s?.latest && (s.appOutdated || s.cliOutdated) && s.dismissedVersion !== s.latest;
@@ -29,7 +36,7 @@ export function cliUpdateMessage(r: CliUpdateResult): { kind: 'done' | 'failed' 
   if (r.cliOutdated) {
     return {
       kind: 'stale',
-      text: `npm finished, but the caretaker-cli on your PATH is still ${r.cliVersion ?? 'unknown'} (installed another way?).`,
+      text: `The update finished, but the caretaker-cli on your PATH is still ${r.cliVersion ?? 'unknown'} (installed another way?).`,
     };
   }
   return { kind: 'done', text: 'CLI updated — restart open caretaker-cli sessions to use it.' };

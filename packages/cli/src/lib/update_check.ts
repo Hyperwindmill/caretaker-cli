@@ -9,8 +9,29 @@ import { promisify } from 'node:util';
 import { commandEnv, probeShellEnv } from '../harness/tools/builtin/shell-env.js';
 
 const PKG_NAME = '@hyperwindmill/caretaker-cli';
-export const UPDATE_COMMAND = `npm i -g ${PKG_NAME}@latest`;
-const UPDATE_ARGS = ['i', '-g', `${PKG_NAME}@latest`];
+export type PackageManager = 'npm' | 'pnpm';
+
+/** The CLI found on PATH: its version and the package manager that installed it. */
+export interface InstalledCli {
+  version: string;
+  manager: PackageManager;
+}
+
+const UPDATE_ARGS: Record<PackageManager, string[]> = {
+  npm: ['i', '-g', `${PKG_NAME}@latest`],
+  pnpm: ['add', '-g', `${PKG_NAME}@latest`],
+};
+
+export function updateCommand(manager: PackageManager): string {
+  return [manager, ...UPDATE_ARGS[manager]].join(' ');
+}
+
+/** Which manager owns an install, from where its package lives: pnpm's global
+ *  dir (`…/pnpm/global/<v>/…`) or its `.pnpm` store; anything else is npm. */
+export function managerForPath(pkgPath: string): PackageManager {
+  // ponytail: a custom pnpm `global-dir` outside a `pnpm` folder reads as npm.
+  return /[\\/](\.pnpm|pnpm[\\/]global)[\\/]/i.test(pkgPath) ? 'pnpm' : 'npm';
+}
 const UPDATE_TIMEOUT_MS = 5 * 60_000;
 const OUTPUT_TAIL = 4000;
 
@@ -107,13 +128,13 @@ async function shimPackageJson(bin: string, dir: string): Promise<string | null>
   return path.join(path.resolve(dir, rel), 'package.json');
 }
 
-/** Version of the `caretaker-cli` the shell would run, read from that
- *  install's package.json. Never executes the binary: `caretaker-cli
- *  --version` would fire index.ts's boot side-effects (plugin refresh, …). */
-export async function findPathCliVersion(
+/** The `caretaker-cli` the shell would run: version (from that install's
+ *  package.json) and owning package manager. Never executes the binary:
+ *  `caretaker-cli --version` would fire index.ts's boot side-effects. */
+export async function findPathCli(
   env: NodeJS.ProcessEnv,
   platform: NodeJS.Platform = process.platform,
-): Promise<string | null> {
+): Promise<InstalledCli | null> {
   const names = platform === 'win32' ? ['caretaker-cli.cmd', 'caretaker-cli'] : ['caretaker-cli'];
   // Windows spells it `Path`, and a copied env keeps the original casing.
   const pathVar = Object.entries(env).find(([k]) => k.toUpperCase() === 'PATH')?.[1] ?? '';
@@ -139,7 +160,7 @@ export async function findPathCliVersion(
       candidates.push(path.join(dir, 'node_modules', '@hyperwindmill', 'caretaker-cli', 'package.json'));
       for (const c of candidates) {
         const v = await readPkgVersion(c);
-        if (v) return v;
+        if (v) return { version: v, manager: managerForPath(c) };
       }
       // ponytail: binary shims (volta) don't resolve to the package; no command shown for them.
       return null; // first PATH hit wins, like the shell
@@ -156,30 +177,33 @@ export type ExecLike = (
 
 const tail = (s: string) => s.slice(-OUTPUT_TAIL);
 
-/** Runs UPDATE_COMMAND. Never throws: a failure is `{ ok: false, output }`. */
-export async function runCliUpdate(opts: { exec?: ExecLike } = {}): Promise<{ ok: boolean; output: string }> {
+/** Runs updateCommand(manager). Never throws: a failure is `{ ok: false, output }`. */
+export async function runCliUpdate(
+  opts: { manager?: PackageManager; exec?: ExecLike } = {},
+): Promise<{ ok: boolean; output: string }> {
+  const manager = opts.manager ?? 'npm';
   const exec = opts.exec ?? (promisify(execFile) as unknown as ExecLike);
   try {
-    const { stdout, stderr } = await exec('npm', UPDATE_ARGS, {
+    const { stdout, stderr } = await exec(manager, UPDATE_ARGS[manager], {
       env: commandEnv(),
       timeout: UPDATE_TIMEOUT_MS,
-      // npm is npm.cmd on Windows; the argv is fixed, so the shell sees no user input.
+      // npm/pnpm are .cmd shims on Windows; the argv is fixed, so the shell sees no user input.
       shell: process.platform === 'win32',
       maxBuffer: 10 * 1024 * 1024,
     });
     return { ok: true, output: tail(`${stdout}${stderr}`) };
   } catch (err) {
     const e = err as { code?: unknown; stdout?: string; stderr?: string; message?: string };
-    if (e.code === 'ENOENT') return { ok: false, output: 'npm not found on PATH' };
+    if (e.code === 'ENOENT') return { ok: false, output: `${manager} not found on PATH` };
     const out = `${e.stdout ?? ''}${e.stderr ?? ''}`;
     return { ok: false, output: tail(out || String(e.message ?? err)) };
   }
 }
 
-/** findPathCliVersion on the command env, after the shell-env probe (cached)
+/** findPathCli on the command env, after the shell-env probe (cached)
  *  has merged version-manager bins into PATH — without it the desktop's
  *  first scan can run on an unprobed PATH and miss nvm/pnpm installs. */
-export async function findInstalledCli(probe: () => Promise<unknown> = probeShellEnv): Promise<string | null> {
+export async function findInstalledCli(probe: () => Promise<unknown> = probeShellEnv): Promise<InstalledCli | null> {
   await probe().catch(() => {});
-  return findPathCliVersion(commandEnv());
+  return findPathCli(commandEnv());
 }

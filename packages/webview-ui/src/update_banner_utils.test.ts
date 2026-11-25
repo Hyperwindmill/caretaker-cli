@@ -37,11 +37,11 @@ test('cliUpdateMessage: done / failed / stale', () => {
   });
   assert.deepEqual(cliUpdateMessage({ ok: true, output: '', cliVersion: '0.36.0', cliOutdated: true }), {
     kind: 'stale',
-    text: 'npm finished, but the caretaker-cli on your PATH is still 0.36.0 (installed another way?).',
+    text: 'The update finished, but the caretaker-cli on your PATH is still 0.36.0 (installed another way?).',
   });
   assert.equal(
     cliUpdateMessage({ ok: true, output: '', cliOutdated: true }).text,
-    'npm finished, but the caretaker-cli on your PATH is still unknown (installed another way?).',
+    'The update finished, but the caretaker-cli on your PATH is still unknown (installed another way?).',
   );
 });
 
@@ -66,4 +66,14 @@ test('bannerHeadline: app behind vs only the terminal CLI behind', () => {
 
 test('bannerVisible: no result and a dismissed version → hidden (Dismiss clears the result)', () => {
   assert.equal(bannerVisible({ ...base, dismissedVersion: '0.38.0' }, null), false);
+});
+
+import { cliCommandFor } from './update_banner_utils.js';
+
+test('cliCommandFor: the server-chosen command, npm when the server sent none', () => {
+  assert.equal(
+    cliCommandFor({ ...base, cliCommand: 'pnpm add -g @hyperwindmill/caretaker-cli@latest' }),
+    'pnpm add -g @hyperwindmill/caretaker-cli@latest',
+  );
+  assert.equal(cliCommandFor(base), 'npm i -g @hyperwindmill/caretaker-cli@latest');
 });

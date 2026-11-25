@@ -11,7 +11,10 @@ import {
   getLatestRelease,
   isNewer,
   runCliUpdate,
+  updateCommand,
+  type InstalledCli,
   type LatestRelease,
+  type PackageManager,
 } from '../../lib/update_check.js';
 
 export interface UpdateStatus {
@@ -23,6 +26,8 @@ export interface UpdateStatus {
   /** The `caretaker-cli` on PATH, when found. */
   cliVersion?: string;
   cliOutdated: boolean;
+  /** Update command for that CLI's package manager (npm or pnpm), when found. */
+  cliCommand?: string;
   dismissedVersion?: string;
 }
 
@@ -31,23 +36,24 @@ export interface CliUpdateResult {
   output: string;
   cliVersion?: string;
   cliOutdated: boolean;
+  cliCommand?: string;
 }
 
 export interface UpdateDeps {
   current: () => string;
   getLatest: () => Promise<LatestRelease | null>;
-  findCli: () => Promise<string | null>;
-  runUpdate: () => Promise<{ ok: boolean; output: string }>;
+  findCli: () => Promise<InstalledCli | null>;
+  runUpdate: (manager: PackageManager) => Promise<{ ok: boolean; output: string }>;
 }
 
 const defaultDeps: UpdateDeps = {
   current: cliVersion,
   getLatest: () => getLatestRelease(),
   findCli: () => findInstalledCli(),
-  // The probe puts the version manager's npm on PATH (same reason as findCli).
-  runUpdate: async () => {
+  // The probe puts the version manager's npm/pnpm on PATH (same reason as findCli).
+  runUpdate: async (manager) => {
     await probeShellEnv().catch(() => {});
-    return runCliUpdate();
+    return runCliUpdate({ manager });
   },
 };
 
@@ -56,10 +62,10 @@ export function registerUpdate(app: Hono, over: Partial<UpdateDeps> = {}): void 
   let updating = false;
 
   const cliStatus = async (latest: LatestRelease | null) => {
-    const v = await deps.findCli();
+    const cli = await deps.findCli();
     return {
-      ...(v ? { cliVersion: v } : {}),
-      cliOutdated: !!(v && latest && isNewer(latest.version, v)),
+      ...(cli ? { cliVersion: cli.version, cliCommand: updateCommand(cli.manager) } : {}),
+      cliOutdated: !!(cli && latest && isNewer(latest.version, cli.version)),
     };
   };
 
@@ -95,7 +101,8 @@ export function registerUpdate(app: Hono, over: Partial<UpdateDeps> = {}): void 
     if (updating) return c.json({ error: 'update already running' }, 409);
     updating = true;
     try {
-      const run = await deps.runUpdate();
+      // Same manager that installed the CLI on PATH; npm when none is found.
+      const run = await deps.runUpdate((await deps.findCli())?.manager ?? 'npm');
       return c.json<CliUpdateResult>({ ...run, ...(await cliStatus(await deps.getLatest())) });
     } finally {
       updating = false;

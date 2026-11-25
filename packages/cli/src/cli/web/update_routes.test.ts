@@ -28,7 +28,7 @@ function makeApp(over: Partial<UpdateDeps> = {}) {
     },
     findCli: async () => {
       calls.findCli++;
-      return '0.36.0';
+      return { version: '0.36.0', manager: 'npm' as const };
     },
     runUpdate: async () => ({ ok: true, output: '' }),
     ...over,
@@ -49,6 +49,22 @@ test('GET /api/update: app and PATH CLI both behind', async () => {
   assert.equal(s.appOutdated, true);
   assert.equal(s.cliVersion, '0.36.0');
   assert.equal(s.cliOutdated, true);
+  assert.equal(s.cliCommand, 'npm i -g @hyperwindmill/caretaker-cli@latest');
+});
+
+test('GET /api/update: pnpm-installed CLI gets the pnpm command, and POST runs pnpm', async () => {
+  const ran: string[] = [];
+  const { app } = makeApp({
+    findCli: async () => ({ version: '0.36.0', manager: 'pnpm' as const }),
+    runUpdate: async (manager) => {
+      ran.push(manager);
+      return { ok: true, output: '' };
+    },
+  });
+  assert.equal((await getStatus(app)).cliCommand, 'pnpm add -g @hyperwindmill/caretaker-cli@latest');
+  const body = (await (await app.request('/api/update/cli', { method: 'POST' })).json()) as any;
+  assert.deepEqual(ran, ['pnpm']);
+  assert.equal(body.cliCommand, 'pnpm add -g @hyperwindmill/caretaker-cli@latest');
 });
 
 test('GET /api/update: check failed → no latest, nothing outdated', async () => {
@@ -116,7 +132,7 @@ test('POST /api/update/cli: npm failure is a 200 with ok false', async () => {
 test('POST /api/update/cli: re-reads the PATH CLI after npm', async () => {
   let cli = '0.36.0';
   const { app } = makeApp({
-    findCli: async () => cli,
+    findCli: async () => ({ version: cli, manager: 'npm' as const }),
     runUpdate: async () => {
       cli = '0.38.0';
       return { ok: true, output: 'added 1 package' };

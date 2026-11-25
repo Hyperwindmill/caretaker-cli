@@ -7,8 +7,10 @@ import { setShellEnvForTest } from '../harness/tools/builtin/shell-env.js';
 import {
   isNewer,
   getLatestRelease,
-  findPathCliVersion,
+  findPathCli,
   findInstalledCli,
+  managerForPath,
+  updateCommand,
   runCliUpdate,
   __resetUpdateCacheForTests,
 } from './update_check.js';
@@ -83,6 +85,7 @@ test('failure is cached for 15 min only', async () => {
 
 const root = mkdtempSync(path.join(os.tmpdir(), 'ct-update-check-'));
 const PKG = '@hyperwindmill/caretaker-cli';
+const findVersion = async (...a: Parameters<typeof findPathCli>) => (await findPathCli(...a))?.version ?? null;
 
 /** nvm/npm layout: <prefix>/bin/caretaker-cli → ../lib/node_modules/<pkg>/dist/index.js */
 function unixInstall(name: string, version: string, pkgName = PKG): string {
@@ -96,12 +99,12 @@ function unixInstall(name: string, version: string, pkgName = PKG): string {
   return path.join(prefix, 'bin');
 }
 
-test('findPathCliVersion follows the bin symlink to the package', async () => {
+test('findPathCli follows the bin symlink to the package', async () => {
   const bin = unixInstall('a', '0.36.0');
-  assert.equal(await findPathCliVersion({ PATH: bin }, 'linux'), '0.36.0');
+  assert.equal(await findVersion({ PATH: bin }, 'linux'), '0.36.0');
 });
 
-test('findPathCliVersion reads the Windows npm shim layout', async () => {
+test('findPathCli reads the Windows npm shim layout', async () => {
   const dir = path.join(root, 'win', 'npm');
   mkdirSync(path.join(dir, 'node_modules', '@hyperwindmill', 'caretaker-cli'), { recursive: true });
   writeFileSync(path.join(dir, 'caretaker-cli.cmd'), '@echo off');
@@ -109,10 +112,10 @@ test('findPathCliVersion reads the Windows npm shim layout', async () => {
     path.join(dir, 'node_modules', '@hyperwindmill', 'caretaker-cli', 'package.json'),
     JSON.stringify({ name: PKG, version: '0.35.0' }),
   );
-  assert.equal(await findPathCliVersion({ PATH: dir }, 'win32'), '0.35.0');
+  assert.equal(await findVersion({ PATH: dir }, 'win32'), '0.35.0');
 });
 
-test('findPathCliVersion reads the package path out of a pnpm shell shim', async () => {
+test('findPathCli reads the package path out of a pnpm shell shim', async () => {
   const home = path.join(root, 'pnpm');
   const pkgDir = path.join(home, 'global', 'v11', 'abc', 'node_modules', '@hyperwindmill', 'caretaker-cli');
   mkdirSync(path.join(pkgDir, 'dist'), { recursive: true });
@@ -123,20 +126,20 @@ test('findPathCliVersion reads the package path out of a pnpm shell shim', async
     '#!/bin/sh\nbasedir=$(dirname "$0")\n' +
       'exec node  "$basedir/../global/v11/abc/node_modules/@hyperwindmill/caretaker-cli/dist/index.js" "$@"\n',
   );
-  assert.equal(await findPathCliVersion({ PATH: path.join(home, 'bin') }, 'linux'), '0.34.0');
+  assert.equal(await findVersion({ PATH: path.join(home, 'bin') }, 'linux'), '0.34.0');
 });
 
 test('findPathCliVersion: first PATH hit wins', async () => {
   const first = unixInstall('b1', '0.36.0');
   const second = unixInstall('b2', '0.37.0');
-  assert.equal(await findPathCliVersion({ PATH: [first, second].join(path.delimiter) }, 'linux'), '0.36.0');
+  assert.equal(await findVersion({ PATH: [first, second].join(path.delimiter) }, 'linux'), '0.36.0');
 });
 
 test('findPathCliVersion: foreign package or empty PATH → null', async () => {
   const bin = unixInstall('c', '1.0.0', 'other');
-  assert.equal(await findPathCliVersion({ PATH: bin }, 'linux'), null);
-  assert.equal(await findPathCliVersion({ PATH: '' }, 'linux'), null);
-  assert.equal(await findPathCliVersion({}, 'linux'), null);
+  assert.equal(await findVersion({ PATH: bin }, 'linux'), null);
+  assert.equal(await findVersion({ PATH: '' }, 'linux'), null);
+  assert.equal(await findVersion({}, 'linux'), null);
 });
 
 test('runCliUpdate runs the fixed npm command and reports success', async () => {
@@ -182,9 +185,9 @@ test('runCliUpdate keeps only the last 4000 chars of output', async () => {
 
 // ── Final review fixes ────────────────────────────────────────────────────
 
-test('findPathCliVersion reads a Windows-cased Path key', async () => {
+test('findPathCli reads a Windows-cased Path key', async () => {
   const bin = unixInstall('win-path-key', '0.33.0');
-  assert.equal(await findPathCliVersion({ Path: bin }, 'linux'), '0.33.0');
+  assert.equal(await findVersion({ Path: bin }, 'linux'), '0.33.0');
 });
 
 test('findPathCliVersion: an older pnpm shim with a NODE_PATH line still resolves', async () => {
@@ -199,7 +202,7 @@ test('findPathCliVersion: an older pnpm shim with a NODE_PATH line still resolve
       `export NODE_PATH="${pkgDir}/dist/node_modules:${pkgDir}/node_modules:$NODE_PATH"\n` +
       'exec node  "$basedir/../global/5/node_modules/@hyperwindmill/caretaker-cli/dist/index.js" "$@"\n',
   );
-  assert.equal(await findPathCliVersion({ PATH: path.join(home, 'bin') }, 'linux'), '0.32.0');
+  assert.equal(await findVersion({ PATH: path.join(home, 'bin') }, 'linux'), '0.32.0');
 });
 
 test('findInstalledCli waits for the shell-env probe before scanning PATH', { skip: process.platform !== 'linux' }, async () => {
@@ -208,5 +211,48 @@ test('findInstalledCli waits for the shell-env probe before scanning PATH', { sk
     await new Promise((r) => setTimeout(r, 10));
     setShellEnvForTest({ PATH: bin });
   };
-  assert.equal(await findInstalledCli(probe), '0.11.0');
+  assert.equal((await findInstalledCli(probe))?.version, '0.11.0');
+});
+
+// ── pnpm-installed CLI gets a pnpm command ────────────────────────────────
+
+test('managerForPath: pnpm global dir or .pnpm store → pnpm, anything else → npm', () => {
+  assert.equal(managerForPath('/home/u/.local/share/pnpm/global/v11/abc/node_modules/@hyperwindmill/caretaker-cli/package.json'), 'pnpm');
+  assert.equal(managerForPath('C:\\Users\\u\\AppData\\Local\\pnpm\\global\\5\\node_modules\\@hyperwindmill\\caretaker-cli\\package.json'), 'pnpm');
+  assert.equal(managerForPath('/x/node_modules/.pnpm/@hyperwindmill+caretaker-cli@0.37.0/node_modules/@hyperwindmill/caretaker-cli/package.json'), 'pnpm');
+  assert.equal(managerForPath('/usr/lib/node_modules/@hyperwindmill/caretaker-cli/package.json'), 'npm');
+  assert.equal(managerForPath('/home/u/.nvm/versions/node/v22.12.0/lib/node_modules/@hyperwindmill/caretaker-cli/package.json'), 'npm');
+});
+
+test('updateCommand per package manager', () => {
+  assert.equal(updateCommand('npm'), 'npm i -g @hyperwindmill/caretaker-cli@latest');
+  assert.equal(updateCommand('pnpm'), 'pnpm add -g @hyperwindmill/caretaker-cli@latest');
+});
+
+test('findPathCli reports pnpm for a pnpm shim and npm for an npm symlink', async () => {
+  assert.deepEqual(await findPathCli({ PATH: path.join(root, 'pnpm', 'bin') }, 'linux'), { version: '0.34.0', manager: 'pnpm' });
+  assert.deepEqual(await findPathCli({ PATH: unixInstall('npm-mgr', '0.36.0') }, 'linux'), { version: '0.36.0', manager: 'npm' });
+});
+
+test('runCliUpdate with pnpm runs pnpm add -g', async () => {
+  const calls: any[] = [];
+  const r = await runCliUpdate({
+    manager: 'pnpm',
+    exec: async (cmd, args) => {
+      calls.push({ cmd, args });
+      return { stdout: 'Done', stderr: '' };
+    },
+  });
+  assert.equal(r.ok, true);
+  assert.deepEqual(calls, [{ cmd: 'pnpm', args: ['add', '-g', '@hyperwindmill/caretaker-cli@latest'] }]);
+});
+
+test('runCliUpdate: pnpm missing → names pnpm', async () => {
+  const r = await runCliUpdate({
+    manager: 'pnpm',
+    exec: async () => {
+      throw Object.assign(new Error('spawn pnpm ENOENT'), { code: 'ENOENT' });
+    },
+  });
+  assert.equal(r.output, 'pnpm not found on PATH');
 });

@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import {
   bannerHeadline,
   bannerVisible,
+  cliCommandFor,
   cliUpdateMessage,
-  UPDATE_COMMAND,
   type CliUpdateResult,
   type UpdateStatus,
 } from './update_banner_utils.js';
@@ -70,7 +70,7 @@ export function UpdateBanner({
       if (res.status === 409) return; // another click already running it
       const r = (await res.json()) as CliUpdateResult;
       setResult(r);
-      setStatus({ ...status, cliVersion: r.cliVersion, cliOutdated: r.cliOutdated });
+      setStatus({ ...status, cliVersion: r.cliVersion, cliOutdated: r.cliOutdated, cliCommand: r.cliCommand });
     } catch (err) {
       setResult({ ok: false, output: String(err), cliOutdated: true });
     } finally {
@@ -80,7 +80,7 @@ export function UpdateBanner({
 
   const copy = () => {
     void navigator.clipboard
-      ?.writeText(UPDATE_COMMAND)
+      ?.writeText(cliCommandFor(status))
       .then(() => {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
@@ -103,7 +103,7 @@ export function UpdateBanner({
           <div className="update-banner__cli">
             {status.cliOutdated && (
               <>
-                Terminal CLI {status.cliVersion}: <code>{UPDATE_COMMAND}</code>
+                Terminal CLI {status.cliVersion}: <code>{cliCommandFor(status)}</code>
               </>
             )}
             {message && (

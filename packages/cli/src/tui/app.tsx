@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { useEffect, useState } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import SelectInput from 'ink-select-input';
@@ -8,7 +9,7 @@ import McpServers from './mcp_servers.js';
 import Logo from './logo.js';
 import { loadConfig } from '../store/json.js';
 import { cliVersion } from '../lib/version.js';
-import { getLatestRelease, isNewer, UPDATE_COMMAND } from '../lib/update_check.js';
+import { getLatestRelease, isNewer, managerForPath, updateCommand } from '../lib/update_check.js';
 
 type View = 'menu' | 'providers' | 'agents' | 'plugins' | 'mcp';
 
@@ -26,7 +27,9 @@ export default function App() {
         const latest = await getLatestRelease();
         const current = cliVersion();
         if (!cancelled && latest && isNewer(latest.version, current)) {
-          setUpdateLine(`⬆ Caretaker ${latest.version} available (you have ${current}) — ${UPDATE_COMMAND}`);
+          // This module's own path tells which manager installed the running CLI.
+          const command = updateCommand(managerForPath(fileURLToPath(import.meta.url)));
+          setUpdateLine(`⬆ Caretaker ${latest.version} available (you have ${current}) — ${command}`);
         }
       } catch {
         /* no notice */
