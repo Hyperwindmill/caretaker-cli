@@ -127,12 +127,20 @@ async function readMarketplace(root: string): Promise<DiscoveredPlugin[] | null>
   const abs = path.join(root, MARKETPLACE_REL);
   if (!(await fileExists(abs))) return null;
   const raw = JSON.parse(await readFile(abs, 'utf-8')) as {
-    plugins?: Array<{ name?: string; source?: string; description?: string }>;
+    // `source` may also be an object (e.g. `{ source: 'url', url, ref }`): a
+    // remote plugin that Claude Code fetches on its own.
+    plugins?: Array<{
+      name?: string;
+      source?: string | Record<string, unknown>;
+      description?: string;
+    }>;
   };
   const entries = Array.isArray(raw.plugins) ? raw.plugins : [];
   const out: DiscoveredPlugin[] = [];
   for (const e of entries) {
-    if (!e.name || !e.source) continue;
+    // Only local sources live inside this checkout: skip remote ones instead
+    // of failing the whole marketplace.
+    if (!e.name || typeof e.source !== 'string' || !e.source) continue;
     if (!isInside(root, e.source)) continue;
     out.push({
       name: e.name,
