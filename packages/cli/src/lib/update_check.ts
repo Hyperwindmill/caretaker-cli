@@ -2,6 +2,18 @@
 // docs/superpowers/specs/2026-11-25-update-notice-design.md.
 // Never throws, never logs: a failed check is simply "no notice".
 
+import { execFile } from 'node:child_process';
+import { access, readFile, realpath } from 'node:fs/promises';
+import path from 'node:path';
+import { promisify } from 'node:util';
+import { commandEnv } from '../harness/tools/builtin/shell-env.js';
+
+const PKG_NAME = '@hyperwindmill/caretaker-cli';
+export const UPDATE_COMMAND = `npm i -g ${PKG_NAME}@latest`;
+const UPDATE_ARGS = ['i', '-g', `${PKG_NAME}@latest`];
+const UPDATE_TIMEOUT_MS = 5 * 60_000;
+const OUTPUT_TAIL = 4000;
+
 const RELEASES_URL = 'https://api.github.com/repos/Hyperwindmill/caretaker-cli/releases/latest';
 const FETCH_TIMEOUT_MS = 5_000;
 const SUCCESS_TTL_MS = 6 * 3600_000;
@@ -62,4 +74,98 @@ export async function getLatestRelease(
   const value = await fetchLatestRelease(opts.fetchImpl ?? fetch);
   cache = { at: now, value };
   return value;
+}
+
+async function readPkgVersion(file: string): Promise<string | null> {
+  try {
+    const pkg = JSON.parse(await readFile(file, 'utf8')) as { name?: unknown; version?: unknown };
+    return pkg.name === PKG_NAME && typeof pkg.version === 'string' ? pkg.version : null;
+  } catch {
+    return null;
+  }
+}
+
+/** package.json named by a cmd-shim script (pnpm on every OS, npm's .cmd on
+ *  Windows): the first path ending in node_modules/@hyperwindmill/caretaker-cli,
+ *  with the shim's own-dir variable (`$basedir`, `%dp0%`, …) bound to `dir`. */
+async function shimPackageJson(bin: string, dir: string): Promise<string | null> {
+  let text: string;
+  try {
+    const buf = await readFile(bin);
+    if (buf.length > 64 * 1024) return null; // a real binary, not a shim
+    text = buf.toString('utf8');
+  } catch {
+    return null;
+  }
+  const m = /([^"'\s]*node_modules[\\/]@hyperwindmill[\\/]caretaker-cli)[\\/]/.exec(text);
+  if (!m) return null;
+  const rel = m[1].replace(/^(\$basedir_win|\$basedir|%~?dp0%?)/, dir).replace(/\\/g, '/');
+  return path.join(path.resolve(dir, rel), 'package.json');
+}
+
+/** Version of the `caretaker-cli` the shell would run, read from that
+ *  install's package.json. Never executes the binary: `caretaker-cli
+ *  --version` would fire index.ts's boot side-effects (plugin refresh, …). */
+export async function findPathCliVersion(
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+): Promise<string | null> {
+  const names = platform === 'win32' ? ['caretaker-cli.cmd', 'caretaker-cli'] : ['caretaker-cli'];
+  for (const dir of (env.PATH ?? '').split(path.delimiter).filter(Boolean)) {
+    for (const name of names) {
+      const bin = path.join(dir, name);
+      try {
+        await access(bin);
+      } catch {
+        continue;
+      }
+      const candidates: string[] = [];
+      try {
+        // npm/pnpm/nvm: the bin is a symlink to <pkg>/dist/index.js
+        candidates.push(path.join(path.dirname(await realpath(bin)), '..', 'package.json'));
+      } catch {
+        /* dangling link — try the shim layout */
+      }
+      // pnpm / Windows npm: a script shim naming <…>/node_modules/<pkg>/dist/index.js
+      const fromShim = await shimPackageJson(bin, dir);
+      if (fromShim) candidates.push(fromShim);
+      // Windows npm: <prefix>\caretaker-cli.cmd next to <prefix>\node_modules\<pkg>
+      candidates.push(path.join(dir, 'node_modules', '@hyperwindmill', 'caretaker-cli', 'package.json'));
+      for (const c of candidates) {
+        const v = await readPkgVersion(c);
+        if (v) return v;
+      }
+      // ponytail: binary shims (volta) don't resolve to the package; no command shown for them.
+      return null; // first PATH hit wins, like the shell
+    }
+  }
+  return null;
+}
+
+export type ExecLike = (
+  cmd: string,
+  args: string[],
+  o: { env: NodeJS.ProcessEnv; timeout: number; shell: boolean; maxBuffer: number },
+) => Promise<{ stdout: string; stderr: string }>;
+
+const tail = (s: string) => s.slice(-OUTPUT_TAIL);
+
+/** Runs UPDATE_COMMAND. Never throws: a failure is `{ ok: false, output }`. */
+export async function runCliUpdate(opts: { exec?: ExecLike } = {}): Promise<{ ok: boolean; output: string }> {
+  const exec = opts.exec ?? (promisify(execFile) as unknown as ExecLike);
+  try {
+    const { stdout, stderr } = await exec('npm', UPDATE_ARGS, {
+      env: commandEnv(),
+      timeout: UPDATE_TIMEOUT_MS,
+      // npm is npm.cmd on Windows; the argv is fixed, so the shell sees no user input.
+      shell: process.platform === 'win32',
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    return { ok: true, output: tail(`${stdout}${stderr}`) };
+  } catch (err) {
+    const e = err as { code?: unknown; stdout?: string; stderr?: string; message?: string };
+    if (e.code === 'ENOENT') return { ok: false, output: 'npm not found on PATH' };
+    const out = `${e.stdout ?? ''}${e.stderr ?? ''}`;
+    return { ok: false, output: tail(out || String(e.message ?? err)) };
+  }
 }
