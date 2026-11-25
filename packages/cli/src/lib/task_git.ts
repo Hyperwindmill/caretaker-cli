@@ -1,6 +1,6 @@
 import { execFile, exec as execCb } from 'node:child_process';
 import { promisify } from 'node:util';
-import { rm, mkdir, readdir, rename } from 'node:fs/promises';
+import { rm, mkdir, readdir, rename, realpath } from 'node:fs/promises';
 import { join, relative, dirname, basename } from 'node:path';
 import { dataDir } from '../store/db.js';
 import { commandEnv } from '../harness/tools/builtin/shell-env.js';
@@ -281,8 +281,15 @@ export async function gitCommonDir(worktreePath: string): Promise<string | null>
 export async function agentDirIn(worktreePath: string, projectWorkingDir: string): Promise<string> {
   // Preserve a sub-directory working dir when the project points below the repo root.
   const repoRoot = await git(projectWorkingDir, ['rev-parse', '--show-toplevel']);
-  const rel = relative(repoRoot, projectWorkingDir);
+  const rel = await relativeToRepo(repoRoot, projectWorkingDir);
   return rel ? join(worktreePath, rel) : worktreePath;
+}
+
+// git reports the top level with symlinks resolved (on macOS /var/… is really
+// /private/var/…): compare against the resolved project dir, or a symlinked
+// path yields a bogus `../../…` relative path.
+async function relativeToRepo(repoRoot: string, projectWorkingDir: string): Promise<string> {
+  return relative(repoRoot, await realpath(projectWorkingDir));
 }
 
 export class BranchDivergedError extends Error {
@@ -333,7 +340,7 @@ export async function ensureWorktree(
     }
   }
 
-  const rel = relative(repoRoot, projectWorkingDir);
+  const rel = await relativeToRepo(repoRoot, projectWorkingDir);
   const agentWorkingDir = rel ? join(worktreePath, rel) : worktreePath;
   return { branch, worktreePath, agentWorkingDir };
 }

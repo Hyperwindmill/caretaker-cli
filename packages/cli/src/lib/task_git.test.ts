@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm, stat, chmod, mkdir } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm, stat, chmod, mkdir, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -545,4 +545,21 @@ test('ensureWorktree on a diverged reused branch throws, rewrites nothing and le
   await finalizeDone(wt.worktreePath);
   await rm(repo, { recursive: true, force: true });
   await rm(origin, { recursive: true, force: true });
+});
+
+// git reports the repo root with symlinks resolved (on macOS the temp dir
+// /var/folders/… is really /private/var/folders/…), so a project working dir
+// reached through a symlink must still map onto the worktree root.
+test('ensureWorktree and agentDirIn map a symlinked project dir onto the worktree', async () => {
+  const repo = await makeRepo();
+  const linkParent = await mkdtemp(join(tmpdir(), 'ct-link-'));
+  const link = join(linkParent, 'project');
+  await symlink(repo, link);
+
+  const { worktreePath, agentWorkingDir } = await ensureWorktree(link, '1-99', 'Via a symlink');
+  assert.equal(agentWorkingDir, worktreePath);
+  assert.equal(await agentDirIn(worktreePath, link), worktreePath);
+
+  await rm(linkParent, { recursive: true, force: true });
+  await rm(repo, { recursive: true, force: true });
 });
