@@ -13,7 +13,7 @@ import { rm } from 'node:fs/promises';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { dataDir, loadPlugins, savePlugins } from '../store/json.js';
-import { encrypt } from '../lib/encryption.js';
+import { encrypt, isEncrypted } from '../lib/encryption.js';
 import { syncManagedMcpServers } from '../mcp/server_manager.js';
 import { syncManagedAgents } from '../agents/sync.js';
 import {
@@ -122,7 +122,14 @@ export async function patchSource(
   }
   if (input.ref !== undefined) src.ref = input.ref;
   if (input.authToken !== undefined) {
-    src.authToken = input.authToken === null ? null : encrypt(input.authToken);
+    // A client echoing back the stored (already encrypted) value must not
+    // wrap it in another layer: the fetcher would send a ciphertext as password.
+    src.authToken =
+      input.authToken === null
+        ? null
+        : isEncrypted(input.authToken)
+          ? input.authToken
+          : encrypt(input.authToken);
   }
   if (input.refreshOnStart !== undefined) src.refreshOnStart = input.refreshOnStart;
   await savePlugins(file);

@@ -173,6 +173,27 @@ test('fetchGit auth: encrypted blob is decrypted in onAuth', async () => {
   }
 });
 
+test('fetchGit auth: a token encrypted several times (older edit bug) is fully decrypted', async () => {
+  const cache = mkdtempSync(path.join(tmpdir(), 'plug-cache-'));
+  rmSync(cache, { recursive: true, force: true });
+  try {
+    const plaintext = 'secret-token-value';
+    const blob = encrypt(encrypt(encrypt(plaintext)));
+
+    const { client, calls } = makeMock();
+    __setGitClient(client);
+
+    await fetchGit({ url: 'https://example.com/x.git', ref: null, authToken: blob }, cache);
+
+    const cloneCall = calls.find((c) => c.op === 'clone');
+    assert.ok(cloneCall);
+    const onAuth = cloneCall.args.onAuth as () => { username: string; password: string };
+    assert.equal(onAuth().password, plaintext);
+  } finally {
+    rmSync(cache, { recursive: true, force: true });
+  }
+});
+
 test('fetchGit propagates errors from clone', async () => {
   const cache = mkdtempSync(path.join(tmpdir(), 'plug-cache-'));
   rmSync(cache, { recursive: true, force: true });

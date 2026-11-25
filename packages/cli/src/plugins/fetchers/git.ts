@@ -96,7 +96,11 @@ export function symlinkFallbackFs(base: typeof fs = fs): typeof fs {
 const gitFs = symlinkFallbackFs();
 
 function plainToken(authToken: string): string {
-  return isEncrypted(authToken) ? decrypt(authToken) : authToken;
+  // Peel every layer: the web edit form used to echo the stored ciphertext back
+  // and patchSource encrypted it again, so older sources can be nested.
+  let value = authToken;
+  while (isEncrypted(value)) value = decrypt(value);
+  return value;
 }
 
 function buildOnAuth(authToken: string | null): OnAuth | undefined {
