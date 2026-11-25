@@ -11,6 +11,7 @@ import {
 import { isDocumentedRoute } from './openapi.js';
 import {
   endpointUrl,
+  isUndeliveredResult,
   MAX_BODY_BYTES,
   mergeConfigSave,
   needsApproval,
@@ -43,12 +44,18 @@ export interface OrchestratorStatus {
 }
 
 const OUTBOUND_TIMEOUT_MS = 30_000;
+/** Floor between two cycles while results wait; pollSeconds is the maximum gap. */
+export const EARLY_POLL_MS = 250;
 
 let status: OrchestratorStatus = { state: 'off' };
 let registered = false;
 let recoveredThisProcess = false;
 let ledgerMutex: Promise<void> = Promise.resolve();
 let loopTimer: ReturnType<typeof setTimeout> | null = null;
+/** The running loop's tick, for pollSoon(); null when no loop runs. */
+let loopTick: (() => void) | null = null;
+/** A result was produced outside the loop (approve/reject) while a cycle ran. */
+let wakeRequested = false;
 let loopGen = 0;
 /** Bumped by every config save. A cycle that started under an older generation
  *  stops touching the ledger, the registration and the status: after a host
@@ -159,33 +166,37 @@ export async function applyMessage(
 
 /**
  * One register-if-needed + poll cycle. Never throws; failures land in status.
+ * Resolves true when the poll round-trip succeeded.
  */
-export function runCycle(deps: CycleDeps): Promise<void> {
+export function runCycle(deps: CycleDeps): Promise<boolean> {
   const run = cycleChain.then(() => cycleOnce(deps));
-  cycleChain = run.catch(() => undefined);
+  cycleChain = run.then(
+    () => undefined,
+    () => undefined,
+  );
   return run;
 }
 
-async function cycleOnce(deps: CycleDeps): Promise<void> {
+async function cycleOnce(deps: CycleDeps): Promise<boolean> {
   const now = deps.now ? deps.now() : new Date();
   const gen = configGen;
   const stale = () => gen !== configGen;
   try {
     await ensureRecovered(now);
     const cfg = await loadOrchestrator();
-    if (stale()) return;
+    if (stale()) return false;
 
     if (!cfg.enabled) {
       registered = false;
       status = { state: 'off' };
-      return;
+      return false;
     }
 
     const token = cfg.token ? decrypt(cfg.token) : '';
     if (!cfg.endpoint || !token) {
       registered = false;
       status = { state: 'error', lastError: 'Endpoint and token are required.' };
-      return;
+      return false;
     }
 
     const headers = {
@@ -210,23 +221,23 @@ async function cycleOnce(deps: CycleDeps): Promise<void> {
         }),
         signal: AbortSignal.timeout(OUTBOUND_TIMEOUT_MS),
       });
-      if (stale()) return;
+      if (stale()) return false;
       if (!regRes.ok) {
         status = { ...status, state: 'error', lastError: `Register failed: HTTP ${regRes.status}` };
-        return;
+        return false;
       }
       let regData: unknown;
       try {
         regData = JSON.parse(await regRes.text());
       } catch {
-        if (stale()) return;
+        if (stale()) return false;
         status = { ...status, state: 'error', lastError: 'Register returned non-JSON response.' };
-        return;
+        return false;
       }
-      if (stale()) return;
+      if (stale()) return false;
       if (!regData || typeof regData !== 'object' || (regData as Record<string, unknown>).ok !== true) {
         status = { ...status, state: 'error', lastError: 'Register response did not confirm ok.' };
-        return;
+        return false;
       }
       const orchName =
         typeof (regData as Record<string, unknown>).name === 'string'
@@ -243,7 +254,7 @@ async function cycleOnce(deps: CycleDeps): Promise<void> {
     const pendingResults = await withLedgerLock(async () => {
       const records = await loadLedger();
       return records
-        .filter((r) => r.state === 'done' && !r.delivered && r.result)
+        .filter(isUndeliveredResult)
         .map((r) => ({
           id: r.id,
           status: r.result!.status,
@@ -260,7 +271,7 @@ async function cycleOnce(deps: CycleDeps): Promise<void> {
       }),
       signal: AbortSignal.timeout(OUTBOUND_TIMEOUT_MS),
     });
-    if (stale()) return;
+    if (stale()) return false;
 
     if (
       pollRes.status === 401 ||
@@ -270,22 +281,22 @@ async function cycleOnce(deps: CycleDeps): Promise<void> {
     ) {
       registered = false;
       status = { ...status, state: 'error', lastError: `Poll rejected: HTTP ${pollRes.status}` };
-      return;
+      return false;
     }
     if (!pollRes.ok) {
       status = { ...status, state: 'error', lastError: `Poll failed: HTTP ${pollRes.status}` };
-      return;
+      return false;
     }
 
     let pollData: unknown;
     try {
       pollData = JSON.parse(await pollRes.text());
     } catch {
-      if (stale()) return;
+      if (stale()) return false;
       status = { ...status, state: 'error', lastError: 'Poll returned non-JSON response.' };
-      return;
+      return false;
     }
-    if (stale()) return;
+    if (stale()) return false;
     if (
       !pollData ||
       typeof pollData !== 'object' ||
@@ -293,7 +304,7 @@ async function cycleOnce(deps: CycleDeps): Promise<void> {
       !Array.isArray((pollData as Record<string, unknown>).messages)
     ) {
       status = { ...status, state: 'error', lastError: 'Poll response missing messages array.' };
-      return;
+      return false;
     }
 
     if (pendingResults.length > 0) {
@@ -322,7 +333,7 @@ async function cycleOnce(deps: CycleDeps): Promise<void> {
 
     const messages = (pollData as { messages: unknown[] }).messages;
     for (const raw of messages) {
-      if (stale()) return;
+      if (stale()) return false;
       const parsed = parseMessage(raw);
       if (parsed === null) {
         status = { ...status, lastError: 'The orchestrator sent a message without an id.' };
@@ -416,8 +427,23 @@ async function cycleOnce(deps: CycleDeps): Promise<void> {
         await saveLedger(trimLedger(records));
       });
     }
+    return true;
   } catch (err) {
     if (!stale()) status = { ...status, state: 'error', lastError: oneLineError(err) };
+    return false;
+  }
+}
+
+async function hasUndeliveredResults(): Promise<boolean> {
+  return withLedgerLock(async () => (await loadLedger()).some(isUndeliveredResult));
+}
+
+/** Brings the next poll forward to EARLY_POLL_MS. A cycle in flight reads the flag when it reschedules. */
+function pollSoon(): void {
+  wakeRequested = true;
+  if (loopTimer !== null && loopTick !== null) {
+    clearTimeout(loopTimer);
+    loopTimer = setTimeout(loopTick, EARLY_POLL_MS);
   }
 }
 
@@ -455,6 +481,7 @@ export async function resolvePending(
     return { status: 'apply' as const, msg };
   });
 
+  if (step.status === 'ok') pollSoon();
   if (step.status !== 'apply') return step.status;
 
   const applied = await applyMessage(app, step.msg);
@@ -469,6 +496,7 @@ export async function resolvePending(
     rec.result = { status: applied.status, body: encryptJson(applied.body) };
     await saveLedger(trimLedger(records));
   });
+  pollSoon();
   return 'ok';
 }
 
@@ -500,6 +528,8 @@ export function stopOrchestrator(): void {
     clearTimeout(loopTimer);
     loopTimer = null;
   }
+  loopTick = null;
+  wakeRequested = false;
 }
 
 /**
@@ -512,28 +542,33 @@ export function startOrchestrator(app: AppLike, fetchImpl: typeof fetch = fetch)
 
   const tick = async () => {
     if (gen !== loopGen) return;
+    loopTimer = null; // a wake during this cycle must not start a second chain
+    wakeRequested = false; // this cycle delivers whatever already exists
+    let ok = false;
     try {
       await ensureRecovered(new Date());
-      await runCycle({ app, fetch: fetchImpl });
+      ok = await runCycle({ app, fetch: fetchImpl });
     } catch (err) {
       console.error('[orchestrator]', err);
     }
     if (gen !== loopGen) return;
 
     let delayMs = 15_000;
+    let waiting = false;
     try {
       const cfg = await loadOrchestrator();
       if (!cfg.enabled) return;
       delayMs = cfg.pollSeconds * 1000;
+      if (ok) waiting = await hasUndeliveredResults();
     } catch (err) {
       console.error('[orchestrator]', err);
     }
     if (gen !== loopGen) return;
-    loopTimer = setTimeout(() => {
-      void tick();
-    }, delayMs);
+    // No await below this line: a wake landing during the checks above is read here.
+    if (ok && (waiting || wakeRequested)) delayMs = EARLY_POLL_MS;
+    loopTimer = setTimeout(() => void tick(), delayMs);
   };
-
+  loopTick = () => void tick();
   void tick();
 }
 

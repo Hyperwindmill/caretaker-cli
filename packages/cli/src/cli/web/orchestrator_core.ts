@@ -259,3 +259,8 @@ export function summarizeLedger(records: LedgerRecord[]): MessageSummary[] {
   }
   return out;
 }
+
+/** A result recorded and not yet acknowledged by a 2xx /poll. */
+export function isUndeliveredResult(r: LedgerRecord): boolean {
+  return r.state === 'done' && !r.delivered && r.result !== undefined;
+}

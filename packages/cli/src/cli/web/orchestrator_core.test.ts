@@ -20,6 +20,7 @@ import {
   mergeConfigSave,
   summarizeLedger,
   LEDGER_SIZE,
+  isUndeliveredResult,
 } from './orchestrator_core.js';
 
 after(() => {
@@ -279,5 +280,14 @@ describe('orchestrator_core', () => {
     assert.equal(summaries[1].id, '1');
     assert.equal(summaries[1].body, undefined);
     assert.equal(summaries[1].status, 200);
+  });
+
+  test('isUndeliveredResult: only a done, undelivered record with a result', () => {
+    const base = { id: 'a', method: 'GET', path: '/api/projects', receivedAt: 't', delivered: false };
+    const result = { status: 200, body: 'x' };
+    assert.equal(isUndeliveredResult({ ...base, state: 'done', result }), true);
+    assert.equal(isUndeliveredResult({ ...base, state: 'pending' }), false);
+    assert.equal(isUndeliveredResult({ ...base, state: 'applying' }), false);
+    assert.equal(isUndeliveredResult({ ...base, state: 'done', result, delivered: true }), false);
   });
 });
