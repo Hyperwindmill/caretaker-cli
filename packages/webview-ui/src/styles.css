@@ -1848,6 +1848,29 @@ body.vscode-light .settings-panel__tab-btn--active {
   gap: 8px;
 }
 
+/* The shared .glass-form is capped at the panel height and its
+   .glass-form__body fills it and scrolls inside (flex-basis 0, min-height 0).
+   Here the approval and activity sections are the body's siblings and take
+   their natural height, which squeezed the form down to nothing. This card
+   grows with its content instead, and the settings content scrolls as one
+   page. Two classes each, so these win over the shared rules defined later. */
+.glass-form.orchestration-tab {
+  flex: none;
+  max-height: none;
+}
+
+.glass-form__body.orchestration-tab__body {
+  flex: none;
+  overflow: visible;
+}
+
+/* Up to 500 ledger records: bounded, scrolls on its own. */
+.orchestration-tab__list--activity {
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
 .orchestration-tab__pending-row {
   padding: 8px 10px;
   border-radius: var(--radius-sm);

@@ -198,7 +198,7 @@ export function OrchestrationTab({ onPendingChange }: { onPendingChange?: (count
   const activityMessages = view.messages.filter((m) => m.state !== 'pending');
 
   return (
-    <div className="glass-form">
+    <div className="glass-form orchestration-tab">
       <div className="orchestration-tab__header">
         <h4>Orchestration</h4>
         <span className={`orchestration-tab__status orchestration-tab__status--${view.status.state}`}>
@@ -206,7 +206,7 @@ export function OrchestrationTab({ onPendingChange }: { onPendingChange?: (count
         </span>
       </div>
 
-      <div className="glass-form__body">
+      <div className="glass-form__body orchestration-tab__body">
         {loadError && <small className="form-error">{loadError}</small>}
         {error && <small className="form-error">{error}</small>}
 
@@ -355,7 +355,7 @@ export function OrchestrationTab({ onPendingChange }: { onPendingChange?: (count
         {activityMessages.length === 0 ? (
           <small className="orchestration-tab__empty">No activity yet.</small>
         ) : (
-          <div className="orchestration-tab__list">
+          <div className="orchestration-tab__list orchestration-tab__list--activity">
             {activityMessages.map((m) => (
               <div key={m.id} className="orchestration-tab__activity-row">
                 <span className="orchestration-tab__time">{formatTime(m.resolvedAt ?? m.receivedAt)}</span>
