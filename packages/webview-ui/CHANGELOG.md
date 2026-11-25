@@ -1,5 +1,16 @@
 # webview-ui
 
+## 0.38.0
+
+### Minor Changes
+
+- 1c4c00d: Show a notice when a newer Caretaker release is published, with a download link and a one-click update for the terminal CLI. The web GUI and desktop app show a dismissible banner; the TUI prints one line under the logo. Set `"updateCheck": false` in `caretaker.json` to turn the check off.
+
+### Patch Changes
+
+- cb552ac: The update banner's **Update CLI** and **Copy command**, and the TUI's update line, use `pnpm add -g` when the CLI was installed with pnpm, instead of always `npm i -g`.
+- be1b415: The running Caretaker version is shown at the bottom of the left navigation bar, and the update banner now also appears on the Projects and Settings screens.
+
 ## 0.37.0
 
 No changes in this release.
