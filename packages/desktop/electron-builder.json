@@ -12,8 +12,9 @@
       "to": "packages/cli/dist"
     },
     {
-      "from": "../cli/package.json",
-      "to": "packages/cli/package.json"
+      "from": "../cli",
+      "to": "packages/cli",
+      "filter": ["package.json"]
     },
     {
       "from": "../cli/assets",
