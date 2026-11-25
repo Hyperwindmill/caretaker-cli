@@ -26,6 +26,7 @@ import {
   startOrchestrator,
   stopOrchestrator,
   registerOrchestrator,
+  EARLY_POLL_MS,
 } from './orchestrator.js';
 
 after(() => {
@@ -143,7 +144,7 @@ describe('orchestrator client', () => {
       jsonRes({ messages: [] }),
     ]);
 
-    await runCycle({ app, fetch });
+    assert.equal(await runCycle({ app, fetch }), true);
     assert.equal(requests.length, 2);
     assert.equal(requests[0].url, 'https://orch.example.com/v1/register');
     assert.equal(requests[0].auth, 'Bearer tok-123');
@@ -367,8 +368,8 @@ describe('orchestrator client', () => {
       new Error('ECONNREFUSED'),
     ]);
 
-    await runCycle({ app, fetch });
-    await runCycle({ app, fetch });
+    assert.equal(await runCycle({ app, fetch }), true);
+    assert.equal(await runCycle({ app, fetch }), false);
     assert.equal(orchestratorStatus().state, 'error');
     assert.match(orchestratorStatus().lastError ?? '', /ECONNREFUSED/);
 
@@ -627,5 +628,161 @@ describe('orchestrator client', () => {
 
     const r409 = await app.request('/api/orchestrator/messages/done-1/reject', { method: 'POST' });
     assert.equal(r409.status, 409);
+  });
+});
+
+describe('orchestrator loop cadence', () => {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const getMsg = (id: string) => ({ id, method: 'GET', path: '/api/projects' });
+  const postMsg = (id: string) => ({ id, method: 'POST', path: '/api/projects', body: { id } });
+
+  /** Fetch stub: /register ok, /poll answered by `onPoll(n, body)` (n = 1-based). */
+  function loopFetch(onPoll: (n: number, body: any) => Response | Promise<Response>) {
+    const polls: any[] = [];
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = String(input);
+      if (url.endsWith('/register')) return jsonRes({ ok: true, name: 'Orch' });
+      const body = JSON.parse(String(init?.body));
+      polls.push(body);
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      try {
+        return await onPoll(polls.length, body);
+      } finally {
+        inFlight--;
+      }
+    }) as typeof fetch;
+    return { fetch: fetchImpl, polls, maxInFlight: () => maxInFlight };
+  }
+
+  async function waitFor(cond: () => boolean, ms = 2000) {
+    const end = Date.now() + ms;
+    while (!cond() && Date.now() < end) await sleep(10);
+    assert.ok(cond(), 'condition not met in time');
+  }
+
+  beforeEach(async () => {
+    stopOrchestrator();
+    resetOrchestratorForTests();
+    await saveLedger([]);
+  });
+
+  test('early poll delivers the result at once, then returns to the interval', async () => {
+    await seedConfig({ policy: 'auto', pollSeconds: 3600 });
+    const { app } = makeStubApp();
+    const f = loopFetch((n) => jsonRes({ messages: n === 1 ? [getMsg('g1')] : [] }));
+    startOrchestrator(app, f.fetch);
+    await sleep(EARLY_POLL_MS * 4);
+    assert.equal(f.polls.length, 2);
+    assert.equal(f.polls[1].results.length, 1);
+    assert.equal(f.polls[1].results[0].id, 'g1');
+    await sleep(EARLY_POLL_MS * 4);
+    assert.equal(f.polls.length, 2);
+    stopOrchestrator();
+  });
+
+  test('a message left pending never triggers the early poll', async () => {
+    await seedConfig({ policy: 'approve', pollSeconds: 3600 });
+    const { app } = makeStubApp();
+    const f = loopFetch((n) => jsonRes({ messages: n === 1 ? [postMsg('p1')] : [] }));
+    startOrchestrator(app, f.fetch);
+    await sleep(EARLY_POLL_MS * 4);
+    assert.equal(f.polls.length, 1);
+    assert.equal((await loadLedger())[0].state, 'pending');
+    stopOrchestrator();
+  });
+
+  test('a failed cycle waits the interval even with results waiting', async () => {
+    for (const fail of [() => { throw new Error('down'); }, () => jsonRes({ error: 'x' }, 500)]) {
+      stopOrchestrator();
+      resetOrchestratorForTests();
+      await saveLedger([]);
+      await seedConfig({ policy: 'auto', pollSeconds: 3600 });
+      const { app } = makeStubApp();
+      const f = loopFetch((n) => (n === 1 ? jsonRes({ messages: [getMsg('g1')] }) : fail()));
+      startOrchestrator(app, f.fetch);
+      await sleep(EARLY_POLL_MS * 4);
+      assert.equal(f.polls.length, 2); // the early poll, which failed; no third
+      assert.equal(orchestratorStatus().state, 'error');
+      assert.equal((await loadLedger())[0].delivered, false);
+      stopOrchestrator();
+    }
+  });
+
+  test('approve and reject bring the next poll forward', async () => {
+    await seedConfig({ policy: 'approve', pollSeconds: 3600 });
+    const { app } = makeStubApp();
+    const f = loopFetch((n) => jsonRes({ messages: n === 1 ? [postMsg('p1'), postMsg('p2')] : [] }));
+    startOrchestrator(app, f.fetch);
+    await sleep(EARLY_POLL_MS * 2);
+    assert.equal(f.polls.length, 1);
+
+    assert.equal(await resolvePending(app, 'p1', 'approve'), 'ok');
+    await sleep(EARLY_POLL_MS * 4);
+    assert.equal(f.polls.length, 2);
+    assert.deepEqual(f.polls[1].results.map((r: any) => [r.id, r.status]), [['p1', 200]]);
+
+    assert.equal(await resolvePending(app, 'p2', 'reject'), 'ok');
+    await sleep(EARLY_POLL_MS * 4);
+    assert.equal(f.polls.length, 3);
+    assert.deepEqual(f.polls[2].results.map((r: any) => [r.id, r.status]), [['p2', 403]]);
+    stopOrchestrator();
+  });
+
+  test('a wake during a running cycle sets the flag only: a follow-up poll, never two at once', async () => {
+    await seedConfig({ policy: 'approve', pollSeconds: 3600 });
+    const { app } = makeStubApp();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const f = loopFetch(async (n) => {
+      if (n === 1) return jsonRes({ messages: [postMsg('p1'), postMsg('p2')] });
+      if (n === 2) await gate;
+      return jsonRes({ messages: [] });
+    });
+    startOrchestrator(app, f.fetch);
+    await waitFor(() => f.polls.length === 1);
+    await sleep(EARLY_POLL_MS / 5); // let cycle 1 reach its timer
+
+    await resolvePending(app, 'p1', 'approve');
+    await waitFor(() => f.polls.length === 2); // poll 2 is now held on the gate
+    await resolvePending(app, 'p2', 'approve');
+    release();
+    await sleep(EARLY_POLL_MS * 4);
+
+    assert.equal(f.polls.length, 3);
+    assert.deepEqual(f.polls[2].results.map((r: any) => r.id), ['p2']);
+    assert.equal(f.maxInFlight(), 1);
+    stopOrchestrator();
+  });
+
+  test('stop retires the loop; a later wake schedules nothing', async () => {
+    await seedConfig({ policy: 'auto', pollSeconds: 3600 });
+    const { app } = makeStubApp();
+    let seq = 0;
+    const f = loopFetch(() => jsonRes({ messages: [getMsg(`g${++seq}`)] }));
+    startOrchestrator(app, f.fetch);
+    await sleep(EARLY_POLL_MS * 3);
+    stopOrchestrator();
+    resetOrchestrator();
+    const count = f.polls.length;
+    assert.ok(count >= 2);
+    await sleep(EARLY_POLL_MS * 4);
+    assert.equal(f.polls.length, count);
+
+    await saveLedger([
+      {
+        id: 'late',
+        method: 'POST',
+        path: '/api/projects',
+        receivedAt: '2026-11-25T11:00:00.000Z',
+        state: 'pending',
+        delivered: false,
+      } as any,
+    ]);
+    assert.equal(await resolvePending(app, 'late', 'reject'), 'ok');
+    await sleep(EARLY_POLL_MS * 4);
+    assert.equal(f.polls.length, count);
   });
 });
