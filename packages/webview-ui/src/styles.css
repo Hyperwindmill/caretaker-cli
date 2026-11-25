@@ -3655,3 +3655,74 @@ body.vscode-light .composer__attachment {
   opacity: 0.75;
   align-self: center;
 }
+
+/* ==========================================================================
+   Update banner (sidebar layout: web GUI / desktop)
+   ========================================================================== */
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.app-shell > .app {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
+.update-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-bottom: 1px solid var(--vscode-panel-border, oklch(1 0 0 / 0.1));
+  background: oklch(0.55 0.22 250 / 0.14);
+  font-size: 12px;
+}
+
+.update-banner__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.update-banner__cli code {
+  font-family: var(--font-mono);
+  user-select: all;
+}
+
+.update-banner__result {
+  margin-top: 2px;
+}
+
+.update-banner__result--failed,
+.update-banner__result--stale {
+  color: var(--vscode-editorWarning-foreground, #cca700);
+}
+
+.update-banner__result pre {
+  margin: 4px 0 0;
+  max-height: 8em;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.update-banner__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+
+.update-banner__actions .btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+}
