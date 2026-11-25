@@ -31,7 +31,12 @@ export interface DemoOrchestrator {
   instances(): DemoInstance[];
 }
 
-export function createDemoOrchestrator(opts: { token: string; name?: string }): DemoOrchestrator {
+export function createDemoOrchestrator(opts: {
+  token: string;
+  name?: string;
+  /** Called when a result is first recorded, before the poll response is built. */
+  onResult?: (instanceId: string, result: DemoResult) => void;
+}): DemoOrchestrator {
   const displayName = opts.name || 'Demo Orchestrator';
   const instancesMap = new Map<string, DemoInstance>();
   const queues = new Map<string, DemoQueuedMessage[]>();
@@ -112,7 +117,9 @@ export function createDemoOrchestrator(opts: { token: string; name?: string }): 
     }
     for (const r of body.results ?? []) {
       if (r && typeof r.id === 'string' && !instResults.has(r.id)) {
-        instResults.set(r.id, { id: r.id, status: r.status, body: r.body ?? null });
+        const recorded = { id: r.id, status: r.status, body: r.body ?? null };
+        instResults.set(r.id, recorded);
+        opts.onResult?.(instanceId, recorded);
       }
     }
 

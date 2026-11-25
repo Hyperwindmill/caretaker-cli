@@ -22,6 +22,7 @@ import {
   resetOrchestratorForTests,
   resolvePending,
   runCycle,
+  startOrchestrator,
   stopOrchestrator,
 } from './orchestrator.js';
 
@@ -232,5 +233,38 @@ describe('orchestrator e2e', () => {
     assert.equal(res.status, 200);
     assert.deepEqual(await res.json(), { ok: true, name: 'Demo', protocol: 1 });
     assert.deepEqual(demo.instances(), []);
+  });
+
+  test('a chain of dependent calls runs without waiting pollSeconds', async () => {
+    const app = createApp({ webPort: 0, host: '127.0.0.1' });
+    const chain: string[] = [];
+    const demo: ReturnType<typeof createDemoOrchestrator> = createDemoOrchestrator({
+      token: 't',
+      onResult: (inst) => {
+        if (chain.length < 4) chain.push(demo.enqueue(inst, { method: 'GET', path: '/api/projects' }));
+      },
+    });
+    const fetchImpl = ((url, init) => demo.app.request(String(url), init)) as typeof fetch;
+
+    const instanceId = await setupConfig('auto');
+    const cfg = await loadOrchestrator();
+    cfg.pollSeconds = 3600;
+    await saveOrchestrator(cfg);
+    chain.push(demo.enqueue(instanceId, { method: 'GET', path: '/api/projects' }));
+
+    startOrchestrator(app, fetchImpl);
+    const deadline = Date.now() + 5000;
+    while (demo.results(instanceId).length < 4 && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    stopOrchestrator();
+
+    const res = demo.results(instanceId);
+    assert.equal(res.length, 4);
+    assert.ok(res.every((r) => r.status === 200));
+    assert.deepEqual(
+      res.map((r) => r.id),
+      chain,
+    );
   });
 });
