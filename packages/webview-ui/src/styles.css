@@ -3726,3 +3726,10 @@ body.vscode-light .composer__attachment {
   border-radius: var(--radius-sm);
   text-decoration: none;
 }
+
+.app__nav-version {
+  margin-top: auto;
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground, oklch(1 0 0 / 0.45));
+  user-select: text;
+}

@@ -12,13 +12,12 @@ import {
 
 const POLL_MS = 3600_000;
 
-export function UpdateBanner() {
+/** `/api/update`, fetched on mount and hourly. Owned by App so the banner and
+ *  the nav rail's version label share one request. */
+export function useUpdateStatus(enabled: boolean): [UpdateStatus | null, (s: UpdateStatus) => void] {
   const [status, setStatus] = useState<UpdateStatus | null>(null);
-  const [running, setRunning] = useState(false);
-  const [result, setResult] = useState<CliUpdateResult | null>(null);
-  const [copied, setCopied] = useState(false);
-
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
     const load = async () => {
       try {
@@ -36,7 +35,20 @@ export function UpdateBanner() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, []);
+  }, [enabled]);
+  return [status, setStatus];
+}
+
+export function UpdateBanner({
+  status,
+  setStatus,
+}: {
+  status: UpdateStatus | null;
+  setStatus: (s: UpdateStatus) => void;
+}) {
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<CliUpdateResult | null>(null);
+  const [copied, setCopied] = useState(false);
 
   if (!status || !bannerVisible(status, result)) return null;
 

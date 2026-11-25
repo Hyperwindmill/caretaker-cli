@@ -9,7 +9,7 @@
 // span. Pending confirms live outside the message list and render as
 // ConfirmCard rows at the tail until the user resolves them.
 
-import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useState, type ReactNode } from 'react';
 import { localSelectionFor, onAgentSelected, onSelectFailed, resolvePending, type Activation } from './assistant_activation.js';
 
 import type { 
@@ -40,7 +40,7 @@ import { ProjectsTab } from './ProjectsTab.js';
 import { useVoice } from './useVoice.js';
 import { ChatIcon, SettingsIcon, ChevronDownIcon, ChevronUpIcon, ProjectsIcon, WarningIcon, DeleteIcon } from './icons.js';
 import logo from './caretaker_cli.png';
-import { UpdateBanner } from './UpdateBanner.js';
+import { UpdateBanner, useUpdateStatus } from './UpdateBanner.js';
 
 
 export type {
@@ -457,6 +457,16 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
     };
   }, [layout]);
 
+  const [updateStatus, setUpdateStatus] = useUpdateStatus(layout === 'sidebar');
+  // Every sidebar-layout screen renders through this, so the banner keeps its
+  // place (and its state) in the tree when the user switches screens.
+  const withShell = (content: ReactNode) => (
+    <div className="app-shell">
+      <UpdateBanner status={updateStatus} setStatus={setUpdateStatus} />
+      {content}
+    </div>
+  );
+
   // Persistent nav rail for the sidebar layout (web/desktop). Projects is
   // scheduler-driven, so — like the Services settings tab — it never shows in
   // the compact/VSCode surface, which keeps its header buttons instead.
@@ -482,17 +492,22 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
           )}
         </button>
       ))}
+      {updateStatus && (
+        <div className="app__nav-version" title={`Caretaker ${updateStatus.current}`}>
+          v{updateStatus.current}
+        </div>
+      )}
     </nav>
   );
 
   if (activeScreen === 'projects' && layout === 'sidebar') {
-    return (
+    return withShell(
       <div className="app app--with-sidebar">
         {navRail}
         <div className="app__screen">
           <ProjectsTab agents={agents} onOpenSettings={() => openScreen('settings', 'projects')} postMessage={postMessage} />
         </div>
-      </div>
+      </div>,
     );
   }
 
@@ -524,10 +539,12 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
       </div>
     );
     return layout === 'sidebar' ? (
-      <div className="app app--with-sidebar">
-        {navRail}
-        {panel}
-      </div>
+      withShell(
+        <div className="app app--with-sidebar">
+          {navRail}
+          {panel}
+        </div>,
+      )
     ) : (
       panel
     );
@@ -549,156 +566,153 @@ export function App({ postMessage, layout = 'compact' }: AppProps) {
   );
 
   if (layout === 'sidebar') {
-    return (
-      <div className="app-shell">
-        <UpdateBanner />
-        <div className="app app--with-sidebar">
-          {navRail}
-          <aside className="app__sidebar">
-            <div className="app__sidebar-content">
+    return withShell(
+      <div className="app app--with-sidebar">
+        {navRail}
+        <aside className="app__sidebar">
+          <div className="app__sidebar-content">
+            <div className="app__sidebar-section">
+              <div className="app__sidebar-section-title">Agents</div>
+              <div className="app__sidebar-agents-list">
+                {selectedAgentId && !showAllAgents ? (
+                  <button
+                    className="app__sidebar-agent-item app__sidebar-agent-item--collapsed-active"
+                    onClick={() => setShowAllAgents(true)}
+                    title="Switch Agent"
+                  >
+                    <span className="agent-status-dot agent-status-dot--active" />
+                    <span className="app__sidebar-agent-name">{activeAgent?.name || selectedAgentId}</span>
+                    <ChevronDownIcon className="app__sidebar-chevron" size={10} />
+                  </button>
+                ) : (
+                  <div className={`app__sidebar-agents-list-expanded ${selectedAgentId ? 'app__sidebar-agents-list-expanded--has-active' : ''}`}>
+                    {agents.length === 0 ? (
+                      <div className="app__sidebar-empty-text">No agents found</div>
+                    ) : (
+                      agents.map((agent) => {
+                        const isSelected = selectedAgentId === agent.id;
+                        return (
+                          <button
+                            key={agent.id}
+                            className={`app__sidebar-agent-item ${isSelected ? 'app__sidebar-agent-item--active' : ''}`}
+                            onClick={() => {
+                              if (isSelected) {
+                                setShowAllAgents(false);
+                              } else {
+                                setActivation(null);
+                                onSelectAgent(agent.id);
+                              }
+                            }}
+                          >
+                            <span className={`agent-status-dot ${isSelected ? 'agent-status-dot--active' : ''}`} />
+                            <span className="app__sidebar-agent-name">{agent.name}</span>
+                            {isSelected && (
+                              <ChevronUpIcon className="app__sidebar-chevron app__sidebar-chevron--up" size={10} />
+                            )}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {selectedAgentId && (
               <div className="app__sidebar-section">
-                <div className="app__sidebar-section-title">Agents</div>
-                <div className="app__sidebar-agents-list">
-                  {selectedAgentId && !showAllAgents ? (
-                    <button
-                      className="app__sidebar-agent-item app__sidebar-agent-item--collapsed-active"
-                      onClick={() => setShowAllAgents(true)}
-                      title="Switch Agent"
-                    >
-                      <span className="agent-status-dot agent-status-dot--active" />
-                      <span className="app__sidebar-agent-name">{activeAgent?.name || selectedAgentId}</span>
-                      <ChevronDownIcon className="app__sidebar-chevron" size={10} />
-                    </button>
+                <div className="app__sidebar-section-header">
+                  <span className="app__sidebar-section-title">Conversations</span>
+                  <button
+                    className="app__sidebar-new-chat-btn"
+                    onClick={onCreateSession}
+                    title="New Chat"
+                  >
+                    + New
+                  </button>
+                </div>
+                <div className="app__sidebar-sessions-list">
+                  {sessions.length === 0 ? (
+                    <div className="app__sidebar-empty-text">No conversations yet</div>
                   ) : (
-                    <div className={`app__sidebar-agents-list-expanded ${selectedAgentId ? 'app__sidebar-agents-list-expanded--has-active' : ''}`}>
-                      {agents.length === 0 ? (
-                        <div className="app__sidebar-empty-text">No agents found</div>
-                      ) : (
-                        agents.map((agent) => {
-                          const isSelected = selectedAgentId === agent.id;
-                          return (
-                            <button
-                              key={agent.id}
-                              className={`app__sidebar-agent-item ${isSelected ? 'app__sidebar-agent-item--active' : ''}`}
-                              onClick={() => {
-                                if (isSelected) {
-                                  setShowAllAgents(false);
-                                } else {
-                                  setActivation(null);
-                                  onSelectAgent(agent.id);
-                                }
-                              }}
-                            >
-                              <span className={`agent-status-dot ${isSelected ? 'agent-status-dot--active' : ''}`} />
-                              <span className="app__sidebar-agent-name">{agent.name}</span>
-                              {isSelected && (
-                                <ChevronUpIcon className="app__sidebar-chevron app__sidebar-chevron--up" size={10} />
-                              )}
-                            </button>
-                          );
-                        })
-                      )}
-                    </div>
+                    sessions.map((session) => (
+                      <div
+                        key={session.id}
+                        className={`app__sidebar-session-item ${selectedSessionId === session.id ? 'app__sidebar-session-item--active' : ''}`}
+                        onClick={() => onSelectSession(session.id)}
+                      >
+                        <span className="app__sidebar-session-icon"><ChatIcon size={13} /></span>
+                        <span className="app__sidebar-session-title" title={session.title}>{session.title}</span>
+                        <button
+                          className="app__sidebar-session-delete"
+                          title="Delete conversation"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteSession(session.id, session.title);
+                          }}
+                        >
+                          <DeleteIcon size={12} />
+                        </button>
+                      </div>
+                    ))
                   )}
                 </div>
               </div>
-
-              {selectedAgentId && (
-                <div className="app__sidebar-section">
-                  <div className="app__sidebar-section-header">
-                    <span className="app__sidebar-section-title">Conversations</span>
-                    <button
-                      className="app__sidebar-new-chat-btn"
-                      onClick={onCreateSession}
-                      title="New Chat"
-                    >
-                      + New
-                    </button>
-                  </div>
-                  <div className="app__sidebar-sessions-list">
-                    {sessions.length === 0 ? (
-                      <div className="app__sidebar-empty-text">No conversations yet</div>
-                    ) : (
-                      sessions.map((session) => (
-                        <div
-                          key={session.id}
-                          className={`app__sidebar-session-item ${selectedSessionId === session.id ? 'app__sidebar-session-item--active' : ''}`}
-                          onClick={() => onSelectSession(session.id)}
-                        >
-                          <span className="app__sidebar-session-icon"><ChatIcon size={13} /></span>
-                          <span className="app__sidebar-session-title" title={session.title}>{session.title}</span>
-                          <button
-                            className="app__sidebar-session-delete"
-                            title="Delete conversation"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onDeleteSession(session.id, session.title);
-                            }}
-                          >
-                            <DeleteIcon size={12} />
-                          </button>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </aside>
-
-          <main className="app__chat-pane">
-            {selectedAgentId ? (
-              <>
-                <header className="app__chat-header">
-                  <div className="app__chat-header-info">
-                    <h2 className="app__chat-header-title">{selectedAgentName}</h2>
-                    <span className="app__chat-header-status">
-                      <span className={`agent-status-dot agent-status-dot--active ${chatState.status === 'streaming' ? 'agent-status-dot--pulsing' : ''}`} />
-                      {chatState.status === 'streaming' ? 'Streaming response...' : 'Ready'}
-                    </span>
-                  </div>
-                </header>
-                <MessageList
-                  items={chatState.items}
-                  sessionId={selectedSessionId}
-                  isStreaming={chatState.status === 'streaming'}
-                  agentName={selectedAgentName}
-                  trailing={confirmCards}
-                />
-                {(chatState.errorText || voice.error) && (
-                  <div className="app__error"><WarningIcon size={14} /> {chatState.errorText || voice.error}</div>
-                )}
-                <Composer
-                  disabled={composerDisabled}
-                  focusToken={composerFocusToken}
-                  onSend={onSend}
-                  canAbort={chatState.status === 'streaming'}
-                  onAbort={onAbort}
-                  contextUsage={chatState.contextUsage}
-                  voice={
-                    voice.available
-                      ? {
-                          phase: voice.phase,
-                          mode: voice.mode,
-                          canSpeak: voiceConfig?.canSpeak ?? false,
-                          setMode: voice.setMode,
-                          toggle: voice.toggle,
-                        }
-                      : null
-                  }
-                  value={composerDraft}
-                  onValueChange={setComposerDraft}
-                />
-              </>
-            ) : (
-              <div className="app__empty-state">
-                <p>Select an agent from the sidebar to start chatting</p>
-              </div>
             )}
-          </main>
-          {deleteOverlay}
-        </div>
-      </div>
+          </div>
+        </aside>
+
+        <main className="app__chat-pane">
+          {selectedAgentId ? (
+            <>
+              <header className="app__chat-header">
+                <div className="app__chat-header-info">
+                  <h2 className="app__chat-header-title">{selectedAgentName}</h2>
+                  <span className="app__chat-header-status">
+                    <span className={`agent-status-dot agent-status-dot--active ${chatState.status === 'streaming' ? 'agent-status-dot--pulsing' : ''}`} />
+                    {chatState.status === 'streaming' ? 'Streaming response...' : 'Ready'}
+                  </span>
+                </div>
+              </header>
+              <MessageList
+                items={chatState.items}
+                sessionId={selectedSessionId}
+                isStreaming={chatState.status === 'streaming'}
+                agentName={selectedAgentName}
+                trailing={confirmCards}
+              />
+              {(chatState.errorText || voice.error) && (
+                <div className="app__error"><WarningIcon size={14} /> {chatState.errorText || voice.error}</div>
+              )}
+              <Composer
+                disabled={composerDisabled}
+                focusToken={composerFocusToken}
+                onSend={onSend}
+                canAbort={chatState.status === 'streaming'}
+                onAbort={onAbort}
+                contextUsage={chatState.contextUsage}
+                voice={
+                  voice.available
+                    ? {
+                        phase: voice.phase,
+                        mode: voice.mode,
+                        canSpeak: voiceConfig?.canSpeak ?? false,
+                        setMode: voice.setMode,
+                        toggle: voice.toggle,
+                      }
+                    : null
+                }
+                value={composerDraft}
+                onValueChange={setComposerDraft}
+              />
+            </>
+          ) : (
+            <div className="app__empty-state">
+              <p>Select an agent from the sidebar to start chatting</p>
+            </div>
+          )}
+        </main>
+        {deleteOverlay}
+      </div>,
     );
   }
 
