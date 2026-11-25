@@ -280,7 +280,7 @@ The project and task routes are described by an **OpenAPI 3.1** document at `/ap
 
 Caretaker's web server (including the desktop app) can register with a remote orchestrator over an outbound connection, poll it for REST commands against the project/task API, and report the results back. Because Caretaker initiates every connection, it works behind NAT and proxies without opening an inbound port.
 
-Configure it in **Settings → Orchestration**: set an `https://` endpoint (or `http://` on loopback for local testing), a bearer token (encrypted at rest in `~/.caretaker/orchestrator.json`), and a poll interval (5–3600 s, default 15 s). Use **Test connection** to verify reachability and token validity before saving.
+Configure it in **Settings → Orchestration**: set an `https://` endpoint (or `http://` on loopback for local testing), a bearer token (encrypted at rest in `~/.caretaker/orchestrator.json`), and a poll interval (5–3600 s, default 15 s; it is the maximum wait — while Caretaker holds results not yet delivered it polls again at once, so a chain of commands does not wait an interval per step). Use **Test connection** to verify reachability and token validity before saving.
 
 - **Ask me before applying changes (`approve`, default):** `GET` requests run immediately; `POST`, `PUT`, `PATCH`, and `DELETE` wait in the **Waiting for approval** inbox until you click **Approve** or **Reject** (`403`).
 - **Apply automatically (`auto`):** every documented project/task route runs on arrival.

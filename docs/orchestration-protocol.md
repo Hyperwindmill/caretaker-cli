@@ -105,6 +105,7 @@ Response (`200 OK`):
   - `method` (string, HTTP method).
   - `path` (string, pathname plus optional query string, starting with a single `/`; absolute URLs and `//` prefixes are refused).
   - `body` (JSON value, optional).
+- **Cadence**: the configured interval is the *longest* gap between two polls. After a successful poll that leaves Caretaker holding undelivered results (it applied messages, or a person approved or rejected one), Caretaker polls again after a short floor (~250 ms); a failed poll falls back to the interval. An orchestrator can therefore answer a poll that carried a result with the next message of a chain, and the chain proceeds at the speed of the calls. Orchestrators must accept a poll at any time.
 - **Unknown instance**: if `/poll` responds with `401`, `403`, `404`, or `409`, Caretaker drops its local registration state and calls `/register` again on the next cycle.
 
 ## At-Least-Once Delivery & Deduplication
@@ -149,5 +150,7 @@ Caretaker ships an in-memory reference orchestrator implementing Protocol v1:
 ```bash
 caretaker-cli orchestrator-demo --token my-secret --port 4000
 ```
+
+The demo accepts an optional `onResult(instanceId, result)` hook (for in-process tests), called when a result is first recorded, before the poll response is built.
 
 See `packages/cli/src/cli/orchestrator_demo.ts` for the complete server implementation, including the admin routes (`GET /instances`, `POST /instances/:id/messages`, `GET /instances/:id/results`).
