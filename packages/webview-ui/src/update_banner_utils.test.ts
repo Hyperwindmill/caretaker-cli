@@ -44,3 +44,26 @@ test('cliUpdateMessage: done / failed / stale', () => {
     'npm finished, but the caretaker-cli on your PATH is still unknown (installed another way?).',
   );
 });
+
+// ── Final review fixes ────────────────────────────────────────────────────
+import { bannerVisible, bannerHeadline } from './update_banner_utils.js';
+
+test('bannerVisible: a finished CLI update keeps the banner up even when nothing is behind any more', () => {
+  const after = { ...base, appOutdated: false, cliOutdated: false, cliVersion: '0.38.0' };
+  assert.equal(bannerVisible(after, null), false);
+  assert.equal(bannerVisible(after, { ok: true, output: '', cliVersion: '0.38.0', cliOutdated: false }), true);
+  assert.equal(bannerVisible(null, null), false);
+  assert.equal(bannerVisible(base, null), true);
+});
+
+test('bannerHeadline: app behind vs only the terminal CLI behind', () => {
+  assert.equal(bannerHeadline(base), '⬆ Caretaker 0.38.0 is available — you have 0.37.0');
+  assert.equal(
+    bannerHeadline({ ...base, current: '0.38.0', appOutdated: false, cliOutdated: true, cliVersion: '0.36.0' }),
+    '⬆ Your terminal caretaker-cli is 0.36.0 — Caretaker 0.38.0 is available',
+  );
+});
+
+test('bannerVisible: no result and a dismissed version → hidden (Dismiss clears the result)', () => {
+  assert.equal(bannerVisible({ ...base, dismissedVersion: '0.38.0' }, null), false);
+});

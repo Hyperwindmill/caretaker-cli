@@ -2,8 +2,9 @@
 // exist only on the web server). See docs/superpowers/specs/2026-11-25-update-notice-design.md.
 import { useEffect, useState } from 'react';
 import {
+  bannerHeadline,
+  bannerVisible,
   cliUpdateMessage,
-  shouldShowBanner,
   UPDATE_COMMAND,
   type CliUpdateResult,
   type UpdateStatus,
@@ -37,10 +38,11 @@ export function UpdateBanner() {
     };
   }, []);
 
-  if (!status || !shouldShowBanner(status)) return null;
+  if (!status || !bannerVisible(status, result)) return null;
 
   const dismiss = () => {
     setStatus({ ...status, dismissedVersion: status.latest });
+    setResult(null); // a shown update result would otherwise keep the banner up
     void fetch('/api/update/dismiss', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -83,7 +85,7 @@ export function UpdateBanner() {
     <div className="update-banner" role="status">
       <div className="update-banner__text">
         <div>
-          ⬆ Caretaker {status.latest} is available — you have {status.current}
+          {bannerHeadline(status)}
         </div>
         {showCliRow && (
           <div className="update-banner__cli">

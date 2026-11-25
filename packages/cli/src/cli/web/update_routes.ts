@@ -4,10 +4,10 @@
 
 import type { Hono } from 'hono';
 import { loadConfig, loadUiState, saveUiState } from '../../store/json.js';
-import { commandEnv } from '../../harness/tools/builtin/shell-env.js';
+import { probeShellEnv } from '../../harness/tools/builtin/shell-env.js';
 import { cliVersion } from '../../lib/version.js';
 import {
-  findPathCliVersion,
+  findInstalledCli,
   getLatestRelease,
   isNewer,
   runCliUpdate,
@@ -43,8 +43,12 @@ export interface UpdateDeps {
 const defaultDeps: UpdateDeps = {
   current: cliVersion,
   getLatest: () => getLatestRelease(),
-  findCli: () => findPathCliVersion(commandEnv()),
-  runUpdate: () => runCliUpdate(),
+  findCli: () => findInstalledCli(),
+  // The probe puts the version manager's npm on PATH (same reason as findCli).
+  runUpdate: async () => {
+    await probeShellEnv().catch(() => {});
+    return runCliUpdate();
+  },
 };
 
 export function registerUpdate(app: Hono, over: Partial<UpdateDeps> = {}): void {

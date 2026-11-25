@@ -34,3 +34,15 @@ export function cliUpdateMessage(r: CliUpdateResult): { kind: 'done' | 'failed' 
   }
   return { kind: 'done', text: 'CLI updated — restart open caretaker-cli sessions to use it.' };
 }
+
+/** Visible while there is something to update, and after a CLI update ran —
+ *  so its result ("restart open sessions") is shown even when that update
+ *  left nothing behind any more. */
+export function bannerVisible(s: UpdateStatus | null, r: CliUpdateResult | null): boolean {
+  return !!s && (shouldShowBanner(s) || r !== null);
+}
+
+export function bannerHeadline(s: UpdateStatus): string {
+  if (s.appOutdated) return `⬆ Caretaker ${s.latest} is available — you have ${s.current}`;
+  return `⬆ Your terminal caretaker-cli is ${s.cliVersion} — Caretaker ${s.latest} is available`;
+}

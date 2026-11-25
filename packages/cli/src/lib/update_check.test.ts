@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { setShellEnvForTest } from '../harness/tools/builtin/shell-env.js';
 import {
   isNewer,
   getLatestRelease,
   findPathCliVersion,
+  findInstalledCli,
   runCliUpdate,
   __resetUpdateCacheForTests,
 } from './update_check.js';
@@ -176,4 +178,35 @@ test('runCliUpdate keeps only the last 4000 chars of output', async () => {
   const r = await runCliUpdate({ exec: async () => ({ stdout: 'x'.repeat(5000) + 'END', stderr: '' }) });
   assert.equal(r.output.length, 4000);
   assert.ok(r.output.endsWith('END'));
+});
+
+// ── Final review fixes ────────────────────────────────────────────────────
+
+test('findPathCliVersion reads a Windows-cased Path key', async () => {
+  const bin = unixInstall('win-path-key', '0.33.0');
+  assert.equal(await findPathCliVersion({ Path: bin }, 'linux'), '0.33.0');
+});
+
+test('findPathCliVersion: an older pnpm shim with a NODE_PATH line still resolves', async () => {
+  const home = path.join(root, 'pnpm9');
+  const pkgDir = path.join(home, 'global', '5', 'node_modules', '@hyperwindmill', 'caretaker-cli');
+  mkdirSync(path.join(pkgDir, 'dist'), { recursive: true });
+  writeFileSync(path.join(pkgDir, 'package.json'), JSON.stringify({ name: PKG, version: '0.32.0' }));
+  mkdirSync(path.join(home, 'bin'), { recursive: true });
+  writeFileSync(
+    path.join(home, 'bin', 'caretaker-cli'),
+    '#!/bin/sh\nbasedir=$(dirname "$0")\n' +
+      `export NODE_PATH="${pkgDir}/dist/node_modules:${pkgDir}/node_modules:$NODE_PATH"\n` +
+      'exec node  "$basedir/../global/5/node_modules/@hyperwindmill/caretaker-cli/dist/index.js" "$@"\n',
+  );
+  assert.equal(await findPathCliVersion({ PATH: path.join(home, 'bin') }, 'linux'), '0.32.0');
+});
+
+test('findInstalledCli waits for the shell-env probe before scanning PATH', { skip: process.platform !== 'linux' }, async () => {
+  const bin = unixInstall('probed', '0.11.0');
+  const probe = async () => {
+    await new Promise((r) => setTimeout(r, 10));
+    setShellEnvForTest({ PATH: bin });
+  };
+  assert.equal(await findInstalledCli(probe), '0.11.0');
 });
