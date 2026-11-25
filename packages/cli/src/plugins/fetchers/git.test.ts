@@ -3,7 +3,14 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
-import { fetchGit, __setGitClient, symlinkFallbackFs, type GitClient } from './git.js';
+import type { GitHttpRequest, GitHttpResponse, HttpClient } from 'isomorphic-git';
+import {
+  fetchGit,
+  __setGitClient,
+  redirectAwareHttp,
+  symlinkFallbackFs,
+  type GitClient,
+} from './git.js';
 import { encrypt } from '../../lib/encryption.js';
 
 afterEach(() => __setGitClient(null));
@@ -321,4 +328,83 @@ test('fetchGit on existing cache with ref:null uses currentBranch for checkout',
   assert.ok(co);
   assert.equal(co.args.ref, 'main');
   rmSync(cache, { recursive: true, force: true });
+});
+
+// A fake transport that records every request URL. isomorphic-git's node
+// client follows redirects without telling us where it landed, so the
+// redirect is discovered by the `probe` passed to redirectAwareHttp.
+function fakeHttp() {
+  const urls: string[] = [];
+  const client: HttpClient = {
+    async request(req: GitHttpRequest): Promise<GitHttpResponse> {
+      urls.push(req.url);
+      return { url: '', headers: {}, statusCode: 200, statusMessage: 'OK' };
+    },
+  };
+  return { client, urls };
+}
+
+const ORIGINAL = 'https://gitlab.example.com/group/repo';
+const DISCOVER = '/info/refs?service=git-upload-pack';
+
+async function cloneLike(http: HttpClient) {
+  await http.request({ url: ORIGINAL + DISCOVER });
+  await http.request({ url: ORIGINAL + '/git-upload-pack', method: 'POST' });
+}
+
+test('redirectAwareHttp: a same-origin redirect of the discovery is used for every request', async () => {
+  const { client, urls } = fakeHttp();
+  await cloneLike(redirectAwareHttp(client, async () => ORIGINAL + '.git' + DISCOVER));
+  assert.deepEqual(urls, [ORIGINAL + '.git' + DISCOVER, ORIGINAL + '.git/git-upload-pack']);
+});
+
+test('redirectAwareHttp: a relative Location is resolved against the discovery URL', async () => {
+  const { client, urls } = fakeHttp();
+  await cloneLike(redirectAwareHttp(client, async () => '/group/repo.git' + DISCOVER));
+  assert.equal(urls[1], ORIGINAL + '.git/git-upload-pack');
+});
+
+test('redirectAwareHttp: a cross-origin redirect is ignored', async () => {
+  const { client, urls } = fakeHttp();
+  await cloneLike(
+    redirectAwareHttp(client, async () => 'https://other.example.net/group/repo.git' + DISCOVER),
+  );
+  assert.deepEqual(urls, [ORIGINAL + DISCOVER, ORIGINAL + '/git-upload-pack']);
+});
+
+test('redirectAwareHttp: no redirect or a failing probe leaves URLs untouched', async () => {
+  for (const probe of [async () => null, async () => Promise.reject(new Error('offline'))]) {
+    const { client, urls } = fakeHttp();
+    await cloneLike(redirectAwareHttp(client, probe));
+    assert.deepEqual(urls, [ORIGINAL + DISCOVER, ORIGINAL + '/git-upload-pack']);
+  }
+});
+
+test('redirectAwareHttp: probes once per transport, never with credentials', async () => {
+  const { client } = fakeHttp();
+  const probed: string[] = [];
+  const http = redirectAwareHttp(client, async (url) => {
+    probed.push(url);
+    return null;
+  });
+  await http.request({ url: ORIGINAL + DISCOVER, headers: { authorization: 'Basic secret' } });
+  await http.request({ url: ORIGINAL + DISCOVER, headers: { authorization: 'Basic secret' } });
+  assert.deepEqual(probed, [ORIGINAL + DISCOVER]);
+});
+
+test('fetchGit hands isomorphic-git a redirect-aware transport', async () => {
+  const cache = mkdtempSync(path.join(tmpdir(), 'plug-cache-'));
+  rmSync(cache, { recursive: true, force: true });
+  try {
+    const { client, calls } = makeMock();
+    __setGitClient(client);
+    await fetchGit({ url: 'https://example.com/x', ref: null, authToken: null }, cache);
+    const cloneCall = calls.find((c) => c.op === 'clone');
+    assert.ok(cloneCall);
+    const { default: rawHttp } = await import('isomorphic-git/http/node');
+    assert.notEqual(cloneCall.args.http, rawHttp);
+    assert.equal(typeof (cloneCall.args.http as HttpClient).request, 'function');
+  } finally {
+    rmSync(cache, { recursive: true, force: true });
+  }
 });
