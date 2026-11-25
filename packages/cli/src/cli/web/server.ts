@@ -73,6 +73,7 @@ import {
 } from './voice_proxy.js';
 import { registerVoiceBackend, maybeAutoStartBackend } from './voice_backend.js';
 import { registerVoiceBuiltin } from './voice_builtin.js';
+import { registerUpdate } from './update_routes.js';
 import { fetchAcpRegistry, installAcpAgent } from '../../acp/index.js';
 
 
@@ -254,6 +255,7 @@ export function createApp(apiListener: ApiListenerOptions, fetchImpl?: typeof fe
   registerVoiceBackend(app);
   registerVoiceBuiltin(app);
   registerOrchestrator(app, fetchImpl);
+  registerUpdate(app);
 
 
   // Pure-Node static serving with absolute path validation and fallback

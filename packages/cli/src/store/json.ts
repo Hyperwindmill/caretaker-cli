@@ -135,6 +135,8 @@ export async function saveConfig(c: CaretakerConfig): Promise<void> {
  *  copy it loaded, which would put back a stale value. */
 export interface UiState {
   lastProjectId?: string;
+  /** Release the user dismissed in the update banner (POST /api/update/dismiss). */
+  dismissedUpdateVersion?: string;
 }
 
 export async function loadUiState(): Promise<UiState> {
