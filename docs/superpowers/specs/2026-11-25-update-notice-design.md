@@ -41,20 +41,26 @@ Caretaker is starting to have users, and they run different versions. The goal i
 - **No install-kind detection.** Desktop, npm and Docker installs all get the same banner pointing at the
   GitHub release page; the user picks the right asset or method there.
 - **Global CLI on PATH**: the server looks for `caretaker-cli` on `PATH` (the probed shell env from
-  `shell-env.ts`, so version-manager bins are found under the desktop too) and runs
-  `caretaker-cli --version` (5 s timeout). When that version is behind `latest`, the banner also shows
+  `shell-env.ts`, so version-manager bins are found under the desktop too) and reads the version from
+  that install's `package.json` on disk — it never *executes* the binary: `caretaker-cli --version` runs
+  the boot side-effects in `index.ts` (plugin refresh with git fetch + `plugins.json` write, model-limits
+  fetch), which must not fire every few hours from a running server. First PATH hit wins, like the
+  shell; a hit whose install cannot be located (e.g. a volta binary shim) → no command. When that
+  version is behind `latest`, the banner also shows
   the update command. This is what serves the desktop user who also has the TUI installed, and it is
   independent of the app's own version (an up-to-date desktop with a stale global CLI still gets the
   notice). Under `caretaker-cli web` from npm the running CLI *is* the one on PATH, so the command shows
   there too — correct. Docker has no global CLI on PATH, so no command. Not found / failed → no command.
-- **Web**: `GET /api/update` → `{ current, latest, url, cliOutdated }`; `latest`/`url` absent when there
-  is nothing newer or the check is disabled/failed. The webview fetches it on mount and hourly (cheap:
+- **Web**: `GET /api/update` → `{ current, latest, url, appOutdated, cliVersion, cliOutdated,
+  dismissedVersion }`; `latest`/`url` absent when the check is disabled/failed. Dismiss is its own route,
+  `POST /api/update/dismiss { version }`, because `PUT /api/ui-state` treats an absent `lastProjectId`
+  as "clear it". The webview fetches it on mount and hourly (cheap:
   server-side cache). Banner at the top of the app, above everything, not covering the chat:
 
   ```
   ⬆ Caretaker 0.38.0 is available — you have 0.37.0
     Terminal CLI: npm i -g @hyperwindmill/caretaker-cli@latest     ← only when cliOutdated
-                          [ Download ]  [ Copy command ]  [ Dismiss ✕ ]
+             [ Download ]  [ Update CLI ]  [ Copy command ]  [ Dismiss ✕ ]
   ```
 
   "Download" opens the release `html_url` (desktop already routes `target=_blank` to
@@ -64,7 +70,7 @@ Caretaker is starting to have users, and they run different versions. The goal i
   `npm i -g @hyperwindmill/caretaker-cli@latest` (no user input in the argv) with `commandEnv()`, so the
   npm of the user's version manager is found; 5 min timeout; one run at a time (409 while in flight).
   Answers `{ ok, output }` (tail of stdout+stderr) when it ends — no streaming, the button shows a
-  spinner. Afterwards it re-runs `caretaker-cli --version`:
+  spinner. Afterwards it re-reads the PATH CLI's version (same on-disk lookup):
   - now current → banner line becomes "CLI updated — restart open caretaker-cli sessions to use it"
     (a running `caretaker-cli web` from npm keeps the old code in memory until restarted);
   - npm failed (typically `EACCES` with a system Node, where `-g` needs root) → the error tail is shown
