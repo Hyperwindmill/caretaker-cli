@@ -275,6 +275,8 @@ export type CaretakerConfig = {
   voice?: VoiceConfig;
   memory?: MemoryConfig;
   desktopAssistant?: DesktopAssistantConfig;
+  /** false disables the release check (no network call). Default on. */
+  updateCheck?: boolean;
 };
 
 

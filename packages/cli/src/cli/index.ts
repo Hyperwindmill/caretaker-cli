@@ -7,12 +7,12 @@
 // More subcommands (web, exec, session, agent, plugin, …) plug in
 // alongside `run` via `program.command(…)`.
 
-import { readFileSync } from 'node:fs';
 import { Command } from 'commander';
 import { createElement } from 'react';
 import { render } from 'ink';
 import App from '../tui/app.js';
 import { runCommand, type OutputFormat } from './run.js';
+import { cliVersion } from '../lib/version.js';
 
 export async function runCli(argv: string[]): Promise<void> {
   // No subcommand and no flags → TUI. Anything else flows through commander
@@ -27,28 +27,11 @@ export async function runCli(argv: string[]): Promise<void> {
     process.exit(0);
   }
 
-  // Read the version from package.json at runtime (relative to this module, not
-  // the CWD) so it tracks the single Changesets-managed version without a static
-  // JSON import that would break tsc's rootDir constraint. Guarded: this runs for
-  // every subcommand, and package.json is not always co-located with dist/ (e.g.
-  // the Electron desktop bundle ships dist/ only) — an unreadable file must never
-  // take the whole process down, only degrade the reported version.
-  let version = '0.0.0';
-  try {
-    version = (
-      JSON.parse(
-        readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
-      ) as { version: string }
-    ).version;
-  } catch {
-    // ponytail: fall back to a placeholder version if package.json isn't bundled
-  }
-
   const program = new Command();
   program
     .name('caretaker-cli')
     .description('Caretaker — TUI agent harness with subcommands for scripting.')
-    .version(version, '-v, --version', 'output the CLI version and exit');
+    .version(cliVersion(), '-v, --version', 'output the CLI version and exit');
 
   program
     .command('run [prompt...]')
