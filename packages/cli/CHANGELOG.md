@@ -1,5 +1,11 @@
 # caretaker-cli
 
+## 0.38.2
+
+### Patch Changes
+
+- 284b053: Settings → Orchestration: a long activity list no longer squeezes the configuration form out of sight. The form keeps its full height, the activity list scrolls on its own, and the panel scrolls as one page.
+
 ## 0.38.1
 
 No changes in this release.
