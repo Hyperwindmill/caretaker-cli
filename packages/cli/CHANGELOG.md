@@ -1,5 +1,17 @@
 # caretaker-cli
 
+## 0.38.3
+
+### Patch Changes
+
+- e955066: Show the arguments of tool calls made by ACP agents that report a call before its input is ready (e.g. claude-agent-acp): a `Bash` call no longer renders as `Bash {}` in the chat, the task cycle view and the saved session.
+- 3f495e1: Fix the saved transcript of ACP agents: a tool result was stored before its call, so a reloaded session showed an `unknown_tool` block next to an empty one. Results are now stored after the call, and sessions saved before this fix are merged on load.
+- 271710b: A plugin marketplace that lists a remote plugin (`"source": { "source": "url", … }`, valid in Claude Code marketplaces) no longer fails as a whole with `The "paths[1]" argument must be of type string`: the remote entry is skipped and the local plugins load (#2).
+- f527487: A git plugin source whose URL lacks the `.git` suffix no longer fails with `422 Unprocessable Entity` on GitLab (#2): the redirect the server sends for the repository is applied to the whole sync, within the same host only.
+- bdacd62: Editing a git plugin source in the web GUI no longer breaks its token with `401 Unauthorized` (#2): the token field starts empty and an empty field keeps the stored token, like the TUI. Tokens already damaged by earlier edits work again on the next sync.
+- 03f8959: Secret fields in the settings forms now behave the same way: the field starts empty when editing, leaving it blank keeps the saved value, and an optional secret has a "Remove saved value" button. This covers the provider API key, the plugin source token, the project repository token, the orchestration token and the Telegram, IMAP and SMTP secrets of a service; the plugin source, repository and orchestration tokens could not be removed before. The voice keys are unchanged. The TUI plugin source form removes the token when `-` is entered.
+- b1526c9: A project whose working directory is reached through a symlink (on macOS, anything under `/tmp` or `/var`) now maps onto the task worktree instead of a non-existent `../../…` path. This also makes the `task_git` and `task_delete` tests pass on macOS.
+
 ## 0.38.2
 
 ### Patch Changes

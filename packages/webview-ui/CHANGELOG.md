@@ -1,5 +1,12 @@
 # webview-ui
 
+## 0.38.3
+
+### Patch Changes
+
+- bdacd62: Editing a git plugin source in the web GUI no longer breaks its token with `401 Unauthorized` (#2): the token field starts empty and an empty field keeps the stored token, like the TUI. Tokens already damaged by earlier edits work again on the next sync.
+- 03f8959: Secret fields in the settings forms now behave the same way: the field starts empty when editing, leaving it blank keeps the saved value, and an optional secret has a "Remove saved value" button. This covers the provider API key, the plugin source token, the project repository token, the orchestration token and the Telegram, IMAP and SMTP secrets of a service; the plugin source, repository and orchestration tokens could not be removed before. The voice keys are unchanged. The TUI plugin source form removes the token when `-` is entered.
+
 ## 0.38.2
 
 No changes in this release.
