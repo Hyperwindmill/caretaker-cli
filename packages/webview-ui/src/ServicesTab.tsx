@@ -5,6 +5,8 @@ import type { ChatItem } from './App.js';
 import { MessageList } from './MessageList.js';
 import { triageFormError, triageAccountOptions, splitRecipients } from './services_form_utils.js';
 import { useCycleStream } from './use_cycle_stream.js';
+import { mergedSecret } from './secret_field.js';
+import { SecretInput } from './SecretInput.js';
 import { WarningIcon, TipIcon, LogsIcon, EditIcon, DeleteIcon, CloseIcon, StatusIcon, ActivateIcon } from './icons.js';
 
 interface ServicesTabProps {
@@ -166,6 +168,7 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
   const [smtpFrom, setSmtpFrom] = useState('');
   const [smtpUser, setSmtpUser] = useState('');
   const [smtpPassword, setSmtpPassword] = useState('');
+  const [removeSmtpPassword, setRemoveSmtpPassword] = useState(false);
   const [allowedSenders, setAllowedSenders] = useState('');
   const [allowedRecipients, setAllowedRecipients] = useState('');
   const [allowedAgents, setAllowedAgents] = useState<string[]>([]);
@@ -185,19 +188,21 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
     setWorkingDir(task.workingDir || '');
     setPrompt(task.prompt);
     setCron(task.cron);
-    setTelegramBotToken(task.telegramBotToken || '');
+    // Stored secrets are never pre-filled: empty = keep (see mergedSecret).
+    setTelegramBotToken('');
     setTelegramAllowedChats(task.telegramAllowedChats || '');
     setImapHost(task.imapHost || '');
     setImapPort(task.imapPort ? String(task.imapPort) : '993');
     setImapUser(task.imapUser || '');
-    setImapPassword(task.imapPassword || '');
+    setImapPassword('');
     setImapSecure(task.imapSecure !== false);
     setSmtpHost(task.smtpHost || '');
     setSmtpPort(task.smtpPort ? String(task.smtpPort) : '587');
     setSmtpSecure(task.smtpSecure === true);
     setSmtpFrom(task.smtpFrom || '');
     setSmtpUser(task.smtpUser || '');
-    setSmtpPassword(task.smtpPassword || '');
+    setSmtpPassword('');
+    setRemoveSmtpPassword(false);
     setAllowedSenders(task.allowedSenders || '');
     setAllowedRecipients(task.allowedRecipients || '');
     setAllowedAgents(task.allowedAgents || []);
@@ -231,6 +236,7 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
     setSmtpFrom('');
     setSmtpUser('');
     setSmtpPassword('');
+    setRemoveSmtpPassword(false);
     setAllowedSenders('');
     setAllowedRecipients('');
     setAllowedAgents([]);
@@ -292,7 +298,7 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
         return;
       }
     } else if (type === 'telegram') {
-      if (!telegramBotToken.trim()) {
+      if (!mergedSecret(editingTask?.telegramBotToken, telegramBotToken)) {
         setErrorMsg('Telegram Bot Token is required.');
         return;
       }
@@ -300,7 +306,7 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
       finalPrompt = 'Telegram Poller';
       finalCron = '* * * * *';
     } else if (type === 'email') {
-      if (!imapHost.trim() || !imapUser.trim() || !imapPassword.trim()) {
+      if (!imapHost.trim() || !imapUser.trim() || !mergedSecret(editingTask?.imapPassword, imapPassword)) {
         setErrorMsg('IMAP host, user and password are required.');
         return;
       }
@@ -345,7 +351,7 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
       ...(trimmedWorkingDir ? { workingDir: trimmedWorkingDir } : {}),
       ...(type === 'telegram'
         ? {
-            telegramBotToken: telegramBotToken.trim(),
+            telegramBotToken: mergedSecret(editingTask?.telegramBotToken, telegramBotToken) ?? '',
             telegramAllowedChats: telegramAllowedChats.trim(),
           }
         : {}),
@@ -362,14 +368,15 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
             imapHost: imapHost.trim(),
             imapPort: Number(imapPort),
             imapUser: imapUser.trim(),
-            imapPassword: imapPassword.trim(),
+            imapPassword: mergedSecret(editingTask?.imapPassword, imapPassword) ?? '',
             imapSecure,
             smtpHost: smtpHost.trim(),
             smtpPort: Number(smtpPort),
             smtpSecure,
             smtpFrom: smtpFrom.trim(),
             smtpUser: smtpUser.trim(),
-            smtpPassword: smtpPassword.trim(),
+            smtpPassword:
+              mergedSecret(editingTask?.smtpPassword, smtpPassword, removeSmtpPassword) ?? '',
             allowedSenders: allowedSenders.trim(),
             allowedRecipients: allowedRecipients.trim(),
             allowedAgents,
@@ -733,12 +740,12 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
             <>
               <div className="form-group">
                 <label htmlFor="tg-token">Telegram Bot Token</label>
-                <input
+                <SecretInput
                   id="tg-token"
-                  type="password"
-                  placeholder="e.g. 123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
                   value={telegramBotToken}
-                  onChange={(e) => setTelegramBotToken(e.target.value)}
+                  onChange={setTelegramBotToken}
+                  hasSaved={!!editingTask?.telegramBotToken}
+                  placeholder="e.g. 123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
                 />
               </div>
 
@@ -837,11 +844,11 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
 
               <div className="form-group">
                 <label htmlFor="imap-password">Password / App Password</label>
-                <input
+                <SecretInput
                   id="imap-password"
-                  type="password"
                   value={imapPassword}
-                  onChange={(e) => setImapPassword(e.target.value)}
+                  onChange={setImapPassword}
+                  hasSaved={!!editingTask?.imapPassword}
                 />
               </div>
 
@@ -903,12 +910,14 @@ export function ServicesTab({ config, agents, postMessage, taskRuns = {} }: Serv
 
               <div className="form-group">
                 <label htmlFor="smtp-password">SMTP Password</label>
-                <input
+                <SecretInput
                   id="smtp-password"
-                  type="password"
-                  placeholder="defaults to the IMAP password"
                   value={smtpPassword}
-                  onChange={(e) => setSmtpPassword(e.target.value)}
+                  onChange={setSmtpPassword}
+                  hasSaved={!!editingTask?.smtpPassword}
+                  remove={removeSmtpPassword}
+                  onRemoveChange={setRemoveSmtpPassword}
+                  placeholder="defaults to the IMAP password"
                 />
               </div>
 

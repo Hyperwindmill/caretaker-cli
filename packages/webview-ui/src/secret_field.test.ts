@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { secretForSave } from './secret_field.js';
+import { mergedSecret, secretForSave } from './secret_field.js';
 
 test('creating with an empty field stores no secret', () => {
   assert.equal(secretForSave(false, '   '), null);
@@ -24,4 +24,12 @@ test('editing with remove set clears the stored secret', () => {
 
 test('a typed value wins over remove', () => {
   assert.equal(secretForSave(true, 'glpat-new', true), 'glpat-new');
+});
+
+test('mergedSecret: typed wins, blank keeps the stored value, remove drops it', () => {
+  assert.equal(mergedSecret('stored', ' new '), 'new');
+  assert.equal(mergedSecret('stored', ''), 'stored');
+  assert.equal(mergedSecret('stored', '', true), undefined);
+  assert.equal(mergedSecret('stored', 'new', true), 'new');
+  assert.equal(mergedSecret(null, ''), undefined);
 });

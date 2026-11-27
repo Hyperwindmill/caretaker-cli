@@ -3,4 +3,4 @@
 "webview-ui": patch
 ---
 
-A saved token can be removed again from the settings forms that keep it when the field is left blank: the plugin source, project repository and orchestration token fields now show a "Remove saved token" button, and the TUI plugin source form removes it when `-` is entered.
+Secret fields in the settings forms now behave the same way: the field starts empty when editing, leaving it blank keeps the saved value, and an optional secret has a "Remove saved value" button. This covers the provider API key, the plugin source token, the project repository token, the orchestration token and the Telegram, IMAP and SMTP secrets of a service; the plugin source, repository and orchestration tokens could not be removed before. The voice keys are unchanged. The TUI plugin source form removes the token when `-` is entered.

@@ -4,8 +4,9 @@ interface SecretInputProps {
   onChange: (value: string) => void;
   /** A secret is already stored: the field stays empty and offers to remove it. */
   hasSaved: boolean;
-  remove: boolean;
-  onRemoveChange: (remove: boolean) => void;
+  /** Omit both for a required secret: it can be replaced but not removed. */
+  remove?: boolean;
+  onRemoveChange?: (remove: boolean) => void;
   /** Shown when nothing is stored. */
   placeholder?: string;
 }
@@ -19,7 +20,7 @@ export function SecretInput({
   value,
   onChange,
   hasSaved,
-  remove,
+  remove = false,
   onRemoveChange,
   placeholder,
 }: SecretInputProps) {
@@ -36,18 +37,18 @@ export function SecretInput({
           remove
             ? 'Will be removed on save'
             : hasSaved
-              ? '•••••••• (leave blank to keep the saved token)'
+              ? '•••••••• (leave blank to keep the saved value)'
               : placeholder
         }
       />
-      {hasSaved && (
+      {hasSaved && onRemoveChange && (
         <button
           type="button"
           className="btn btn--secondary btn--xs"
           style={{ marginTop: 6 }}
           onClick={() => onRemoveChange(!remove)}
         >
-          {remove ? 'Keep saved token' : 'Remove saved token'}
+          {remove ? 'Keep saved value' : 'Remove saved value'}
         </button>
       )}
     </>

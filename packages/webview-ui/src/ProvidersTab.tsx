@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import type { CaretakerConfig, AgentConfig, ProviderConfig } from 'caretaker-types';
 import type { ViewToHost, AcpRegistryResult } from './bridge.js';
 import { WarningIcon, EditIcon, DeleteIcon } from './icons.js';
+import { mergedSecret } from './secret_field.js';
+import { SecretInput } from './SecretInput.js';
 
 interface ProvidersTabProps {
   config: CaretakerConfig;
@@ -32,6 +34,7 @@ export function ProvidersTab({
   const [type, setType] = useState<'openai' | 'claude-code' | 'acp'>('openai');
   const [endpoint, setEndpoint] = useState('');
   const [apiKey, setApiKey] = useState('');
+  const [removeApiKey, setRemoveApiKey] = useState(false);
   const [command, setCommand] = useState('');
   const [args, setArgs] = useState('');
   const [presetId, setPresetId] = useState('custom');
@@ -85,7 +88,9 @@ export function ProvidersTab({
     setName(provider.name);
     setType(provider.type ?? 'openai');
     setEndpoint(provider.endpoint);
-    setApiKey(provider.apiKey || '');
+    // Never pre-fill a stored secret: empty = keep (see mergedSecret).
+    setApiKey('');
+    setRemoveApiKey(false);
     setCommand(provider.command || '');
     setArgs((provider.args ?? []).join(' '));
     setPresetId('custom');
@@ -102,6 +107,7 @@ export function ProvidersTab({
     setType('openai');
     setEndpoint('');
     setApiKey('');
+    setRemoveApiKey(false);
     setCommand('');
     setArgs('');
     setPresetId('custom');
@@ -124,7 +130,7 @@ export function ProvidersTab({
   const validateAndSave = () => {
     const trimmedName = name.trim();
     const trimmedEndpoint = endpoint.trim();
-    const trimmedApiKey = apiKey.trim();
+    const trimmedApiKey = mergedSecret(editingProvider?.apiKey, apiKey, removeApiKey);
     const trimmedCommand = command.trim();
     const isClaudeCode = type === 'claude-code';
     const isAcp = type === 'acp';
@@ -371,12 +377,14 @@ export function ProvidersTab({
               </div>
               <div className="form-group">
                 <label htmlFor="provider-key">API Key (Optional)</label>
-                <input
+                <SecretInput
                   id="provider-key"
-                  type="password"
-                  placeholder={editingProvider?.apiKey ? '••••••••' : 'Optional credentials'}
                   value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
+                  onChange={setApiKey}
+                  hasSaved={!!editingProvider?.apiKey}
+                  remove={removeApiKey}
+                  onRemoveChange={setRemoveApiKey}
+                  placeholder="Optional credentials"
                 />
               </div>
             </>

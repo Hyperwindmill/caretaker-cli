@@ -5,7 +5,7 @@ import FolderPicker from './FolderPicker.js';
 import { WarningIcon, FolderIcon, EditIcon, DeleteIcon } from './icons.js';
 import { validateRepositoryUrl } from './project_form_utils.js';
 import { ProjectRepoSync } from './ProjectRepoSync.js';
-import { secretForSave } from './secret_field.js';
+import { mergedSecret } from './secret_field.js';
 import { SecretInput } from './SecretInput.js';
 
 // UX copy only — authoritative validation is host-side (lib/project_slug.ts).
@@ -172,9 +172,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
           dockerImage: trimmedDocker || null,
           repositoryUrl: trimmedRepoUrl || null,
           repositoryToken: trimmedRepoUrl
-            ? // A typed token wins; otherwise keep the stored (encrypted) one unless removed.
-              (secretForSave(true, repositoryToken, removeRepoToken) ??
-              (removeRepoToken ? null : editingProject.repositoryToken || null))
+            ? (mergedSecret(editingProject.repositoryToken, repositoryToken, removeRepoToken) ?? null)
             : null,
         };
       }

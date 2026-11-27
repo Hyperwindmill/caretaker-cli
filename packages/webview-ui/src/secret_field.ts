@@ -15,3 +15,16 @@ export function secretForSave(
   if (trimmed) return trimmed;
   return isEditing && !remove ? undefined : null;
 }
+
+/**
+ * The same rule for a form that holds the stored value itself and saves the
+ * whole record: a typed value wins, otherwise the stored one is kept unless
+ * `remove` is set. `undefined` means no secret.
+ */
+export function mergedSecret(
+  stored: string | null | undefined,
+  typed: string,
+  remove = false,
+): string | undefined {
+  return typed.trim() || (remove ? undefined : stored || undefined);
+}
