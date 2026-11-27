@@ -282,6 +282,32 @@ test('discoverPlugins rejects entries that escape the source root', async () => 
   }
 });
 
+test('discoverPlugins skips remote (object) sources and keeps the local ones', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'plug-'));
+  try {
+    mk(
+      dir,
+      '.claude-plugin/marketplace.json',
+      JSON.stringify({
+        plugins: [
+          { name: 'local', source: './local' },
+          {
+            name: 'remote',
+            source: { source: 'url', url: 'https://example.com/skills.git', ref: 'main' },
+          },
+        ],
+      }),
+    );
+    const found = await discoverPlugins(dir);
+    assert.deepEqual(
+      found.map((p) => p.name),
+      ['local'],
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('discoverPlugins keeps the first of duplicate names within a single source', async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'plug-'));
   try {
