@@ -237,6 +237,16 @@ purpose. What keeps that affordable on a 200k-token session:
   is the right affordance there; task-log tool calls carry no result (`result: ''`),
   so the block would only add chrome.
 - **Chat state is shared.** The reducer and item types live in `chat_state.ts` (`chatReducer`, `initialChatState`, `load-history` with `streaming` for a cycle opened mid-run); `App.tsx` and `TaskCycleView.tsx` both use it. A message with `recap: true` renders as an assistant bubble labeled `Cycle recap` (handoffs are long markdown; the centered notice mangles them). `task_timeline.ts` maps task messages to items: legacy messages keep the compact path, `cycle` messages become `CycleItem` cards (`MessageList` `onOpenCycle`, stable callback required). Clicking a card opens `TaskCycleView` full pane: `watchCycle` on mount, `unwatchCycle` on unmount, events filtered by `sessionId`, rendered by the non-compact `MessageList`; on the live `done` event the viewer re-sends `watchCycle`, which now loads the finished session from disk (recap included — it is persisted before `done`). A task whose latest cycle is `running` auto-opens that cycle once per task open. The task composer is the shared `Composer` with `allowAttachments={false}` and `canAbort={false}`: Send stays available while the task is active (messages queue for the next cycle) and Pause lives in the task header. Its draft is controlled, so a failed POST puts the text back.
+- **Message timestamps.** Every `ChatItem` carries an optional `createdAt`: the stored
+  record's (`reconstructChatItems`, `taskMessagesToChatItems`) or, for a live item, the
+  browser's clock at creation in `chatReducer` (replaced by the stored time on reload). A
+  multi-part assistant turn shares one time across its bubbles. `MessageList` shows it two
+  ways (`message_time.ts`, pure): the time next to the bubble's role pill, `opacity: 0`
+  until the bubble is hovered or holds focus (full date in `title`; notices get only the
+  `title`), and a day separator ("Today" / "Yesterday" via `Intl.RelativeTimeFormat`, else
+  a short date) before each row that starts a new calendar day. Compact tool rows are
+  dated by their first item; undated items never start a day. Service run logs
+  (`ServicesTab`) build their items without times.
 - **Desktop assistant activation** (`assistant_activation.ts`, pure). On `assistantActivate`
   the view switches to Chat; if the assistant agent is not the selected one it posts
   `selectAgent` and waits for the server's `agentSelected` ack (posted last by

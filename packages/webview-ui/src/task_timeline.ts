@@ -69,7 +69,7 @@ export function taskMessagesToChatItems(
       continue;
     }
     if (msg.messageType === 'system' || msg.messageType === 'block') {
-      items.push({ kind: 'notice', text: msg.content, variant: msg.messageType });
+      items.push({ kind: 'notice', text: msg.content, variant: msg.messageType, createdAt: msg.createdAt });
       continue;
     }
     if (msg.messageType === 'tool_call') {
@@ -84,22 +84,22 @@ export function taskMessagesToChatItems(
           args = msg.content.slice(sp + 1);
         }
       }
-      items.push({ kind: 'tool', id: msg.toolCallId || String(msg.id), name, args, result: '' });
+      items.push({ kind: 'tool', id: msg.toolCallId || String(msg.id), name, args, result: '', createdAt: msg.createdAt });
       continue;
     }
     if (msg.messageType === 'plan') {
       // Stored per-message identity wins; plan is structurally always the planner.
-      items.push({ kind: 'assistant', text: `**📋 Plan submitted**\n\n${msg.content}`, streaming: false, label: msg.agentLabel || labels?.planner });
+      items.push({ kind: 'assistant', text: `**📋 Plan submitted**\n\n${msg.content}`, streaming: false, label: msg.agentLabel || labels?.planner, createdAt: msg.createdAt });
       continue;
     }
     if (msg.messageType === 'review') {
       // Stored role is 'user' (replayed as agent feedback), but the reviewer agent
       // produced it — render as a labeled bubble so it's clear who reviewed.
-      items.push({ kind: 'assistant', text: `**🔎 Code review**\n\n${msg.content}`, streaming: false, label: msg.agentLabel || labels?.reviewer });
+      items.push({ kind: 'assistant', text: `**🔎 Code review**\n\n${msg.content}`, streaming: false, label: msg.agentLabel || labels?.reviewer, createdAt: msg.createdAt });
       continue;
     }
     if (msg.role === 'user') {
-      items.push({ kind: 'user', text: msg.content });
+      items.push({ kind: 'user', text: msg.content, createdAt: msg.createdAt });
       continue;
     }
     // assistant (chat / heartbeat / heartbeat_live / review / yield)
@@ -118,11 +118,11 @@ export function taskMessagesToChatItems(
         // keep raw content
       }
     }
-    if (thinking) items.push({ kind: 'thinking', text: thinking });
+    if (thinking) items.push({ kind: 'thinking', text: thinking, createdAt: msg.createdAt });
     // Stored per-message identity (captured at run time — accurate for the phase
     // that produced it) wins; fall back to the developer heuristic for older
     // messages and for chat bubbles the agent wrote via task_add_message.
-    items.push({ kind: 'assistant', text, streaming: false, label: msg.agentLabel || labels?.developer });
+    items.push({ kind: 'assistant', text, streaming: false, label: msg.agentLabel || labels?.developer, createdAt: msg.createdAt });
   }
   return items;
 }

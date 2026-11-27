@@ -8,6 +8,8 @@ export interface UserItem {
   kind: 'user';
   text: string;
   attachments?: ToolAttachmentRecord[];
+  /** ISO time: the stored record's, or the browser's for a live item. */
+  createdAt?: string;
 }
 export interface AssistantItem {
   kind: 'assistant';
@@ -16,6 +18,7 @@ export interface AssistantItem {
   streaming: boolean;
   /** Optional role label shown instead of "assistant" (e.g. the task agent name · model). */
   label?: string;
+  createdAt?: string;
 }
 export interface ToolItem {
   kind: 'tool';
@@ -23,15 +26,18 @@ export interface ToolItem {
   name: string;
   args: unknown;
   result: string | null;
+  createdAt?: string;
 }
 export interface ThinkingItem {
   kind: 'thinking';
   text: string;
+  createdAt?: string;
 }
 export interface NoticeItem {
   kind: 'notice';
   text: string;
   variant: 'system' | 'block';
+  createdAt?: string;
 }
 /** A task cycle, shown as a card in the task timeline. Opening it loads the
  *  cycle's chat session (see TaskCycleView). */
@@ -90,19 +96,19 @@ function reconstructChatItems(messages: ChatMessage[]): ChatItem[] {
       // Closing handoff of a task cycle: a labeled markdown bubble — handoffs are
       // long and structured, which the centered plain-text notice mangles.
       items = closeStreamingAssistant(items);
-      items.push({ kind: 'assistant', text: msg.content, streaming: false, label: 'Cycle recap' });
+      items.push({ kind: 'assistant', text: msg.content, streaming: false, label: 'Cycle recap', createdAt: msg.createdAt });
     } else if (msg.role === 'user') {
       items = closeStreamingAssistant(items);
-      items.push({ kind: 'user', text: msg.content, attachments: msg.attachments });
+      items.push({ kind: 'user', text: msg.content, attachments: msg.attachments, createdAt: msg.createdAt });
     } else if (msg.role === 'assistant') {
       items = closeStreamingAssistant(items);
       
       if (msg.parts && msg.parts.length > 0) {
         for (const part of msg.parts) {
           if (part.type === 'text') {
-            items.push({ kind: 'assistant', text: part.text, streaming: false });
+            items.push({ kind: 'assistant', text: part.text, streaming: false, createdAt: msg.createdAt });
           } else if (part.type === 'thinking' && part.text.trim().length > 0) {
-            items.push({ kind: 'thinking', text: part.text });
+            items.push({ kind: 'thinking', text: part.text, createdAt: msg.createdAt });
           } else if (part.type === 'tool_use') {
             // Sessions saved by older ACP runs hold the result before the call.
             const orphan = items.findIndex(
@@ -118,11 +124,12 @@ function reconstructChatItems(messages: ChatMessage[]): ChatItem[] {
               name: part.name,
               args: part.args,
               result: null,
+              createdAt: msg.createdAt,
             });
           }
         }
       } else {
-        items.push({ kind: 'assistant', text: msg.content, streaming: false });
+        items.push({ kind: 'assistant', text: msg.content, streaming: false, createdAt: msg.createdAt });
       }
     } else if (msg.role === 'tool') {
       const toolCallId = msg.toolCallId;
@@ -140,6 +147,7 @@ function reconstructChatItems(messages: ChatMessage[]): ChatItem[] {
             name: 'unknown_tool',
             args: {},
             result: msg.content,
+            createdAt: msg.createdAt,
           });
         }
       }
@@ -149,6 +157,10 @@ function reconstructChatItems(messages: ChatMessage[]): ChatItem[] {
   return closeStreamingAssistant(items);
 }
 
+// ponytail: live items read the clock inside the reducer (StrictMode's double
+// invoke may differ by a millisecond). A reload replaces them with the stored time.
+const now = () => new Date().toISOString();
+
 export function chatReducer(state: State, action: Action): State {
   switch (action.kind) {
     case 'send-user':
@@ -156,7 +168,7 @@ export function chatReducer(state: State, action: Action): State {
         ...state,
         status: 'streaming',
         errorText: null,
-        items: [...state.items, { kind: 'user', text: action.text, attachments: action.attachments }],
+        items: [...state.items, { kind: 'user', text: action.text, attachments: action.attachments, createdAt: now() }],
       };
 
     case 'append-chunk': {
@@ -167,7 +179,7 @@ export function chatReducer(state: State, action: Action): State {
       }
       return {
         ...state,
-        items: [...state.items, { kind: 'assistant', text: action.text, streaming: true }],
+        items: [...state.items, { kind: 'assistant', text: action.text, streaming: true, createdAt: now() }],
       };
     }
 
@@ -179,7 +191,7 @@ export function chatReducer(state: State, action: Action): State {
       }
       return {
         ...state,
-        items: [...state.items, { kind: 'thinking', text: action.text }],
+        items: [...state.items, { kind: 'thinking', text: action.text, createdAt: now() }],
       };
     }
 
@@ -195,7 +207,7 @@ export function chatReducer(state: State, action: Action): State {
         ...state,
         items: [
           ...closeStreamingAssistant(state.items),
-          { kind: 'tool', id: action.id, name: action.name, args: action.args, result: null },
+          { kind: 'tool', id: action.id, name: action.name, args: action.args, result: null, createdAt: now() },
         ],
       };
     }

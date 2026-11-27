@@ -1,9 +1,10 @@
-import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import type { ChatItem, CycleItem } from './chat_state.js';
 import { cycleOutcomeLabel, cycleRoleLabel } from './task_timeline.js';
 import { MarkdownText } from './MarkdownText.js';
 import { groupCompactItems } from './compactGroups.js';
+import { daySeparators, fullDateTime, shortTime } from './message_time.js';
 import { prettyArgs, popoverPosition, resultMetric, toolSummary } from './toolFormat.js';
 import { DocIcon, ThinkingIcon, ToolIcon, SpinnerIcon, ResultArrowIcon, WarningIcon, SettingsIcon } from './icons.js';
 import logo from './caretaker_cli.png';
@@ -73,6 +74,17 @@ export const MessageList = memo(function MessageList({
     }
   }, [items, trailing, isStreaming]);
 
+  // One render-group per row; a day separator goes before the row that starts a
+  // new calendar day. Compact rows are dated by their first item.
+  const rows = useMemo(() => {
+    const groups = compact ? groupCompactItems(items) : items.map((item, i) => ({ kind: 'single' as const, key: i, item }));
+    const seps = daySeparators(
+      groups.map((g) => (g.kind === 'tool-row' ? g.items[0]!.createdAt : g.item.createdAt)),
+      new Date(),
+    );
+    return groups.map((g, i) => ({ group: g, separator: seps[i] }));
+  }, [items, compact]);
+
   if (items.length === 0 && !trailing && !isStreaming) {
     return (
       <div className="messages messages--empty">
@@ -83,21 +95,24 @@ export const MessageList = memo(function MessageList({
 
   return (
     <div ref={containerRef} className="messages" onScroll={onScroll}>
-      {compact
-        ? groupCompactItems(items).map((g) =>
-            g.kind === 'tool-row' ? (
-              <div key={g.key} className="tool-bubble-row">
-                {g.items.map((item, j) => (
-                  <Item key={g.key + j} item={item} sessionId={sessionId} compact={compact} onOpenCycle={onOpenCycle} />
-                ))}
-              </div>
-            ) : (
-              <Item key={g.key} item={g.item} sessionId={sessionId} compact={compact} onOpenCycle={onOpenCycle} />
-            ),
-          )
-        : items.map((item, i) => (
-            <Item key={i} item={item} sessionId={sessionId} compact={compact} onOpenCycle={onOpenCycle} />
-          ))}
+      {rows.map(({ group: g, separator }) => (
+        <Fragment key={g.key}>
+          {separator && (
+            <div key="sep" className="day-separator" role="separator">
+              {separator}
+            </div>
+          )}
+          {g.kind === 'tool-row' ? (
+            <div key="row" className="tool-bubble-row">
+              {g.items.map((item, j) => (
+                <Item key={j} item={item} sessionId={sessionId} compact={compact} onOpenCycle={onOpenCycle} />
+              ))}
+            </div>
+          ) : (
+            <Item key="row" item={g.item} sessionId={sessionId} compact={compact} onOpenCycle={onOpenCycle} />
+          )}
+        </Fragment>
+      ))}
       {trailing}
       {isStreaming && (
         <div className="messages__loading-indicator">
@@ -296,6 +311,21 @@ const CycleCard = memo(function CycleCard({ item, onOpen }: { item: CycleItem; o
   );
 });
 
+/** Role pill plus the message time, revealed on hover/focus (see .bubble__time). */
+function BubbleHead({ role, createdAt }: { role: string; createdAt?: string }) {
+  const time = shortTime(createdAt);
+  return (
+    <div className="bubble__head">
+      <div className="bubble__role">{role}</div>
+      {time && (
+        <time className="bubble__time" dateTime={createdAt} title={fullDateTime(createdAt)}>
+          {time}
+        </time>
+      )}
+    </div>
+  );
+}
+
 const Item = memo(function Item({
   item,
   sessionId,
@@ -311,7 +341,7 @@ const Item = memo(function Item({
     case 'user':
       return (
         <div className="bubble bubble--user">
-          <div className="bubble__role">user</div>
+          <BubbleHead role="user" createdAt={item.createdAt} />
           <div className="bubble__text">
             <MarkdownText content={item.text} />
             {item.attachments && item.attachments.length > 0 && (
@@ -361,7 +391,7 @@ const Item = memo(function Item({
     case 'assistant':
       return (
         <div className="bubble bubble--assistant">
-          <div className="bubble__role">{item.label || 'assistant'}</div>
+          <BubbleHead role={item.label || 'assistant'} createdAt={item.createdAt} />
           <div className="bubble__text">
             <MarkdownText content={item.text} cache={!item.streaming} />
             {item.streaming && <span className="bubble__caret">▌</span>}
@@ -390,7 +420,7 @@ const Item = memo(function Item({
       return compact ? <ToolBubble item={item} /> : <ToolBlock item={item} />;
     case 'notice':
       return (
-        <div className={`notice${item.variant === 'block' ? ' notice--block' : ''}`}>
+        <div className={`notice${item.variant === 'block' ? ' notice--block' : ''}`} title={fullDateTime(item.createdAt) || undefined}>
           {item.variant === 'block' ? <WarningIcon size={12} /> : <SettingsIcon size={12} />}
           <MarkdownText content={item.text} />
         </div>

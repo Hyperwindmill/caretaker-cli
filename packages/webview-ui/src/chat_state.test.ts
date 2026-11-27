@@ -33,7 +33,7 @@ test('load-history: a result saved before its call is merged into one block', ()
     ],
   });
   assert.deepEqual(s.items, [
-    { kind: 'tool', id: 't', name: 'Bash', args: { command: 'ls' }, result: 'out' },
+    { kind: 'tool', id: 't', name: 'Bash', args: { command: 'ls' }, result: 'out', createdAt: '' },
   ]);
 });
 
@@ -47,7 +47,7 @@ test('load-history: recap becomes a labeled bubble, streaming flag sets status',
     ],
   });
   assert.equal(s.status, 'streaming');
-  assert.deepEqual(s.items.at(-1), { kind: 'assistant', text: 'R', streaming: false, label: 'Cycle recap' });
+  assert.deepEqual(s.items.at(-1), { kind: 'assistant', text: 'R', streaming: false, label: 'Cycle recap', createdAt: '' });
 });
 
 test('load-history without the streaming flag is idle', () => {
@@ -56,4 +56,16 @@ test('load-history without the streaming flag is idle', () => {
     messages: [{ id: '1', role: 'user', content: 'p', createdAt: '' }],
   });
   assert.equal(s.status, 'idle');
+});
+
+test('history items carry the stored time, live items the current one', () => {
+  let s = chatReducer(initialChatState, {
+    kind: 'load-history',
+    messages: [{ id: '1', role: 'user', content: 'p', createdAt: '2026-11-27T10:00:00.000Z' }],
+  });
+  assert.equal(s.items[0]!.createdAt, '2026-11-27T10:00:00.000Z');
+  const before = Date.now();
+  s = chatReducer(s, { kind: 'send-user', text: 'q' });
+  s = chatReducer(s, { kind: 'append-chunk', text: 'a' });
+  for (const item of s.items.slice(1)) assert.ok(Date.parse(item.createdAt!) >= before);
 });

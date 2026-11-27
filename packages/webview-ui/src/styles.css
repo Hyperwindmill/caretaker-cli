@@ -530,6 +530,51 @@ body {
   margin-bottom: 2px;
 }
 
+.bubble__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+}
+
+.bubble--user .bubble__head {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+/* Hidden at rest so the thread looks unchanged; shown while the bubble is
+   hovered or holds focus. */
+.bubble__time {
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 2px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.bubble:hover .bubble__time,
+.bubble:focus-within .bubble__time {
+  opacity: 1;
+}
+
+.day-separator {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.day-separator::before,
+.day-separator::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(127, 127, 127, 0.2);
+}
+
 .bubble__text {
   font-size: 13px;
   line-height: 1.5;
