@@ -257,6 +257,18 @@ export async function runAcp(opts: RunOptions, cb: RunCallbacks = {}): Promise<R
         break;
       }
       case 'tool_call_update': {
+        // Agents may report a call before its input exists (claude-agent-acp
+        // sends `rawInput: {}` at stream start) and deliver the input in later
+        // updates: refine the stored part and re-emit under the same id.
+        const part = parts.find((p) => p.type === 'tool_use' && p.id === u.toolCallId);
+        if (
+          part?.type === 'tool_use' &&
+          u.rawInput != null &&
+          JSON.stringify(u.rawInput) !== JSON.stringify(part.args)
+        ) {
+          part.args = u.rawInput;
+          await safeEmit(() => cb.onToolCall?.(u.toolCallId, part.name, u.rawInput));
+        }
         if (u.status === 'completed' || u.status === 'failed') {
           const resultText = extractToolResultText(u.content);
           await safeEmit(() => cb.onToolResult?.(u.toolCallId, resultText));

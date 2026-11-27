@@ -85,6 +85,7 @@ export async function runCommand(prompt: string, opts: RunOptions): Promise<numb
     );
   }
 
+  const printedCalls = new Set<string>();
   const result = await run(
     {
       agent: effective,
@@ -97,8 +98,11 @@ export async function runCommand(prompt: string, opts: RunOptions): Promise<numb
       ? {}
       : {
           onChunk: (s) => process.stdout.write(s),
-          onToolCall: (_id, name, args) =>
-            process.stdout.write(`\n  → tool ${name}(${JSON.stringify(args)})`),
+          onToolCall: (id, name, args) => {
+            if (printedCalls.has(id)) return; // an ACP args refinement, same call
+            printedCalls.add(id);
+            process.stdout.write(`\n  → tool ${name}(${JSON.stringify(args)})`);
+          },
           onToolResult: (_id, content) => process.stdout.write(`\n  ← ${content.slice(0, 200)}\n`),
         },
   );

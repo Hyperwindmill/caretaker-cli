@@ -175,7 +175,14 @@ export function chatReducer(state: State, action: Action): State {
       };
     }
 
-    case 'tool-call':
+    case 'tool-call': {
+      // A repeated id refines the call's args (ACP sends the input late).
+      const known = state.items.findIndex((it) => it.kind === 'tool' && it.id === action.id);
+      if (known >= 0) {
+        const items = [...state.items];
+        items[known] = { ...(items[known] as ToolItem), name: action.name, args: action.args };
+        return { ...state, items };
+      }
       return {
         ...state,
         items: [
@@ -183,6 +190,7 @@ export function chatReducer(state: State, action: Action): State {
           { kind: 'tool', id: action.id, name: action.name, args: action.args, result: null },
         ],
       };
+    }
 
     case 'tool-result': {
       const idx = state.items.findIndex(

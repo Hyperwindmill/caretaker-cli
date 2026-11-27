@@ -208,6 +208,7 @@ export async function executeTelegramTaskRun(
     });
   };
 
+  const announcedCalls = new Set<string>();
   const queueToolCall = (toolName: string, summary: string) => {
     const emoji = TOOL_EMOJI[toolName] || '🔧';
     const line = `${emoji} ${toolName}${summary ? ' ' + summary : ''}`;
@@ -321,6 +322,8 @@ export async function executeTelegramTaskRun(
           }
         },
         onToolCall: async (id, name, args) => {
+          if (announcedCalls.has(id)) return; // an ACP args refinement, same call
+          announcedCalls.add(id);
           let summary = '';
           if (args && typeof args === 'object') {
             if ('path' in args) summary = String(args.path);

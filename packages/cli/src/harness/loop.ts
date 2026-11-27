@@ -48,6 +48,10 @@ export interface RunCallbacks {
   /** Streamed model "thinking" / reasoning fragments (provider-dependent). */
   onThinking?: (text: string) => void;
   /** Fired once per tool invocation, after arguments are fully decoded, before execution. */
+  /**
+   * May fire again with the same `id` when an external runner (ACP) learns the
+   * call's input after announcing it: consumers upsert by id, or keep the first.
+   */
   onToolCall?: (id: string, name: string, args: unknown) => void;
   /**
    * Optional gate. When provided, the loop awaits the decision before

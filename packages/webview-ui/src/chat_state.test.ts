@@ -10,6 +10,14 @@ test('tool call closes the streaming assistant span', () => {
   assert.equal((s.items[0] as { streaming: boolean }).streaming, false);
 });
 
+test('a repeated tool-call id refines the args in place', () => {
+  let s = chatReducer(initialChatState, { kind: 'tool-call', id: 't', name: 'Bash', args: {} });
+  s = chatReducer(s, { kind: 'append-chunk', text: 'b' });
+  s = chatReducer(s, { kind: 'tool-call', id: 't', name: 'Bash', args: { command: 'ls' } });
+  assert.deepEqual(s.items.map((i) => i.kind), ['tool', 'assistant']);
+  assert.deepEqual((s.items[0] as { args: unknown }).args, { command: 'ls' });
+});
+
 test('load-history: recap becomes a labeled bubble, streaming flag sets status', () => {
   const s = chatReducer(initialChatState, {
     kind: 'load-history',

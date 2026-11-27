@@ -126,6 +126,30 @@ test('tool_call + tool_call_update emit callbacks and persistable records', asyn
   assert.deepEqual(results, ['file body']);
 });
 
+test('a tool_call_update carrying rawInput refines the call args', async () => {
+  useFakeAgent(async (ctx) => {
+    const send = (update: Record<string, unknown>) =>
+      ctx.client.notify('session/update', { sessionId: 'acp-1', update: { toolCallId: 'tc1', ...update } });
+    await send({ sessionUpdate: 'tool_call', name: 'Bash', title: 'Terminal', kind: 'execute', rawInput: {} });
+    await send({ sessionUpdate: 'tool_call_update', rawInput: { command: 'ls' } });
+    await send({ sessionUpdate: 'tool_call_update', rawInput: { command: 'ls' }, status: 'completed', content: [] });
+    return { stopReason: 'end_turn' };
+  });
+  const calls: unknown[] = [];
+  const messages: any[] = [];
+  const res = await runAcp(
+    { agent: agentCfg, provider, tools: [], prompt: 'x' },
+    { onToolCall: (id, name, args) => calls.push([id, name, args]), onMessage: (m) => void messages.push(m) },
+  );
+  assert.equal(res.toolCalls, 1);
+  assert.deepEqual(calls, [
+    ['tc1', 'Bash', {}],
+    ['tc1', 'Bash', { command: 'ls' }],
+  ]);
+  const use = messages.flatMap((m) => m.parts ?? []).find((p) => p.type === 'tool_use');
+  assert.deepEqual(use.args, { command: 'ls' });
+});
+
 test('abort sends session/cancel and returns stop aborted', async () => {
   let cancelled = false;
   const app = acpAgent({ name: 'fake' })
