@@ -203,4 +203,29 @@ describe('source_manager', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('patchSource does not re-encrypt a token that is already encrypted', async () => {
+    const { decrypt } = await import('../lib/encryption.js');
+    const created = await mgr.createSource({
+      kind: 'git',
+      url: 'https://example.com/repo.git',
+      authToken: 'plain-token',
+    });
+    // An edit form that echoes the stored value back must not add a layer.
+    const patched = await mgr.patchSource(created.id, { authToken: created.authToken });
+    assert.ok(patched?.authToken);
+    assert.equal(decrypt(patched.authToken), 'plain-token');
+  });
+
+  it('patchSource keeps the stored token when authToken is omitted', async () => {
+    const { decrypt } = await import('../lib/encryption.js');
+    const created = await mgr.createSource({
+      kind: 'git',
+      url: 'https://example.com/repo',
+      authToken: 'plain-token',
+    });
+    const patched = await mgr.patchSource(created.id, { url: 'https://example.com/repo.git' });
+    assert.ok(patched?.authToken);
+    assert.equal(decrypt(patched.authToken), 'plain-token');
+  });
 });

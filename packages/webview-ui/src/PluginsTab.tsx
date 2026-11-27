@@ -3,6 +3,7 @@ import type { PluginsFile, PluginSource, PluginRecord } from 'caretaker-types';
 import type { ViewToHost, RefreshOutcome } from './bridge.js';
 import FolderPicker from './FolderPicker.js';
 import { WarningIcon, CloseIcon, GitIcon, FolderIcon, EditIcon, DeleteIcon } from './icons.js';
+import { authTokenForSave } from './plugin_source_form.js';
 
 interface PluginsTabProps {
   pluginsFile: PluginsFile;
@@ -54,7 +55,9 @@ export function PluginsTab({
     setKind(source.kind);
     setUrl(source.url);
     setRef(source.ref || '');
-    setAuthToken(source.authToken || '');
+    // Never pre-fill: the stored token is encrypted, and echoing it back on
+    // save used to encrypt it again. Empty = keep (see authTokenForSave).
+    setAuthToken('');
     setRefreshOnStart(source.refreshOnStart || false);
     setErrorMsg(null);
   };
@@ -104,7 +107,7 @@ export function PluginsTab({
       kind,
       url: trimmedUrl,
       ref: trimmedRef || null,
-      authToken: trimmedAuth || null,
+      authToken: authTokenForSave(editingSource !== null, trimmedAuth),
       refreshOnStart,
     };
 

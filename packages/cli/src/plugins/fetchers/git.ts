@@ -8,7 +8,7 @@
 import * as fs from 'node:fs';
 import { mkdir, rm, stat } from 'node:fs/promises';
 import * as path from 'node:path';
-import git from 'isomorphic-git';
+import git, { type HttpClient } from 'isomorphic-git';
 import http from 'isomorphic-git/http/node';
 import { decrypt, isEncrypted } from '../../lib/encryption.js';
 import type { FetchResult } from '../types.js';
@@ -95,8 +95,77 @@ export function symlinkFallbackFs(base: typeof fs = fs): typeof fs {
 
 const gitFs = symlinkFallbackFs();
 
+const DISCOVERY = '/info/refs?service=';
+
+/** Where the discovery URL redirects to (its Location), or null. */
+export type RedirectProbe = (discoveryUrl: string) => Promise<string | null>;
+
+/**
+ * Ask for the discovery URL without following redirects and without
+ * credentials. GitLab answers a repo URL lacking `.git` with a 301 to the
+ * `.git` one before any authentication.
+ */
+const probeRedirect: RedirectProbe = async (discoveryUrl) => {
+  const res = await fetch(discoveryUrl, {
+    redirect: 'manual',
+    headers: { 'user-agent': 'git/isomorphic-git' },
+    // A black-holed network must not stall the sync: give up, use the URL as is.
+    signal: AbortSignal.timeout(10_000),
+  });
+  await res.body?.cancel();
+  return res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
+};
+
+/**
+ * isomorphic-git's node transport follows a redirect on the discovery GET
+ * (`<url>/info/refs`) without reporting where it landed, then sends the next
+ * request (`<url>/git-upload-pack`) to the original URL. GitLab redirects
+ * `…/repo/info/refs` to `…/repo.git/info/refs` and answers the POST to
+ * `…/repo/git-upload-pack` with 422. So, before the first discovery, probe the
+ * redirect and use the redirected base for every request of this fetch, like
+ * git's own `http.followRedirects=initial` — only within the same origin, so a
+ * redirect can never move the credentials to another host.
+ */
+export function redirectAwareHttp(
+  base: HttpClient,
+  probe: RedirectProbe = probeRedirect,
+): HttpClient {
+  let probed = false;
+  let rewrite: { from: string; to: string } | null = null;
+  return {
+    async request(req) {
+      const at = req.url.indexOf(DISCOVERY);
+      if (!probed && at !== -1) {
+        probed = true;
+        try {
+          const location = await probe(req.url);
+          if (location) {
+            const target = new URL(location, req.url);
+            const targetAt = target.href.indexOf(DISCOVERY);
+            const from = req.url.slice(0, at);
+            if (targetAt !== -1 && target.origin === new URL(from).origin) {
+              rewrite = { from, to: target.href.slice(0, targetAt) };
+            }
+          }
+        } catch {
+          // Probe failed (offline, DNS…): carry on with the URL as given.
+        }
+      }
+      const url =
+        rewrite && req.url.startsWith(rewrite.from)
+          ? rewrite.to + req.url.slice(rewrite.from.length)
+          : req.url;
+      return base.request({ ...req, url });
+    },
+  };
+}
+
 function plainToken(authToken: string): string {
-  return isEncrypted(authToken) ? decrypt(authToken) : authToken;
+  // Peel every layer: the web edit form used to echo the stored ciphertext back
+  // and patchSource encrypted it again, so older sources can be nested.
+  let value = authToken;
+  while (isEncrypted(value)) value = decrypt(value);
+  return value;
 }
 
 function buildOnAuth(authToken: string | null): OnAuth | undefined {
@@ -117,6 +186,8 @@ async function dirExists(p: string): Promise<boolean> {
 
 export async function fetchGit(input: GitFetchInput, cacheDir: string): Promise<FetchResult> {
   const onAuth = buildOnAuth(input.authToken);
+  // One transport per fetch: the remembered redirect must not leak across sources.
+  const transport = redirectAwareHttp(http);
   const gitDir = path.join(cacheDir, '.git');
   const alreadyCloned = await dirExists(gitDir);
 
@@ -124,7 +195,7 @@ export async function fetchGit(input: GitFetchInput, cacheDir: string): Promise<
     await mkdir(cacheDir, { recursive: true });
     await gitImpl.clone({
       fs: gitFs,
-      http,
+      http: transport,
       dir: cacheDir,
       url: input.url,
       ref: input.ref ?? undefined,
@@ -138,7 +209,7 @@ export async function fetchGit(input: GitFetchInput, cacheDir: string): Promise<
       // plugins.json) work without us editing the repo's stored remote config.
       await gitImpl.fetch({
         fs: gitFs,
-        http,
+        http: transport,
         dir: cacheDir,
         url: input.url,
         ref: input.ref ?? undefined,
