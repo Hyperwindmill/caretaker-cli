@@ -1,5 +1,9 @@
 # caretaker-types
 
+## 0.39.0
+
+No changes in this release.
+
 ## 0.38.3
 
 No changes in this release.
