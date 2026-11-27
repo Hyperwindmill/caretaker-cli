@@ -5,6 +5,8 @@ import FolderPicker from './FolderPicker.js';
 import { WarningIcon, FolderIcon, EditIcon, DeleteIcon } from './icons.js';
 import { validateRepositoryUrl } from './project_form_utils.js';
 import { ProjectRepoSync } from './ProjectRepoSync.js';
+import { secretForSave } from './secret_field.js';
+import { SecretInput } from './SecretInput.js';
 
 // UX copy only — authoritative validation is host-side (lib/project_slug.ts).
 const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$/;
@@ -35,6 +37,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
   const [dockerImage, setDockerImage] = useState('');
   const [repositoryUrl, setRepositoryUrl] = useState('');
   const [repositoryToken, setRepositoryToken] = useState('');
+  const [removeRepoToken, setRemoveRepoToken] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const projects = config.projects || [];
@@ -57,6 +60,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
     setDockerImage(proj.dockerImage || '');
     setRepositoryUrl(proj.repositoryUrl || '');
     setRepositoryToken('');
+    setRemoveRepoToken(false);
     setErrorMsg(null);
   };
 
@@ -78,6 +82,7 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
     setDockerImage('');
     setRepositoryUrl('');
     setRepositoryToken('');
+    setRemoveRepoToken(false);
     setErrorMsg(null);
   };
 
@@ -167,7 +172,9 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
           dockerImage: trimmedDocker || null,
           repositoryUrl: trimmedRepoUrl || null,
           repositoryToken: trimmedRepoUrl
-            ? repositoryToken.trim() || editingProject.repositoryToken || null
+            ? // A typed token wins; otherwise keep the stored (encrypted) one unless removed.
+              (secretForSave(true, repositoryToken, removeRepoToken) ??
+              (removeRepoToken ? null : editingProject.repositoryToken || null))
             : null,
         };
       }
@@ -293,13 +300,14 @@ export function ProjectsTabSettings({ config, agents, postMessage }: ProjectsTab
           {repositoryUrl.trim() && (
             <div className="form-group">
               <label htmlFor="project-repo-token">Repository access token (optional)</label>
-              <input
+              <SecretInput
                 id="project-repo-token"
-                type="password"
-                placeholder={editingProject?.repositoryToken ? '•••••••• (leave blank to keep saved token)' : 'e.g. a GitHub/GitLab PAT'}
                 value={repositoryToken}
-                onChange={(e) => setRepositoryToken(e.target.value)}
-                autoComplete="off"
+                onChange={setRepositoryToken}
+                hasSaved={!!editingProject?.repositoryToken}
+                remove={removeRepoToken}
+                onRemoveChange={setRemoveRepoToken}
+                placeholder="e.g. a GitHub/GitLab PAT"
               />
               <p style={{ fontSize: '11px', opacity: 0.65, margin: '6px 0 0 0' }}>
                 Stored encrypted. Sent as the <code>x-access-token</code> password over HTTPS only —

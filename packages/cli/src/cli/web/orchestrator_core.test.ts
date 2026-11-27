@@ -187,6 +187,29 @@ describe('orchestrator_core', () => {
     assert.equal(res.purgeLedger, false);
   });
 
+  test('mergeConfigSave: a null token removes the stored one on the same host', () => {
+    const saved: OrchestratorConfig = {
+      enabled: true,
+      name: 'ws',
+      endpoint: 'https://h/v1',
+      token: encrypt('secret-token'),
+      pollSeconds: 15,
+      policy: 'approve',
+      instanceId: 'uuid-1',
+    };
+    const res = mergeConfigSave(saved, {
+      enabled: true,
+      name: 'ws',
+      endpoint: 'https://h/v1',
+      token: null,
+      pollSeconds: 15,
+      policy: 'approve',
+    });
+    assert.ok(!('error' in res));
+    assert.equal(res.config.token, '');
+    assert.equal(res.purgeLedger, false);
+  });
+
   test('mergeConfigSave: a host change drops the stored token and purges the ledger', () => {
     const blob = encrypt('secret-token');
     const saved: OrchestratorConfig = {

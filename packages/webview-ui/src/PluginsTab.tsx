@@ -3,7 +3,8 @@ import type { PluginsFile, PluginSource, PluginRecord } from 'caretaker-types';
 import type { ViewToHost, RefreshOutcome } from './bridge.js';
 import FolderPicker from './FolderPicker.js';
 import { WarningIcon, CloseIcon, GitIcon, FolderIcon, EditIcon, DeleteIcon } from './icons.js';
-import { authTokenForSave } from './plugin_source_form.js';
+import { secretForSave } from './secret_field.js';
+import { SecretInput } from './SecretInput.js';
 
 interface PluginsTabProps {
   pluginsFile: PluginsFile;
@@ -28,6 +29,7 @@ export function PluginsTab({
   const [url, setUrl] = useState('');
   const [ref, setRef] = useState('');
   const [authToken, setAuthToken] = useState('');
+  const [removeToken, setRemoveToken] = useState(false);
   const [refreshOnStart, setRefreshOnStart] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -45,6 +47,7 @@ export function PluginsTab({
     setUrl('');
     setRef('');
     setAuthToken('');
+    setRemoveToken(false);
     setRefreshOnStart(true);
     setErrorMsg(null);
   };
@@ -56,8 +59,9 @@ export function PluginsTab({
     setUrl(source.url);
     setRef(source.ref || '');
     // Never pre-fill: the stored token is encrypted, and echoing it back on
-    // save used to encrypt it again. Empty = keep (see authTokenForSave).
+    // save used to encrypt it again. Empty = keep (see secretForSave).
     setAuthToken('');
+    setRemoveToken(false);
     setRefreshOnStart(source.refreshOnStart || false);
     setErrorMsg(null);
   };
@@ -107,7 +111,7 @@ export function PluginsTab({
       kind,
       url: trimmedUrl,
       ref: trimmedRef || null,
-      authToken: authTokenForSave(editingSource !== null, trimmedAuth),
+      authToken: secretForSave(editingSource !== null, trimmedAuth, removeToken),
       refreshOnStart,
     };
 
@@ -236,12 +240,14 @@ export function PluginsTab({
 
               <div className="form-group">
                 <label htmlFor="source-token">Auth Token (Optional - encrypted)</label>
-                <input
+                <SecretInput
                   id="source-token"
-                  type="password"
-                  placeholder={editingSource?.authToken ? '••••••••' : 'Credentials for private repositories'}
                   value={authToken}
-                  onChange={(e) => setAuthToken(e.target.value)}
+                  onChange={setAuthToken}
+                  hasSaved={!!editingSource?.authToken}
+                  remove={removeToken}
+                  onRemoveChange={setRemoveToken}
+                  placeholder="Credentials for private repositories"
                 />
               </div>
             </>

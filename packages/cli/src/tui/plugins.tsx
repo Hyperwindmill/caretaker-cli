@@ -295,16 +295,19 @@ function SourceForm({
     };
     if (kind === 'git') {
       result.ref = ref.trim() || null;
-      // Edit mode: empty input means "keep existing" → leave authToken
-      // undefined so patchSource skips the field. In create mode an empty
-      // input means "no token".
-      if (isEdit) {
-        result.authToken = authToken.trim() ? authToken.trim() : undefined;
-      } else {
-        result.authToken = authToken.trim() || null;
-      }
+      result.authToken = tokenResult();
     }
     void onSave(result);
+  };
+
+  // Edit mode: empty input means "keep existing" → undefined, so patchSource
+  // skips the field; a lone "-" removes the stored token. In create mode an
+  // empty input means "no token".
+  const tokenResult = (): string | null | undefined => {
+    const typed = authToken.trim();
+    if (!isEdit) return typed || null;
+    if (typed === '-') return null;
+    return typed || undefined;
   };
 
   const submit = () => {
@@ -398,7 +401,7 @@ function SourceForm({
               placeholder={
                 isEdit
                   ? initial!.authToken
-                    ? `(${maskToken(initial!.authToken.slice(-12))} — enter to keep)`
+                    ? `(${maskToken(initial!.authToken.slice(-12))} — enter to keep, - to remove)`
                     : '(optional)'
                   : '(optional)'
               }
@@ -407,7 +410,15 @@ function SourceForm({
           ) : ['kind', 'url', 'ref'].includes(step) ? (
             <Text dimColor>(pending)</Text>
           ) : (
-            <Text>{authToken ? '(set)' : initial?.authToken ? '(unchanged)' : '(none)'}</Text>
+            <Text>
+              {authToken.trim() === '-' && isEdit
+                ? '(removed)'
+                : authToken
+                  ? '(set)'
+                  : initial?.authToken
+                    ? '(unchanged)'
+                    : '(none)'}
+            </Text>
           )}
         </Box>
       )}
@@ -432,11 +443,7 @@ function SourceForm({
                 };
                 if (kind === 'git') {
                   result.ref = ref.trim() || null;
-                  if (isEdit) {
-                    result.authToken = authToken.trim() ? authToken.trim() : undefined;
-                  } else {
-                    result.authToken = authToken.trim() || null;
-                  }
+                  result.authToken = tokenResult();
                 }
                 void onSave(result);
               }, 0);

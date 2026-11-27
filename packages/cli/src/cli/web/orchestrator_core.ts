@@ -17,7 +17,8 @@ export interface ConfigInput {
   enabled: boolean;
   name: string;
   endpoint: string;
-  token?: string;
+  /** Blank or absent keeps the stored token; `null` removes it. */
+  token?: string | null;
   pollSeconds: unknown;
   policy: unknown;
 }
@@ -198,7 +199,8 @@ export function mergeConfigSave(
 
   const hostChanged = saved.endpoint !== endpoint && !sameHost(saved.endpoint, endpoint);
   const typedToken = typeof input.token === 'string' ? input.token.trim() : '';
-  const token = typedToken !== '' ? typedToken : hostChanged ? '' : saved.token;
+  const token =
+    typedToken !== '' ? typedToken : hostChanged || input.token === null ? '' : saved.token;
   const policy: OrchestratorPolicy =
     input.policy === 'auto' || input.policy === 'approve' ? input.policy : 'approve';
 

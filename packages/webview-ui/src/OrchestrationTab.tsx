@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { SecretInput } from './SecretInput.js';
 
 interface OrchestratorConfigView {
   enabled: boolean;
@@ -79,6 +80,7 @@ export function OrchestrationTab({ onPendingChange }: { onPendingChange?: (count
   const [name, setName] = useState('');
   const [endpoint, setEndpoint] = useState('');
   const [token, setToken] = useState('');
+  const [removeToken, setRemoveToken] = useState(false);
   const [pollSeconds, setPollSeconds] = useState('15');
   const [policy, setPolicy] = useState<'auto' | 'approve'>('approve');
   // Errors from the user's own actions (Save, Test, Approve, Reject) are kept
@@ -94,6 +96,7 @@ export function OrchestrationTab({ onPendingChange }: { onPendingChange?: (count
     setName(cfg.name);
     setEndpoint(cfg.endpoint);
     setToken('');
+    setRemoveToken(false);
     setPollSeconds(String(cfg.pollSeconds));
     setPolicy(cfg.policy);
   }, []);
@@ -152,7 +155,8 @@ export function OrchestrationTab({ onPendingChange }: { onPendingChange?: (count
         enabled,
         name,
         endpoint,
-        token,
+        // '' keeps the stored token, null removes it.
+        token: removeToken && !token.trim() ? null : token,
         pollSeconds: Number(pollSeconds),
         policy,
       }),
@@ -243,12 +247,14 @@ export function OrchestrationTab({ onPendingChange }: { onPendingChange?: (count
 
         <div className="form-group">
           <label htmlFor="orch-token">Token</label>
-          <input
+          <SecretInput
             id="orch-token"
-            type="password"
             value={token}
-            onChange={(e) => setToken(e.target.value)}
-            placeholder={view.config.hasToken ? 'Leave blank to keep the saved token' : 'Bearer token'}
+            onChange={setToken}
+            hasSaved={view.config.hasToken}
+            remove={removeToken}
+            onRemoveChange={setRemoveToken}
+            placeholder="Bearer token"
           />
         </div>
 
