@@ -1,5 +1,13 @@
 # caretaker-vscode
 
+## 0.39.1
+
+### Patch Changes
+
+- Updated dependencies [0593ec3]
+  - @hyperwindmill/caretaker-cli@0.39.1
+  - webview-ui@0.39.1
+
 ## 0.39.0
 
 ### Patch Changes
