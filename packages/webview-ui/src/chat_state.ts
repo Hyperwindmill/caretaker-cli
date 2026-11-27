@@ -104,6 +104,14 @@ function reconstructChatItems(messages: ChatMessage[]): ChatItem[] {
           } else if (part.type === 'thinking' && part.text.trim().length > 0) {
             items.push({ kind: 'thinking', text: part.text });
           } else if (part.type === 'tool_use') {
+            // Sessions saved by older ACP runs hold the result before the call.
+            const orphan = items.findIndex(
+              (it) => it.kind === 'tool' && it.id === part.id && it.name === 'unknown_tool',
+            );
+            if (orphan !== -1) {
+              items[orphan] = { ...(items[orphan] as ToolItem), name: part.name, args: part.args };
+              continue;
+            }
             items.push({
               kind: 'tool',
               id: part.id,

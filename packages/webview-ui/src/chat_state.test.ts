@@ -18,6 +18,25 @@ test('a repeated tool-call id refines the args in place', () => {
   assert.deepEqual((s.items[0] as { args: unknown }).args, { command: 'ls' });
 });
 
+test('load-history: a result saved before its call is merged into one block', () => {
+  const s = chatReducer(initialChatState, {
+    kind: 'load-history',
+    messages: [
+      { id: '1', role: 'tool', toolCallId: 't', content: 'out', createdAt: '' },
+      {
+        id: '2',
+        role: 'assistant',
+        content: '',
+        parts: [{ type: 'tool_use', id: 't', name: 'Bash', args: { command: 'ls' } }],
+        createdAt: '',
+      },
+    ],
+  });
+  assert.deepEqual(s.items, [
+    { kind: 'tool', id: 't', name: 'Bash', args: { command: 'ls' }, result: 'out' },
+  ]);
+});
+
 test('load-history: recap becomes a labeled bubble, streaming flag sets status', () => {
   const s = chatReducer(initialChatState, {
     kind: 'load-history',

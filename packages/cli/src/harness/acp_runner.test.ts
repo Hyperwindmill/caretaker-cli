@@ -146,6 +146,7 @@ test('a tool_call_update carrying rawInput refines the call args', async () => {
     ['tc1', 'Bash', {}],
     ['tc1', 'Bash', { command: 'ls' }],
   ]);
+  assert.deepEqual(messages.map((m) => m.role), ['assistant', 'tool']); // the call precedes its result
   const use = messages.flatMap((m) => m.parts ?? []).find((p) => p.type === 'tool_use');
   assert.deepEqual(use.args, { command: 'ls' });
 });

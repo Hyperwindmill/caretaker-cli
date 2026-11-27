@@ -222,6 +222,9 @@ export async function runAcp(opts: RunOptions, cb: RunCallbacks = {}): Promise<R
 
   // 4. Turn accumulation state.
   const parts: AssistantPart[] = [];
+  // Tool results are persisted after the turn's single assistant record, so a
+  // reader always meets the tool_use part before its result.
+  const toolMessages: ReturnType<typeof toolMessage>[] = [];
   let text = '';
   let toolCalls = 0;
   const pushText = (t: string) => {
@@ -272,7 +275,7 @@ export async function runAcp(opts: RunOptions, cb: RunCallbacks = {}): Promise<R
         if (u.status === 'completed' || u.status === 'failed') {
           const resultText = extractToolResultText(u.content);
           await safeEmit(() => cb.onToolResult?.(u.toolCallId, resultText));
-          await safeEmit(() => cb.onMessage?.(toolMessage(u.toolCallId, resultText)));
+          toolMessages.push(toolMessage(u.toolCallId, resultText));
         }
         break;
       }
@@ -416,6 +419,7 @@ export async function runAcp(opts: RunOptions, cb: RunCallbacks = {}): Promise<R
     }
 
     if (parts.length > 0) await safeEmit(() => cb.onMessage?.(assistantMessage(parts, usage)));
+    for (const m of toolMessages) await safeEmit(() => cb.onMessage?.(m));
 
     if (aborted || stopReason === 'cancelled') return { text, toolCalls, usage, stop: 'aborted' };
     if (stopReason === 'max_turn_requests') return { text, toolCalls, usage, stop: 'max_turns' };
