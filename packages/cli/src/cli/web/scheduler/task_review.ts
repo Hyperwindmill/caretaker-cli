@@ -24,14 +24,27 @@ export function reviewRoundLabel(round: number): string {
   return round <= MAX_REVIEW_ROUNDS ? `${round}/${MAX_REVIEW_ROUNDS}` : String(round);
 }
 
-export function reviewPrompt(objective: string, branch: string, round: number): string {
+/** What the task owner wrote in the task thread (the GUI's task composer and
+ *  `POST /api/tasks/:id/messages`): user-role `chat` messages. Agents always
+ *  write as assistant, and a `review` message is user-role but the reviewer's. */
+export function ownerNotes(messages: { role: string; messageType: string; content: string }[]): string[] {
+  return messages.filter((m) => m.role === 'user' && m.messageType === 'chat').map((m) => m.content);
+}
+
+export function reviewPrompt(objective: string, branch: string, round: number, notes: string[] = []): string {
+  const notesBlock = notes.length
+    ? `
+The task owner wrote these messages in the task thread, oldest first. They are binding instructions: where one of them limits what you should do (for example, not running a test suite), follow it over the generic checklist below.
+${notes.map((n) => `"""\n${n}\n"""`).join('\n')}
+`
+    : '';
   return `You are an INDEPENDENT code reviewer. You did not write this code, and your job is to find real problems — not to be agreeable. Do not rubber-stamp.
 
 The autonomous task you are reviewing had this objective:
 """
 ${objective}
 """
-
+${notesBlock}
 All of the task's work is committed to the git branch \`${branch}\`, checked out in your current working directory. Inspect it:
 - \`git log --oneline\` to see the commits made for this task.
 - Review the full change with \`git show\` / \`git diff\` across those commits.
@@ -76,6 +89,8 @@ export async function runDoneReview(opts: {
    *  review runs in never prefix-matches the project's workingDir). */
   projectId?: string;
   round: number;
+  /** The owner's messages in the task thread (see ownerNotes). */
+  notes?: string[];
   signal?: AbortSignal;
   /** Wall-clock budget (seconds) for the review run. Defaults to the claude-code default. */
   maxRunSeconds?: number;
@@ -88,6 +103,8 @@ export async function runDoneReview(opts: {
   /** Opens the review's chat session once the prompt is final. The caller
    *  closes the returned recorder; a throwing review closes it here. */
   openCycle?: (prompt: string) => Promise<CycleRecorder>;
+  /** Test seam; defaults to the harness. */
+  run?: typeof harness.run;
 }): Promise<{ verdict: 'pass' | 'changes'; text: string; cycle?: CycleRecorder }> {
   // Strip task-state tools: the reviewer must not mutate the task; the harness decides.
   const reviewTools = opts.tools.filter((t) => !t.name.startsWith('mcp__task__'));
@@ -136,7 +153,7 @@ export async function runDoneReview(opts: {
   const signal: AbortSignal = opts.signal
     ? AbortSignal.any([opts.signal, budgetController.signal])
     : budgetController.signal;
-  let prompt = reviewPrompt(opts.objective, opts.branch, opts.round);
+  let prompt = reviewPrompt(opts.objective, opts.branch, opts.round, opts.notes);
   if (opts.dockerContainer) {
     prompt += `\n\n**Execution environment:** your shell commands run inside a Docker container mounted at \`${opts.workingDir}\`.`;
     if (opts.dockerHasGit === false) {
@@ -145,7 +162,7 @@ export async function runDoneReview(opts: {
   }
   const cycle = opts.openCycle ? await opts.openCycle(prompt) : undefined;
   try {
-    const result = await harness.run(
+    const result = await (opts.run ?? harness.run)(
       {
         agent: { ...opts.agent, permissionMode: 'bypassPermissions' }, // unattended: mirror the auto-approve confirm gate
         provider: opts.provider,
@@ -164,6 +181,17 @@ export async function runDoneReview(opts: {
         confirmTool: async () => 'once', // unattended
       },
     );
+    // An aborted run may still return its partial text (the loop stops between
+    // turns, external runners just end). That is a review that did not finish,
+    // not a CHANGES_REQUESTED verdict: throw, so the caller blocks the task (or
+    // honours the Pause) without using up a round.
+    if (signal.aborted) {
+      throw new Error(
+        budgetController.signal.aborted
+          ? `the review ran out of its ${budgetMs / 1000}s time budget before giving a verdict`
+          : 'the review was aborted before giving a verdict',
+      );
+    }
     return { verdict: parseReviewVerdict(result.text), text: result.text, cycle };
   } catch (err) {
     await cycle?.close({

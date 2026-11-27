@@ -4,7 +4,7 @@ import { loadAgents, loadConfig } from '../../../store/json.js';
 import { getDb, Task, Project, TaskMessage, getTaskById, saveTask, addTaskMessage, runQuery } from '../../../store/db.js';
 import { runningTasks, runningTaskControllers, syncingProjects } from './locks.js';
 import { isGitRepo, ensureWorktree, BranchDivergedError, agentDirIn, commitWip, finalizeDone, runBootstrap, gitCommonDir, syncProjectRepo, projectWorkingDir, pushBranch } from '../../../lib/task_git.js';
-import { runDoneReview, MAX_REVIEW_ROUNDS, reviewTransition, reviewRoundLabel } from './task_review.js';
+import { runDoneReview, ownerNotes, MAX_REVIEW_ROUNDS, reviewTransition, reviewRoundLabel } from './task_review.js';
 import { openCycle, filterHandoffMessages, resolveCycleOutcome, type CycleRecorder, type CycleRole } from './task_cycle.js';
 import type { AgentConfig, ProviderConfig, ProjectConfig } from '../../../types.js';
 import type { Tool } from '../../../harness/tools/types.js';
@@ -675,9 +675,9 @@ async function runReviewCycle(opts: {
   await commitWip(task.worktreePath, task.title);
 
   // Round is derived from the review-message stream, never a stored counter.
-  const priorReviews = (
-    (await runQuery(`SELECT * FROM task_messages WHERE taskId = '${task.id}'`)) as TaskMessage[]
-  ).filter((m) => m.messageType === 'review').length;
+  const taskMessages = (await runQuery(`SELECT * FROM task_messages WHERE taskId = '${task.id}'`)) as TaskMessage[];
+  taskMessages.sort((a, b) => a.id - b.id);
+  const priorReviews = taskMessages.filter((m) => m.messageType === 'review').length;
   const round = priorReviews + 1;
 
   let verdict: 'pass' | 'changes' = 'pass';
@@ -690,6 +690,7 @@ async function runReviewCycle(opts: {
       provider,
       tools,
       objective: task.objective,
+      notes: ownerNotes(taskMessages),
       branch: task.branch || '(unknown)',
       workingDir,
       projectId: task.projectId,
